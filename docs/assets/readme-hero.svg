@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" fill="none" role="img" aria-labelledby="hero-title hero-description">
+  <title id="hero-title">SIEM Salabim — Dari alert ke tindakan.</title>
+  <desc id="hero-description">Banner SIEM Salabim bernuansa navy dan cyan, dengan ilustrasi abstrak alur alert, triage, dan tindakan. Integrasi Wazuh, OpenSearch, triage, dan analisis AI. Ilustrasi bukan tangkapan layar aplikasi atau data operasional.</desc>
+  <defs>
+    <linearGradient id="hero-background" x1="0" y1="0" x2="1200" y2="400" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1326"/>
+      <stop offset="0.58" stop-color="#0A1728"/>
+      <stop offset="1" stop-color="#102C36"/>
+    </linearGradient>
+    <linearGradient id="hero-accent" x1="764" y1="80" x2="1120" y2="319" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#46DCD4"/>
+      <stop offset="1" stop-color="#6DBBEF"/>
+    </linearGradient>
+    <linearGradient id="hero-panel" x1="756" y1="55" x2="1139" y2="343" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#13283B"/>
+      <stop offset="1" stop-color="#0E1D30"/>
+    </linearGradient>
+    <radialGradient id="hero-glow" cx="0" cy="0" r="1" gradientTransform="translate(1015 201) rotate(90) scale(299 352)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1BA6A1" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#1BA6A1" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="hero-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" stroke="#9DEDE6" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="400" rx="24" fill="url(#hero-background)"/>
+  <rect width="1200" height="400" rx="24" fill="url(#hero-glow)"/>
+  <rect x="632" y="1" width="567" height="398" rx="24" fill="url(#hero-grid)"/>
+  <rect x="0.5" y="0.5" width="1199" height="399" rx="23.5" stroke="#678997" stroke-opacity="0.2"/>
+  <path d="M665 0L596 400" stroke="#9EEDE4" stroke-opacity="0.08"/>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <g transform="translate(64 49)">
+      <rect width="34" height="34" rx="10" fill="#4ADDD3" fill-opacity="0.11" stroke="#4ADDD3" stroke-opacity="0.3"/>
+      <path d="M17 7L25 10V17C25 22 21 25 17 27C13 25 9 22 9 17V10L17 7Z" stroke="#6BE7DF" stroke-width="1.7" stroke-linejoin="round"/>
+      <path d="M13 17L16 20L21 14" stroke="#6BE7DF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="113" y="73" fill="#E5F5F8" font-size="19" font-weight="700" letter-spacing="3">SIEM SALABIM</text>
+
+    <text x="61" y="165" fill="#F1F7FC" font-size="61" font-weight="700" letter-spacing="-2.3">Dari alert</text>
+    <text x="61" y="233" fill="#66E1D7" font-size="61" font-weight="700" letter-spacing="-2.3">ke tindakan.</text>
+    <text x="65" y="278" fill="#A8BACD" font-size="19">Wazuh dan OpenSearch, terhubung dengan</text>
+    <text x="65" y="306" fill="#A8BACD" font-size="19">triage terpusat dan analisis AI.</text>
+
+    <path d="M65 345H96" stroke="#56DAD1" stroke-width="2" stroke-linecap="round"/>
+    <text x="109" y="350" fill="#839BAF" font-size="12" font-weight="600" letter-spacing="2.1">SECURITY OPERATIONS, TERINTEGRASI</text>
+  </g>
+
+  <g>
+    <rect x="775" y="73" width="374" height="286" rx="19" stroke="#5DCFCB" stroke-opacity="0.11"/>
+    <rect x="756" y="55" width="374" height="286" rx="19" fill="url(#hero-panel)" stroke="#467385" stroke-opacity="0.55"/>
+    <path d="M757 108H1129" stroke="#47657A" stroke-opacity="0.4"/>
+    <circle cx="780" cy="82" r="4" fill="#56738A"/>
+    <circle cx="795" cy="82" r="4" fill="#56738A" fill-opacity="0.7"/>
+    <circle cx="810" cy="82" r="4" fill="#56738A" fill-opacity="0.4"/>
+    <text x="1104" y="87" text-anchor="end" fill="#8CA8BB" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="600" letter-spacing="2">SECURITY WORKSPACE</text>
+
+    <path d="M792 177H860C876 177 876 147 893 147H1014C1031 147 1031 177 1047 177H1093" stroke="url(#hero-accent)" stroke-width="2" stroke-opacity="0.7"/>
+    <path d="M792 206H840C857 206 857 236 875 236H992C1007 236 1007 206 1025 206H1093" stroke="url(#hero-accent)" stroke-width="2" stroke-opacity="0.3"/>
+    <path d="M923 149V193" stroke="#5DDCD4" stroke-opacity="0.4" stroke-dasharray="3 5"/>
+
+    <rect x="892" y="125" width="62" height="62" rx="17" fill="#123A47" stroke="#5DE0D5" stroke-opacity="0.65"/>
+    <path d="M923 139L937 144V155C937 164 930 170 923 173C916 170 909 164 909 155V144L923 139Z" stroke="#83EEE3" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M916 155L921 160L931 150" stroke="#83EEE3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="779" y="163" width="30" height="29" rx="8" fill="#192F43" stroke="#4F8197"/>
+    <path d="M787 173H801M787 180H796" stroke="#94C7D9" stroke-width="2" stroke-linecap="round"/>
+    <rect x="1078" y="163" width="30" height="29" rx="8" fill="#163740" stroke="#55BDB7"/>
+    <path d="M1086 177L1091 182L1100 172" stroke="#8AE9DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <circle cx="846" cy="236" r="4" fill="#80C8DC"/>
+    <circle cx="1027" cy="206" r="4" fill="#68DCCE"/>
+    <rect x="978" y="225" width="30" height="22" rx="7" fill="#12303D" stroke="#4B8891" stroke-opacity="0.7"/>
+    <path d="M987 236H999M993 230V242" stroke="#67CEC8" stroke-width="1.5" stroke-linecap="round"/>
+
+    <path d="M779 271H1107" stroke="#567485" stroke-opacity="0.25"/>
+    <g font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="600" letter-spacing="1.4">
+      <rect x="779" y="291" width="89" height="27" rx="7" fill="#1B3247"/>
+      <text x="823.5" y="309" text-anchor="middle" fill="#A8C3D5">ALERT</text>
+      <path d="M878 305H891M886 300L891 305L886 310" stroke="#608C9B" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="901" y="291" width="89" height="27" rx="7" fill="#163E48"/>
+      <text x="945.5" y="309" text-anchor="middle" fill="#82DBD4">TRIAGE</text>
+      <path d="M1000 305H1013M1008 300L1013 305L1008 310" stroke="#608C9B" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="1023" y="291" width="84" height="27" rx="7" fill="#1B3247"/>
+      <text x="1065" y="309" text-anchor="middle" fill="#A8C3D5">ACTION</text>
+    </g>
+  </g>
+</svg>

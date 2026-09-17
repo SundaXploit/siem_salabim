@@ -1,0 +1,47 @@
+name: Laporkan bug
+description: Bantu memperbaiki masalah yang Anda temui di SIEM Salabim.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terima kasih sudah membantu memperbaiki Salabim.
+        Hapus token, password operasional, raw log sensitif, dan data insiden privat sebelum mengirim laporan atau screenshot.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Apa yang terjadi?
+      description: Jelaskan masalah dan halaman atau fitur yang terdampak.
+      placeholder: Ketika saya membuka Live Alerts dan ..., aplikasi ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Langkah reproduksi
+      description: Langkah yang bisa diikuti untuk mengalami masalah yang sama.
+      placeholder: |
+        1. Buka ...
+        2. Klik ...
+        3. Amati ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Hasil yang diharapkan
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Lingkungan
+      description: Sertakan commit atau versi aplikasi, sistem operasi, versi PHP, browser, dan jenis database.
+      placeholder: Windows / Laragon, PHP ..., MySQL ..., Chrome ..., commit ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Bukti pendukung yang sudah disanitasi
+      description: Opsional. Tempel pesan error, log relevan, atau screenshot tanpa informasi rahasia.

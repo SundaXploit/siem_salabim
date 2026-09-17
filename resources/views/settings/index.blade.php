@@ -209,8 +209,9 @@
                             <th>Aksi</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody x-data="{ editingUser: @js((int) old('_editing_user', 0)) }">
                         @foreach($users as $user)
+                        @php($editingOldUser = (int) old('_editing_user', 0) === $user->id)
                         <tr>
                             <td class="settings-user-name">{{ $user->name }}</td>
                             <td class="settings-user-email">{{ $user->email }}</td>
@@ -219,6 +220,7 @@
                             </td>
                             <td class="settings-user-actions">
                                 <div>
+                                    <button type="button" class="table-action" @click="editingUser = editingUser === {{ $user->id }} ? 0 : {{ $user->id }}" :aria-expanded="editingUser === {{ $user->id }}" aria-controls="edit-user-{{ $user->id }}" title="Edit user {{ $user->name }}" aria-label="Edit user {{ $user->name }}"><i data-lucide="pencil" aria-hidden="true"></i></button>
                                     @if($user->id !== auth()->id())
                                     <form method="POST" action="{{ route('settings.users.delete', $user) }}" onsubmit="return confirm('Hapus pengguna ini?')">
                                         @csrf @method('DELETE')
@@ -226,6 +228,39 @@
                                     </form>
                                     @endif
                                 </div>
+                            </td>
+                        </tr>
+                        <tr id="edit-user-{{ $user->id }}" x-show="editingUser === {{ $user->id }}" x-cloak>
+                            <td colspan="4">
+                                <form method="POST" action="{{ route('settings.users.update', $user) }}" class="settings-user-form">
+                                    @csrf @method('PATCH')
+                                    <input type="hidden" name="_editing_user" value="{{ $user->id }}">
+                                    <div class="form-group">
+                                        <label class="form-label" for="edit-name-{{ $user->id }}">Nama</label>
+                                        <input id="edit-name-{{ $user->id }}" type="text" name="name" class="form-input" value="{{ $editingOldUser ? old('name', $user->name) : $user->name }}" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="edit-role-{{ $user->id }}">Role</label>
+                                        <select id="edit-role-{{ $user->id }}" name="role" class="form-select" required>
+                                            <option value="analyst" @selected(($editingOldUser ? old('role', $user->role) : $user->role) === 'analyst')>Analyst</option>
+                                            <option value="admin" @selected(($editingOldUser ? old('role', $user->role) : $user->role) === 'admin')>Admin</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid-2">
+                                        <div class="form-group">
+                                            <label class="form-label" for="edit-password-{{ $user->id }}">Password baru (opsional)</label>
+                                            <input id="edit-password-{{ $user->id }}" type="password" name="password" class="form-input" minlength="8" autocomplete="new-password">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="edit-password-confirmation-{{ $user->id }}">Konfirmasi password</label>
+                                            <input id="edit-password-confirmation-{{ $user->id }}" type="password" name="password_confirmation" class="form-input" autocomplete="new-password">
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="submit" class="btn settings-submit"><i data-lucide="check" aria-hidden="true"></i> Simpan pengguna</button>
+                                        <button type="button" class="btn btn-ghost" @click="editingUser = 0">Batal</button>
+                                    </div>
+                                </form>
                             </td>
                         </tr>
                         @endforeach
@@ -243,17 +278,17 @@
                     @csrf
                     <div class="form-group">
                         <label class="form-label">Nama</label>
-                        <input type="text" name="name" class="form-input" value="{{ old('name') }}" required>
+                        <input type="text" name="name" class="form-input" value="{{ old('_editing_user') ? '' : old('name') }}" required>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Email</label>
-                        <input type="email" name="email" class="form-input" value="{{ old('email') }}" required>
+                        <input type="email" name="email" class="form-input" value="{{ old('_editing_user') ? '' : old('email') }}" required>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Role</label>
                         <select name="role" class="form-select" required>
-                            <option value="analyst" @selected(old('role', 'analyst') === 'analyst')>Analyst</option>
-                            <option value="admin" @selected(old('role') === 'admin')>Admin</option>
+                            <option value="analyst" @selected(old('_editing_user') || old('role', 'analyst') === 'analyst')>Analyst</option>
+                            <option value="admin" @selected(!old('_editing_user') && old('role') === 'admin')>Admin</option>
                         </select>
                     </div>
                     <div class="grid-2">

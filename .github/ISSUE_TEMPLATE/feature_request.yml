@@ -1,0 +1,39 @@
+name: Usulan fitur atau masukan
+description: Ceritakan kebutuhan SOC, ide fitur, atau masukan pengalaman penggunaan.
+title: "[Masukan]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ide kecil pun membantu. Ceritakan kebutuhan Anda dan dampaknya pada pekerjaan SOC.
+        Gunakan contoh yang sudah disanitasi; jangan sertakan kredensial atau data insiden privat.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Jenis masukan
+      options:
+        - Fitur baru
+        - Perbaikan tampilan atau alur kerja
+        - Dokumentasi
+        - Pengalaman penggunaan
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Kebutuhan atau masalah
+      description: Apa yang ingin Anda lakukan dan kendala yang dihadapi?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Usulan Anda
+      description: Jelaskan perilaku atau perubahan yang akan membantu.
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: Dampak pada pekerjaan SOC
+      description: Opsional. Siapa yang akan terbantu dan bagaimana perubahan ini digunakan?

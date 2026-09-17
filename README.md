@@ -1,117 +1,217 @@
+<a id="top"></a>
+
+<div align="center">
+
+<img src="docs/assets/readme-hero.svg" width="100%" alt="SIEM Salabim — Dari alert ke tindakan. Platform operasi SOC berbasis Wazuh dan OpenSearch.">
+
 # SIEM Salabim
 
-**SIEM Salabim** adalah aplikasi web untuk membantu tim Security Operations Center (SOC) memantau dan menangani alert keamanan Wazuh. Aplikasi mengambil alert dari OpenSearch/Wazuh Indexer, menyimpannya ke database aplikasi, lalu menyediakan dashboard, triage, riwayat aktivitas, notifikasi Telegram, dan bantuan analisis AI.
+**Pantau alert. Tentukan prioritas. Dokumentasikan respons.**
 
-Tujuannya adalah memusatkan pekerjaan analyst: meninjau alert, menentukan tindak lanjut, mendokumentasikan keputusan, dan mengirim informasi insiden kepada pihak terkait. Deteksi awal tetap dilakukan oleh Wazuh; data yang tampil di Salabim mengikuti periode, ambang level, dan batas impor yang dikonfigurasi.
+Satu ruang kerja untuk tim SOC: dari alert Wazuh, triage, dan bantuan AI hingga notifikasi Telegram.
 
-## Fitur
+<p>
+  <a href="https://github.com/SundaXploit/siem_salabim/stargazers"><img src="https://img.shields.io/github/stars/SundaXploit/siem_salabim?style=for-the-badge&amp;color=fbbf24&amp;label=Stars" alt="Jumlah GitHub Stars"></a>
+  <a href="https://github.com/SundaXploit/siem_salabim/forks"><img src="https://img.shields.io/github/forks/SundaXploit/siem_salabim?style=for-the-badge&amp;color=22d3ee&amp;label=Forks" alt="Jumlah fork"></a>
+  <a href="https://github.com/SundaXploit/siem_salabim/issues"><img src="https://img.shields.io/github/issues/SundaXploit/siem_salabim?style=for-the-badge&amp;color=a78bfa&amp;label=Issues" alt="Issue terbuka"></a>
+</p>
 
-| Fitur | Fungsi |
-| --- | --- |
-| Dashboard SOC | Ringkasan alert, distribusi severity, tren, dan kesimpulan AI untuk bulan berjalan. |
-| Live Alerts | Daftar alert dengan filter, pencarian, pagination 25/50/100 baris, dan refresh tampilan otomatis. |
-| Detail alert | Informasi rule, agent, bukti alert, status penanganan, dan analisis AI per alert. |
-| Triage individual dan massal | ACK atau abaikan alert dengan alasan. Klik **Triage massal** untuk menampilkan checkbox dan tombol tindakan; maksimum 100 alert per permintaan. |
-| Riwayat dan audit | Menelusuri alert, notifikasi, serta aktivitas penanganan oleh pengguna. |
-| Notifikasi Telegram | Mengirim laporan alert, menggunakan template, dan melampirkan bukti gambar. Admin mengelola template dan konfigurasi bot. |
-| Analisis AI | Membantu merangkum pola dashboard dan menilai detail alert melalui AmanAI. Hasilnya tetap perlu ditinjau analyst. |
-| Leaderboard | Ringkasan aktivitas penanganan alert oleh analyst. |
-| Administrasi | Pengaturan integrasi, pengujian koneksi, ambang level impor, fetch manual, dan pengelolaan akun. |
-| Pengelolaan data | Preview cakupan data, ekspor JSON/SQL, serta penghapusan berdasarkan periode dan cakupan oleh admin. |
-| Profil | Mengelola informasi akun, mengganti password, dan menghapus akun sendiri. |
+<p>
+  <img src="https://img.shields.io/badge/PHP-8.3%2B-777BB4?style=flat-square" alt="PHP 8.3 atau lebih baru">
+  <img src="https://img.shields.io/badge/Laravel-13-FF2D20?style=flat-square" alt="Laravel 13">
+  <img src="https://img.shields.io/badge/Wazuh-OpenSearch-00A9E5?style=flat-square" alt="Integrasi Wazuh dan OpenSearch">
+  <img src="https://img.shields.io/badge/UI-Blade%20%2B%20Alpine.js-38BDF8?style=flat-square" alt="Blade dan Alpine.js">
+</p>
 
-Registrasi publik dinonaktifkan. Administrator membuat akun analyst melalui **Settings**. Endpoint aplikasi memerlukan login; konfigurasi dan pengelolaan pengguna dibatasi untuk admin.
+**[▶ Demo](#demo)** · **[✨ Fitur](#fitur)** · **[🚀 Instalasi](#instalasi)** · **[🔑 Akun bawaan](#akun-bawaan)** · **[💬 Beri masukan](#kontribusi)**
 
-## Alur aplikasi
+</div>
+
+---
+
+## Kenalan dengan Salabim
+
+SIEM Salabim membantu analyst **melihat apa yang terjadi, memilih alert yang perlu ditangani, dan mencatat tindak lanjutnya**. Aplikasi mengambil alert dari OpenSearch/Wazuh Indexer dan menyimpannya ke database lokal untuk kebutuhan operasional SOC.
+
+Deteksi awal tetap dilakukan Wazuh. Salabim menyediakan antarmuka untuk pemantauan, triage, dokumentasi, dan komunikasi insiden. Data yang tampil mengikuti periode serta filter impor yang dipilih; analisis AI menjadi bahan pertimbangan analyst.
+
+| 01 · Pantau | 02 · Selidiki | 03 · Tindak lanjuti |
+| :--- | :--- | :--- |
+| Lihat ringkasan SOC dan alert terbaru. | Buka detail rule, agent, bukti, dan analisis AI. | ACK atau abaikan dengan alasan, lalu kirim notifikasi. |
+
+<a id="demo"></a>
+
+## ▶ Lihat alurnya
+
+<div align="center">
+
+<!-- DEMO VIDEO: Ganti URL YouTube di dua tautan pada bagian ini saat video asli siap. -->
+<a href="https://www.youtube.com/watch?v=aqz-KE-bpKQ">
+  <img src="docs/assets/demo-preview.svg" width="880" alt="Buka video placeholder di YouTube. Demo asli SIEM Salabim belum tersedia.">
+</a>
+
+**[▶ Buka video contoh di YouTube](https://www.youtube.com/watch?v=aqz-KE-bpKQ)**
+
+*Video sementara: Big Buck Bunny dari Blender Foundation. Ini placeholder, bukan rekaman aplikasi SIEM Salabim.*
+
+</div>
+
+<details>
+<summary><strong>🎬 Ingin mengganti dengan video demo sendiri?</strong></summary>
+
+1. Upload rekaman ke YouTube.
+2. Ganti kedua URL YouTube pada bagian **Lihat alurnya** di `README.md`.
+3. Ganti `docs/assets/demo-preview.svg` dengan cover pilihan Anda, lalu sesuaikan teks placeholder dan alt gambar.
+
+Alur rekaman yang disarankan: **login → dashboard → Live Alerts → triage massal → detail dan AI → notifikasi Telegram**. Gunakan data contoh yang sudah disanitasi.
+
+Preview berupa gambar yang dapat diklik. Video dibuka di YouTube; README GitHub tidak menggunakan pemutar iframe atau JavaScript.
+
+</details>
+
+<a id="fitur"></a>
+
+## ✨ Yang bisa Anda lakukan
+
+| Fitur | Manfaat untuk analyst |
+| :--- | :--- |
+| 📊 **Dashboard SOC** | Baca tren bulan berjalan, severity, dan kesimpulan analitis AI. |
+| 🔴 **Live Alerts** | Cari dan filter alert, pilih 25/50/100 baris, serta ikuti pembaruan otomatis. |
+| ☑️ **Triage massal** | Klik **Triage massal** untuk memunculkan checkbox; ACK atau abaikan hingga 100 alert per permintaan. |
+| 🔎 **Detail & AI alert** | Tinjau rule, agent, bukti, dan bantuan analisis sebelum menentukan tindakan. |
+| 📨 **Telegram** | Kirim laporan berbasis template dan bukti gambar ke chat pilihan. |
+| 🗂️ **Riwayat & leaderboard** | Telusuri penanganan, notifikasi, dan aktivitas analyst. |
+| ⚙️ **Administrasi** | Kelola akun, integrasi, ambang impor, serta fetch manual. |
+| 💾 **Pengelolaan data** | Preview cakupan, ekspor JSON/SQL, dan kelola retensi berdasarkan periode. |
+
+<details>
+<summary><strong>🧭 Bagaimana data mengalir?</strong></summary>
 
 ```text
-Wazuh agents -> Wazuh Manager -> OpenSearch / Wazuh Indexer
-                                         |
-                                  fetch alert terfilter
-                                         |
-                                 Database SIEM Salabim
-                                         |
-                         Dashboard / Live Alerts / Triage
-                                  |               |
-                             Analisis AI      Telegram
+Wazuh agents → Wazuh Manager → OpenSearch / Wazuh Indexer
+                                          ↓
+                              Fetch berdasarkan filter
+                                          ↓
+                               Database SIEM Salabim
+                                          ↓
+                        Dashboard · Live Alerts · Triage
+                                  ↙               ↘
+                            Analisis AI        Telegram
 ```
 
-Stack aplikasi: PHP, Laravel 13, Blade, Alpine.js, Tailwind CSS, Vite, serta database relasional. Queue dan cache memakai database secara default.
+Fetch reguler mengambil maksimal 100 alert terbaru hari ini secara default. Tombol fetch manual memeriksa seluruh halaman hari ini, berdasarkan zona **Asia/Jakarta**. Alert yang sudah tersimpan akan dilewati.
 
-## Persyaratan
+</details>
 
-- PHP **8.3 atau lebih baru**, Composer 2, serta ekstensi Laravel: Ctype, cURL, DOM, Fileinfo, Filter, Hash, Mbstring, OpenSSL, PCRE, PDO, Session, Tokenizer, dan XML.
-- Driver database PHP: `pdo_sqlite` dan `sqlite3` untuk instalasi SQLite/pengujian, atau `pdo_mysql` untuk MySQL/MariaDB.
-- Node.js **22.12+**. Node.js 20.19+ juga memenuhi persyaratan tool build yang digunakan.
-- SQLite untuk instalasi lokal sederhana, atau MySQL/MariaDB untuk lingkungan operasional.
-- OpenSearch/Wazuh Indexer yang dapat dijangkau, dengan akun yang berhak membaca indeks alert dan menjalankan pencarian/scroll.
-- Opsional: token bot Telegram dan chat tujuan; API key AmanAI untuk fitur AI.
+<a id="instalasi"></a>
 
-Pastikan PHP di terminal dan PHP web server memiliki versi serta ekstensi yang sesuai. Di Laragon, keduanya dapat menggunakan konfigurasi `php.ini` yang berbeda.
+## 🚀 Mulai dari sini
 
-## Instalasi baru
+**Siapkan:** PHP **8.3+**, Composer 2, Node.js **22.12+** (atau 20.19+), serta SQLite untuk instalasi cepat. OpenSearch diperlukan untuk mengimpor alert; Telegram dan AI dapat dikonfigurasi kemudian.
 
-Contoh berikut untuk clone baru. Ganti `<URL_REPOSITORY>` dengan alamat repository Anda.
+<details>
+<summary><strong>📦 Lihat kebutuhan PHP dan pilihan database</strong></summary>
+
+- Ekstensi PHP: Ctype, cURL, DOM, Fileinfo, Filter, Hash, Mbstring, OpenSSL, PCRE, PDO, Session, Tokenizer, dan XML.
+- Aktifkan `pdo_sqlite` dan `sqlite3` untuk SQLite/pengujian, atau `pdo_mysql` untuk MySQL/MariaDB.
+- Pastikan PHP CLI dan web server memakai versi serta ekstensi yang sesuai, terutama pada Laragon.
+- Untuk MySQL/MariaDB, buat database dan atur `DB_*` **sebelum migrasi**. Lihat [panduan MySQL](docs/OPERATIONS.md#menggunakan-mysqlmariadb).
+
+</details>
+
+### 1. Ambil kode dan dependency
 
 ```bash
-git clone <URL_REPOSITORY> SIEM_Salabim
-cd SIEM_Salabim
+git clone https://github.com/SundaXploit/siem_salabim.git
+cd siem_salabim
 composer install
 npm ci
 ```
 
-Salin konfigurasi contoh. Pada Windows PowerShell:
+### 2. Siapkan konfigurasi
 
-```powershell
-Copy-Item .env.example .env
-```
-
-Pada Linux/macOS:
+Perintah berikut dapat dijalankan dari PowerShell maupun terminal Linux/macOS:
 
 ```bash
-cp .env.example .env
-```
-
-Sesuaikan `APP_URL` di `.env`, misalnya `http://127.0.0.1:8000` untuk server Artisan atau `http://siem_salabim.test` untuk Laragon. File `.env.example` memakai SQLite. Buat file database lokal dan siapkan aplikasi:
-
-```bash
+php -r "file_exists('.env') || copy('.env.example', '.env');"
 php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
+```
+
+Atur `APP_URL` di `.env` menjadi `http://127.0.0.1:8000`, atau domain Laragon Anda. Konfigurasi contoh memakai SQLite.
+
+### 3. Buat database dan akun bawaan
+
+```bash
 php artisan key:generate
-php artisan migrate
-php artisan siem:create-admin
+php artisan migrate --seed
 npm run build
 ```
 
-Perintah `siem:create-admin` meminta nama, email, dan password melalui prompt. Password disembunyikan dan harus minimal 12 karakter. Tidak ada akun/password admin bawaan; seeder tidak membuat akun atau mengubah password akun yang sudah ada.
+> [!IMPORTANT]
+> `key:generate` hanya untuk instalasi baru. Pertahankan `.env` dan `APP_KEY` pada instalasi yang sudah berjalan agar kredensial terenkripsi tetap dapat dibaca.
 
-**Jalankan `key:generate` hanya saat instalasi baru.** Simpan `APP_KEY` secara privat bersama backup operasional. Menggantinya pada instalasi yang sudah berisi konfigurasi terenkripsi dapat membuat kredensial integrasi tidak dapat dibaca. Jangan menimpa `.env` instalasi yang sudah berjalan dengan file contoh.
-
-### Menggunakan MySQL/MariaDB
-
-Buat database dan pengguna aplikasi terlebih dahulu, kemudian ganti konfigurasi database **sebelum menjalankan migrasi**:
-
-```dotenv
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=siem_salabim
-DB_USERNAME=siem_app
-DB_PASSWORD=
-```
-
-Isi password pengguna database hanya di `.env` lokal. Setelah itu jalankan `php artisan migrate` dan `php artisan siem:create-admin` seperti di atas. Migrasi membuat struktur tabel; aplikasi tidak menyediakan migrasi data otomatis dari SQLite ke MySQL.
-
-## Menjalankan aplikasi
-
-Untuk pengembangan lokal:
+### 4. Jalankan dan masuk
 
 ```bash
 composer run dev
 ```
 
-Perintah ini menjalankan server aplikasi, worker queue `ai,default`, scheduler, dan Vite secara bersamaan. Buka `http://127.0.0.1:8000`, lalu login dengan akun yang dibuat sebelumnya.
+Buka **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. Perintah ini menjalankan server aplikasi, worker queue AI, scheduler, dan Vite.
 
-Jika memakai virtual host Laragon, arahkan **document root ke folder `public/`**. Jalankan komponen pendukung di terminal terpisah:
+<a id="akun-bawaan"></a>
+
+## 🔑 Akun bawaan
+
+Setelah `php artisan migrate --seed`, login menggunakan **email** berikut:
+
+| Peran | Email | Password | Akses |
+| :--- | :--- | :--- | :--- |
+| **Admin SOC** | `adminsoc@siem.local` | `bhapp` | Operasional SOC, Settings, integrasi, dan pengelolaan pengguna. |
+| **Analis SOC** | `analissoc@siem.local` | `bhapp` | Dashboard, alert, triage, dan notifikasi sesuai akses analyst. |
+
+Form login menggunakan **email dan password**. Akun lama tetap dapat login dengan email yang sudah terdaftar.
+
+> [!WARNING]
+> Kredensial bawaan ini dipublikasikan untuk memudahkan instalasi/demo. **Ganti password kedua akun sebelum aplikasi digunakan secara publik**, atau buat akun pribadi dan hapus akun bawaan yang tidak diperlukan.
+
+<details>
+<summary><strong>Sudah punya instalasi? / Ingin membuat admin sendiri?</strong></summary>
+
+Untuk menambahkan akun bawaan pada instalasi yang sudah ada:
+
+```bash
+php artisan migrate
+php artisan db:seed
+```
+
+Seeder membuat akun berdasarkan email yang belum terdaftar; password, role, dan identitas akun existing tidak ditimpa. Jika email sudah digunakan, periksa pesan seeder dan selesaikan melalui pengelolaan pengguna.
+
+Untuk instalasi dengan akun admin pribadi, jalankan migrasi tanpa `--seed`, lalu:
+
+```bash
+php artisan siem:create-admin
+```
+
+Perintah ini meminta nama, email, serta password minimal 12 karakter dengan input tersembunyi. Login menggunakan email tersebut. Registrasi publik tetap dinonaktifkan.
+
+</details>
+
+## 🛠️ Hubungkan layanan Anda
+
+Login sebagai admin → buka **Settings** → simpan konfigurasi → gunakan tombol uji koneksi.
+
+| Layanan | Yang perlu disiapkan | Panduan |
+| :--- | :--- | :--- |
+| **OpenSearch / Wazuh Indexer** | Host, akun pembaca indeks, pola indeks, dan ambang level. | [Konfigurasi & perintah fetch](docs/OPERATIONS.md#opensearch--wazuh-indexer) |
+| **Telegram** | Token bot dan chat tujuan yang dapat diakses bot. | [Konfigurasi Telegram](docs/OPERATIONS.md#telegram) |
+| **AmanAI** | API key serta model yang tersedia untuk akun Anda. | [Konfigurasi & cakupan data AI](docs/OPERATIONS.md#analisis-ai) |
+
+Kelola host dan kredensial integrasi, model AI, ambang level, serta interval analisis melalui **Settings**. `.env.example` memuat konfigurasi server seperti database, SMTP, session/cache/queue, serta parameter teknis koneksi. Worker **`ai,default`** dan scheduler perlu tetap berjalan untuk pekerjaan otomatis.
+
+<details>
+<summary><strong>💻 Menggunakan virtual host Laragon?</strong></summary>
+
+Arahkan document root ke **`public/`** dan sesuaikan `APP_URL`, misalnya `http://siem_salabim.test`. Jalankan setiap perintah berikut di terminal terpisah:
 
 ```bash
 npm run dev
@@ -119,131 +219,69 @@ php artisan queue:work --queue=ai,default --sleep=3 --tries=2 --timeout=180
 php artisan schedule:work
 ```
 
-Jangan menjalankan dua scheduler untuk instalasi yang sama. Build produksi menggunakan `npm run build` dan tidak memerlukan server Vite.
+Jalankan satu scheduler untuk setiap instalasi. Lihat [deployment dan operasional](docs/OPERATIONS.md#deployment-dan-operasional) untuk layanan yang berjalan permanen.
 
-## Konfigurasi integrasi
+</details>
 
-Login sebagai admin dan buka **Settings** untuk menyimpan konfigurasi serta menguji koneksi. Nilai yang tersimpan di database mengungguli fallback `.env`; mengubah `.env` tidak menimpa nilai yang sudah disimpan melalui Settings. Password/token yang dibiarkan kosong pada formulir mempertahankan nilai sebelumnya.
+## 📚 Butuh panduan lebih detail?
 
-### OpenSearch / Wazuh Indexer
+| Saya ingin… | Buka |
+| :--- | :--- |
+| Memahami filter tanggal, level, dan fetch manual | [OpenSearch & impor alert](docs/OPERATIONS.md#opensearch--wazuh-indexer) |
+| Mengetahui data yang dikirim ke AI | [Analisis AI](docs/OPERATIONS.md#analisis-ai) |
+| Deploy dengan scheduler dan queue | [Deployment](docs/OPERATIONS.md#deployment-dan-operasional) |
+| Mengelola backup dan retensi | [Backup & penghapusan data](docs/OPERATIONS.md#backup-dan-penghapusan-data) |
+| Menjalankan tes atau berkontribusi kode | [Pengujian](docs/OPERATIONS.md#pengujian) |
+| Memeriksa file sebelum commit | [Panduan Git](docs/OPERATIONS.md#sebelum-commit-dan-push) |
 
-| Variabel `.env` | Default | Keterangan |
-| --- | --- | --- |
-| `OPENSEARCH_HOST` | `https://localhost:9200` | Endpoint indexer. |
-| `OPENSEARCH_USERNAME` / `OPENSEARCH_PASSWORD` | Kosong | Kredensial pembaca alert; isi melalui `.env` atau Settings. |
-| `OPENSEARCH_INDEX` | `wazuh-alerts-*` | Pola indeks atau alias yang dibaca. |
-| `OPENSEARCH_VERIFY_SSL` | `true` | Verifikasi sertifikat TLS. Konfigurasikan CA tepercaya pada PHP untuk sertifikat internal. |
-| `OPENSEARCH_MIN_LEVEL` | `12` | Ambang `rule.level`; pengaturan admin mengungguli fallback ini. |
-| `OPENSEARCH_SIZE` | `100` | Batas fetch terbaru sekaligus ukuran batch pemeriksaan menyeluruh. |
-| `OPENSEARCH_FETCH_PAGE_DELAY_MS` | `250` | Jeda antarbatch untuk mengurangi lonjakan permintaan. |
+<details>
+<summary><strong>❓ Pertanyaan yang sering muncul</strong></summary>
 
-Fetch reguler memeriksa **100 alert terbaru hari ini** secara default. Hari dihitung dari 00:00 hingga sebelum 00:00 berikutnya dalam zona **Asia/Jakarta**, kemudian dikonversi untuk query OpenSearch. Scheduler menjalankannya setiap menit; refresh tampilan Live Alerts berlangsung setiap 30 detik dan dijeda selama triage massal.
+**Fetch berhasil tetapi `New: 0`?**
 
-| Perintah | Cakupan |
-| --- | --- |
-| `php artisan siem:fetch-alerts` | Alert terbaru hari ini sesuai batas ukuran dan level. |
-| `php artisan siem:fetch-alerts --today` | Seluruh halaman alert hari ini yang memenuhi filter; dipakai juga oleh tombol fetch manual di Settings. |
-| `php artisan siem:fetch-alerts --all` | Seluruh riwayat yang cocok; dapat memerlukan waktu dan sumber daya besar. |
-| `php artisan siem:fetch-alerts --today --dry-run` | Memeriksa kandidat impor tanpa menyimpan alert; tetap mengirim query ke OpenSearch. |
+Hasil mungkin sudah pernah diimpor, atau tidak ada alert yang cocok dengan tanggal, indeks, dan ambang level. Koneksi berhasil tidak berarti setiap filter memiliki hasil.
 
-Alert yang sudah tersimpan dilewati berdasarkan identitas alert. `New: 0` bisa berarti seluruh hasil sudah pernah diimpor, atau tidak ada hasil untuk kombinasi tanggal, indeks, dan level. Koneksi yang berhasil tidak menjamin ada alert yang cocok dengan filter tersebut.
+**AI lambat atau belum menghasilkan analisis?**
 
-Pada volume tinggi, jumlah alert baru di antara dua fetch dapat melebihi batas fetch terbaru. Gunakan pemeriksaan `--today` untuk melengkapi hari berjalan dan sesuaikan jadwal/batas berdasarkan kapasitas server. Pemeriksaan massal memakai scroll per indeks, jeda batch, lock, dan penanganan batas memori; hindari menjalankan backfill arsip berulang tanpa kebutuhan.
+Uji koneksi dan model di Settings. Pastikan API key valid, provider tersedia, dan worker `ai,default` berjalan untuk job otomatis. Profil default meminta `reasoning_effort=none`; kecepatannya tetap bergantung pada provider.
 
-### Telegram
+**Akun bawaan tidak bisa login?**
 
-Isi token bot di Settings atau `TELEGRAM_BOT_TOKEN`, lalu simpan daftar chat tujuan di Settings dan pilih penerimanya pada alur notifikasi. Bot harus memiliki akses mengirim pesan ke chat tersebut. Konfigurasi timeout dan retry tersedia di `.env.example`.
+Pastikan migrasi dan seeder sudah dijalankan. Jika password akun pernah diganti, gunakan password terbaru; seeder tidak meresetnya. Periksa juga pesan email yang sudah terdaftar dari seeder.
 
-Notifikasi dapat memuat informasi alert dan bukti yang dipilih pengguna. Lampiran gambar dibatasi 10 MB per file. Pengiriman lampiran tidak membutuhkan symlink `public/storage`.
+**Apakah AI menggantikan analyst?**
 
-### Analisis AI
+Hasil AI membantu investigasi. Keputusan triage dan respons tetap perlu divalidasi oleh analyst SOC.
 
-Isi API key dan model di Settings atau melalui variabel `AMANAI_*` di `.env.example`. Default model adalah `amanai/deepseek-v4.1-flash`; pastikan model tersedia untuk akun layanan Anda. Profil dashboard dan detail alert meminta `reasoning_effort=none` agar tidak menggunakan thinking. Dukungan parameter ini bergantung pada model/provider.
+</details>
 
-- **Dashboard:** AI menerima agregat dan pola yang diizinkan dari alert yang sudah diimpor. Raw log, alamat IP, payload, dan kredensial tidak dimasukkan ke snapshot dashboard. Metrik agregat mencakup seluruh alert pada bulan berjalan; ekstraksi MITRE lokal memakai sampel hingga 10.000 alert terbaru. Cakupan sampel ditampilkan pada dashboard.
-- **Detail alert:** AI menerima konteks alert dan bukti yang disanitasi. Data seperti IP atau path yang relevan untuk investigasi dapat termasuk di dalamnya. Tinjau kebijakan pengiriman data organisasi sebelum mengaktifkan integrasi.
-- **Otomatis:** scheduler memeriksa kebutuhan pembaruan pada 02:10 WIB setiap hari; interval analisis default 10 hari dan dapat diubah di Settings. Job otomatis diproses pada queue `ai`.
-- **Manual:** analisis yang diminta pengguna menunggu respons layanan. Timeout detail default 60 detik, dashboard 90 detik. `none` mengurangi pekerjaan model tetapi tidak menjamin ketersediaan atau waktu respons layanan.
+<a id="kontribusi"></a>
 
-Jalankan worker dengan `--queue=ai,default --timeout=180`. Default `DB_QUEUE_RETRY_AFTER=240` harus tetap lebih besar daripada timeout worker untuk menghindari job diambil ulang sebelum eksekusi selesai.
+## 💬 Bantu Salabim berkembang
 
-## Deployment dan operasional
+Punya temuan bug, ide fitur, atau alur SOC yang bisa dibuat lebih nyaman? Masukan dari penggunaan nyata sangat membantu.
 
-- Gunakan HTTPS, `APP_ENV=production`, `APP_DEBUG=false`, URL aplikasi yang benar, dan cookie sesi aman (`SESSION_SECURE_COOKIE=true`) untuk deployment HTTPS.
-- Web server hanya mengekspos `public/`; berikan izin tulis aplikasi pada `storage/` dan `bootstrap/cache/`.
-- Instal dependency menggunakan `composer install --no-dev --optimize-autoloader`, bangun aset dengan `npm ci` lalu `npm run build`, dan jalankan migrasi sesuai prosedur backup lingkungan Anda.
-- Setelah memperbarui `.env`/kode, jalankan `php artisan config:cache`, `php artisan view:cache`, dan restart worker dengan `php artisan queue:restart`.
-- Kelola queue worker dengan process manager. Worker queue dan scheduler perlu tetap berjalan setelah terminal ditutup.
-- `MAIL_MAILER=log` hanya menulis email ke log. Konfigurasikan SMTP/provider email agar reset password benar-benar terkirim.
+| Ingin membantu? | Mulai di sini |
+| :--- | :--- |
+| ⭐ **Dukung proyek** | Klik tombol **Star** di bagian atas repository agar proyek mudah ditemukan kembali. |
+| 🐞 **Laporkan bug** | [Buat laporan bug](https://github.com/SundaXploit/siem_salabim/issues/new?template=bug_report.yml) dengan langkah reproduksi dan hasil yang diharapkan. |
+| 💡 **Usulkan fitur / beri masukan** | [Kirim ide Anda](https://github.com/SundaXploit/siem_salabim/issues/new?template=feature_request.yml), termasuk masalah yang ingin diselesaikan. |
+| 🧩 **Kontribusi kode atau dokumentasi** | Fork repository, buat branch, jalankan pengujian yang relevan, lalu buka pull request. |
 
-Contoh cron Linux untuk satu scheduler:
+Sertakan log atau screenshot yang sudah disanitasi. Jangan cantumkan token, password operasional, raw log sensitif, atau data insiden privat pada issue publik.
 
-```cron
-* * * * * cd /path/to/SIEM_Salabim && php artisan schedule:run >> /dev/null 2>&1
-```
+<div align="center">
 
-Pada Windows, buat Task Scheduler yang menjalankan `php artisan schedule:run` setiap menit dengan working directory proyek. `schedule:work` cocok untuk terminal pengembangan.
+**Salabim membantu pekerjaan SOC Anda? Beri ⭐ dan ceritakan pengalaman Anda.**
 
-### Backup dan penghapusan data
+[⭐ Buka repository](https://github.com/SundaXploit/siem_salabim) · [💬 Semua issue](https://github.com/SundaXploit/siem_salabim/issues) · [🧩 Pull requests](https://github.com/SundaXploit/siem_salabim/pulls)
 
-Ekspor pada Settings mengikuti cakupan dan periode pilihan pengguna. Format SQL menargetkan MySQL/MariaDB; gunakan JSON untuk pertukaran data lintas database. Aplikasi belum menyediakan UI restore.
+---
 
-Ekspor dari Settings bukan pengganti backup lengkap database, file bukti, dan `APP_KEY`. Simpan backup secara privat dan uji prosedur pemulihan sebelum menghapus data operasional. Periksa preview cakupan sebelum memakai tombol hapus atau backup sekaligus hapus.
+**Dibangun untuk pekerjaan SOC yang lebih terarah.**
 
-## Pengujian
+[Kembali ke atas ↑](#top)
 
-```bash
-composer validate --no-check-publish
-php artisan test
-npm test
-npm run build
-composer audit --locked
-npm audit
-```
+<sub>Lisensi distribusi aplikasi belum ditetapkan. Dependency pihak ketiga mengikuti lisensinya masing-masing.</sub>
 
-Tes PHP memakai database SQLite `:memory:` dan cache/session array sesuai `phpunit.xml`. Aktifkan `pdo_sqlite` dan `sqlite3` pada PHP CLI. Jika ekstensi sudah tersedia tetapi belum aktif, contoh Windows:
-
-```powershell
-php -d extension=pdo_sqlite -d extension=sqlite3 vendor/bin/phpunit
-```
-
-Audit dependency memerlukan koneksi internet. Jalankan ulang sebelum rilis karena advisory dapat berubah. Tes otomatis memakai fake/mock untuk integrasi; lakukan uji koneksi lingkungan melalui Settings secara terpisah.
-
-## Sebelum commit dan push
-
-Repository menyertakan kode aplikasi, migrasi, pengujian, `.env.example`, `composer.lock`, dan `package-lock.json`. Lock file perlu ikut di-commit agar instalasi menggunakan versi dependency yang sama.
-
-`.gitignore` mengecualikan konfigurasi lokal `.env` beserta variasinya, dependency terpasang, hasil build, database lokal, dump/backup, log, session/cache, file unggahan, key/sertifikat privat, keluaran tes, dan skrip diagnostik Telegram lokal. File `.gitignore` di dalam `storage/` tetap dipertahankan untuk struktur direktori.
-
-Setelah repository Git diinisialisasi, periksa daftar file:
-
-```bash
-git status --short --ignored
-git check-ignore -v .env database/database.sqlite storage/logs/laravel.log
-git diff --cached --name-only
-git diff --cached
-```
-
-Pastikan `.env.example` hanya berisi placeholder. Jangan memasukkan token, password, data alert nyata, alamat infrastruktur privat, chat ID operasional, atau screenshot insiden ke README, fixture, dan aset publik.
-
-Aturan ignore tidak mengeluarkan file yang sudah terlanjur dilacak. Jika pernah membagikan kredensial melalui commit, keluarkan file tersebut dari pelacakan dan rotasi kredensial yang terpapar; menghapusnya pada commit berikutnya tidak menghilangkan salinannya dalam riwayat.
-
-## Struktur proyek
-
-```text
-app/Console/Commands/    Perintah impor, pembaruan insight, dan pembuatan admin
-app/Http/Controllers/   Dashboard, alert, triage, notifikasi, dan Settings
-app/Jobs/               Job analisis dashboard
-app/Models/             Alert, pengguna, konfigurasi, serta riwayat
-app/Services/           OpenSearch, Telegram, AI, dan logika triage
-config/                 Konfigurasi aplikasi dan integrasi
-database/migrations/    Struktur database
-resources/views/        Antarmuka Blade
-resources/js/           Interaksi antarmuka
-routes/                 Route web, autentikasi, dan scheduler
-tests/                  Tes PHP dan JavaScript
-```
-
-## Lisensi
-
-Lisensi distribusi kode aplikasi SIEM Salabim belum ditetapkan dalam repository ini. Dependency pihak ketiga tetap mengikuti lisensinya masing-masing.
+</div>

@@ -64,7 +64,7 @@
                     <div class="form-group">
                         <label class="form-label" for="email">Alamat email</label>
                         <input id="email" type="email" name="email" class="form-input" value="{{ old('email') }}"
-                            placeholder="analyst@siem.local" required autofocus autocomplete="email" autocapitalize="none" spellcheck="false">
+                            placeholder="Masukan Email" required autofocus autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="255">
                         @error('email')
                             <div class="error-msg">{{ $message }}</div>
                         @enderror
