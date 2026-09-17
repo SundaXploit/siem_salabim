@@ -1,0 +1,108 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:opsz,wght@14..32,400;14..32,500;14..32,550;14..32,600;14..32,650;14..32,700&display=swap');
+
+:root,
+:root[data-theme='light'] {
+    color-scheme: light;
+    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Fira Code', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --text-xs: 0.6875rem;
+    --text-sm: 0.75rem;
+    --text-base: 0.875rem;
+    --text-lg: 1rem;
+    --text-xl: 1.125rem;
+    --text-2xl: 1.5rem;
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --color-canvas: #f4f6f8;
+    --color-surface-1: #ffffff;
+    --color-surface-2: #f8fafc;
+    --color-surface-3: #eef2f6;
+    --color-border-subtle: #e5e9ef;
+    --color-border-default: #d8dee7;
+    --color-border-strong: #bdc8d6;
+    --color-text-primary: #172033;
+    --color-text-secondary: #536174;
+    --color-text-muted: #7b8798;
+    --color-accent: #2769a6;
+    --color-accent-hover: #1e578e;
+    --color-accent-soft: rgba(39, 105, 166, 0.09);
+    --color-success: #267a57;
+    --color-success-soft: rgba(38, 122, 87, 0.1);
+    --color-warning: #a96812;
+    --color-warning-soft: rgba(169, 104, 18, 0.1);
+    --color-danger: #b23b46;
+    --color-danger-soft: rgba(178, 59, 70, 0.1);
+    --color-info: #286e9e;
+    --color-info-soft: rgba(40, 110, 158, 0.1);
+    --color-overlay: rgba(16, 24, 40, 0.46);
+    --shadow-sm: 0 8px 18px rgba(23, 32, 51, 0.09);
+    --shadow-overlay: 0 24px 56px rgba(23, 32, 51, 0.22);
+    --sidebar-w: 14rem;
+
+    /* Compatibility aliases while legacy markup is migrated. */
+    --bg-primary: var(--color-canvas);
+    --bg-secondary: var(--color-surface-1);
+    --bg-card: var(--color-surface-1);
+    --bg-card-2: var(--color-surface-2);
+    --bg-body: var(--color-canvas);
+    --border: var(--color-border-default);
+    --text-primary: var(--color-text-primary);
+    --text-secondary: var(--color-text-secondary);
+    --text-muted: var(--color-text-muted);
+    --text-dim: var(--color-text-muted);
+    --accent: var(--color-accent);
+    --accent-hover: var(--color-accent-hover);
+    --accent-glow: var(--color-accent-soft);
+    --accent-v: var(--color-accent);
+    --success: var(--color-success);
+    --warning: var(--color-warning);
+    --danger: var(--color-danger);
+    --info: var(--color-info);
+}
+
+:root[data-theme='dark'],
+html.dark {
+    color-scheme: dark;
+    --color-canvas: #0b0e13;
+    --color-surface-1: #10151d;
+    --color-surface-2: #151b24;
+    --color-surface-3: #1b232e;
+    --color-border-subtle: rgba(218, 228, 241, 0.055);
+    --color-border-default: rgba(218, 228, 241, 0.105);
+    --color-border-strong: rgba(218, 228, 241, 0.18);
+    --color-text-primary: #e7ebf1;
+    --color-text-secondary: #aab4c1;
+    --color-text-muted: #748092;
+    --color-accent: #4d91c9;
+    --color-accent-hover: #68a7da;
+    --color-accent-soft: rgba(77, 145, 201, 0.13);
+    --color-success: #4ba77b;
+    --color-success-soft: rgba(75, 167, 123, 0.12);
+    --color-warning: #c89345;
+    --color-warning-soft: rgba(200, 147, 69, 0.12);
+    --color-danger: #d16a72;
+    --color-danger-soft: rgba(209, 106, 114, 0.12);
+    --color-info: #5fadd7;
+    --color-info-soft: rgba(95, 173, 215, 0.12);
+    --color-overlay: rgba(3, 7, 13, 0.68);
+    --shadow-sm: 0 8px 18px rgba(0, 0, 0, 0.16);
+    --shadow-overlay: 0 28px 66px rgba(0, 0, 0, 0.46);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}
