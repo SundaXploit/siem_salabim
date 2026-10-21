@@ -14,7 +14,7 @@ class LiveAlertSearchTest extends TestCase
 
     public function test_search_finds_rule_description_when_other_filters_are_blank(): void
     {
-        Cache::put('siem_fetch_ran', true, now()->addMinute());
+        Cache::put('siem_fetch_ran:latest', true, now()->addMinute());
         $user = User::factory()->create(['role' => 'analyst']);
         $target = Alert::create([
             'wazuh_alert_id' => 'file-event-unique',
@@ -41,15 +41,14 @@ class LiveAlertSearchTest extends TestCase
         $this->actingAs($user)
             ->get($response->headers->get('Location'))
             ->assertOk()
-            ->assertViewHas('alerts', fn ($alerts) =>
-                $alerts->total() === 1
+            ->assertViewHas('alerts', fn ($alerts) => $alerts->total() === 1
                 && $alerts->first()?->is($target)
             );
     }
 
     public function test_search_finds_wazuh_id_raw_event_content_and_local_alert_id(): void
     {
-        Cache::put('siem_fetch_ran', true, now()->addMinute());
+        Cache::put('siem_fetch_ran:latest', true, now()->addMinute());
         $user = User::factory()->create(['role' => 'analyst']);
         $target = Alert::create([
             'wazuh_alert_id' => 'wazuh-event-unique-4f91',
@@ -80,8 +79,7 @@ class LiveAlertSearchTest extends TestCase
             $this->actingAs($user)
                 ->get(route('alerts.index', ['status' => 'all', 'search' => $search]))
                 ->assertOk()
-                ->assertViewHas('alerts', fn ($alerts) =>
-                    $alerts->total() === 1
+                ->assertViewHas('alerts', fn ($alerts) => $alerts->total() === 1
                     && $alerts->first()?->is($target)
                 );
         }

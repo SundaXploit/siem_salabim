@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\AlertIngestionCoordinator;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -9,12 +10,24 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 // ─── SIEM Scheduler ─────────────────────────────────────────────────────────
-// Run every 1 minute (cron minimum). For 30s polling, run twice per minute.
-Schedule::command('siem:fetch-alerts')
+// Route every trigger through the same cooldown/status coordinator. The
+// queue worker still performs all OpenSearch I/O.
+Schedule::call(function (AlertIngestionCoordinator $ingestion): void {
+    $ingestion->requestLatestFetch('scheduler');
+})
     ->everyMinute()
-    ->withoutOverlapping()
-    ->runInBackground()
-    ->appendOutputTo(storage_path('logs/scheduler.log'));
+    ->name('siem:dispatch-alert-fetch')
+    ->withoutOverlapping(5);
+
+// Re-scan today and previous local calendar days at a lower cadence. This
+// closes the event-time gap for documents indexed after the normal overlap.
+Schedule::call(function (AlertIngestionCoordinator $ingestion): void {
+    $ingestion->requestReconciliationFetch('scheduler-reconcile');
+})
+    ->cron('17 */6 * * *')
+    ->timezone('Asia/Jakarta')
+    ->name('siem:dispatch-alert-reconciliation')
+    ->withoutOverlapping(30);
 
 // Check daily. The command reads the admin-defined refresh interval from
 // Settings (with AMANAI_REFRESH_DAYS only as a server-side fallback).

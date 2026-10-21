@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Exceptions\AiAnalysisException;
 use App\Models\Alert;
 use App\Services\AlertAiAnalysisService;
-use Illuminate\Http\Request;
+use App\Services\AlertIngestionCoordinator;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\RateLimiter;
 
 class AlertController extends Controller
 {
+    public function __construct(private readonly AlertIngestionCoordinator $ingestion) {}
+
     /* ═══════════════════════════════════════════════════════════════════
      ║  Dashboard — optimized for fast page load
      ║
@@ -44,30 +46,30 @@ class AlertController extends Controller
         // Previously this ran SYNCHRONOUSLY on every page load, blocking
         // the response for the full duration of the OpenSearch HTTP call.
         // Now it runs at most once per minute and never blocks the user.
-        $this->maybeDispatchFetch();
+        $ingestionStatus = $this->maybeDispatchFetch('live-alerts');
 
         // ── Single-query stats (was 4 separate queries in the view) ──────
         $rawStats = DB::table('alerts')
             ->selectRaw("
-                SUM(status = 'new')          AS new_count,
-                SUM(status = 'acknowledged') AS ack_count,
-                SUM(status = 'ignored')      AS ignored_count,
-                COUNT(*)                     AS total_count
+                SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END)          AS new_count,
+                SUM(CASE WHEN status = 'acknowledged' THEN 1 ELSE 0 END) AS ack_count,
+                SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END)      AS ignored_count,
+                COUNT(*)                                                 AS total_count
             ")
             ->first();
 
         $stats = [
-            'new'     => (int) ($rawStats->new_count     ?? 0),
-            'ack'     => (int) ($rawStats->ack_count     ?? 0),
+            'new' => (int) ($rawStats->new_count ?? 0),
+            'ack' => (int) ($rawStats->ack_count ?? 0),
             'ignored' => (int) ($rawStats->ignored_count ?? 0),
-            'total'   => (int) ($rawStats->total_count   ?? 0),
+            'total' => (int) ($rawStats->total_count ?? 0),
         ];
 
         // ── Alert list with eager-loaded triage users ─────────────────────
         $query = Alert::query()->with(['triages.user']);
 
         // Default: only show active (non-ignored)
-        if (!$request->has('status') || $request->status === '') {
+        if (! $request->has('status') || $request->status === '') {
             $query->where('status', '!=', 'ignored');
         } elseif ($request->status !== 'all') {
             $query->where('status', $request->status);
@@ -77,22 +79,28 @@ class AlertController extends Controller
             $query->where('rule_level', '>=', (int) $request->level);
         }
         if ($request->filled('agent')) {
-            $query->where('agent_name', 'like', '%' . $request->agent . '%');
+            $query->where('agent_name', 'like', '%'.$request->agent.'%');
         }
         if ($request->filled('date_from')) {
-            $query->where('first_seen_at', '>=', $request->date_from . ' 00:00:00');
+            $query->where('first_seen_at', '>=', $request->date_from.' 00:00:00');
         }
         if ($request->filled('date_to')) {
-            $query->where('first_seen_at', '<=', $request->date_to . ' 23:59:59');
+            $query->where('first_seen_at', '<=', $request->date_to.' 23:59:59');
         }
         if ($request->filled('search')) {
+            $rawDataSearch = match (DB::connection()->getDriverName()) {
+                'mysql', 'mariadb' => 'CAST(raw_data AS CHAR) LIKE ?',
+                // PostgreSQL cannot apply LIKE directly to json/jsonb, while
+                // TEXT is also the portable representation on SQLite.
+                default => 'CAST(raw_data AS TEXT) LIKE ?',
+            };
             $terms = collect(preg_split('/\s+/u', trim((string) $request->search), -1, PREG_SPLIT_NO_EMPTY))
                 ->take(8);
 
             foreach ($terms as $term) {
                 $like = "%{$term}%";
 
-                $query->where(function ($q) use ($term, $like) {
+                $query->where(function ($q) use ($term, $like, $rawDataSearch) {
                     $q->where('rule_description', 'like', $like)
                         ->orWhere('src_ip', 'like', $like)
                         ->orWhere('dst_ip', 'like', $like)
@@ -100,7 +108,7 @@ class AlertController extends Controller
                         ->orWhere('rule_id', 'like', $like)
                         ->orWhere('wazuh_alert_id', 'like', $like)
                         ->orWhere('status', 'like', $like)
-                        ->orWhereRaw('CAST(raw_data AS CHAR) LIKE ?', [$like]);
+                        ->orWhereRaw($rawDataSearch, [$like]);
 
                     if (ctype_digit($term)) {
                         $q->orWhere('id', (int) $term);
@@ -114,7 +122,7 @@ class AlertController extends Controller
             : 25;
         $alerts = $query->orderByDesc('first_seen_at')->orderByDesc('id')->paginate($perPage)->withQueryString();
 
-        return view('dashboard.index', compact('alerts', 'stats'));
+        return view('dashboard.index', compact('alerts', 'stats', 'ingestionStatus'));
     }
 
     /* ═══════════════════════════════════════════════════════════════════
@@ -124,6 +132,7 @@ class AlertController extends Controller
     public function show(Alert $alert)
     {
         $alert->load(['triages.user', 'notificationLogs.user', 'latestAiAnalysis']);
+
         return view('alerts.show', compact('alert'));
     }
 
@@ -144,7 +153,7 @@ class AlertController extends Controller
         ]);
         $force = (bool) ($validated['force'] ?? false);
 
-        if (!$force && ($stored = $alert->latestAiAnalysis()->first())) {
+        if (! $force && ($stored = $alert->latestAiAnalysis()->first())) {
             return response()->json([
                 'success' => true,
                 'cached' => true,
@@ -152,7 +161,7 @@ class AlertController extends Controller
             ]);
         }
 
-        if (!$analysis->isConfigured()) {
+        if (! $analysis->isConfigured()) {
             return response()->json([
                 'success' => false,
                 'error' => 'Analisis AI belum dikonfigurasi. Hubungi administrator atau lengkapi konfigurasi pada Settings.',
@@ -163,12 +172,12 @@ class AlertController extends Controller
         if (RateLimiter::tooManyAttempts($rateKey, 3)) {
             return response()->json([
                 'success' => false,
-                'error' => 'Batas analisis alert ini tercapai. Coba kembali dalam ' . RateLimiter::availableIn($rateKey) . ' detik.',
+                'error' => 'Batas analisis alert ini tercapai. Coba kembali dalam '.RateLimiter::availableIn($rateKey).' detik.',
             ], 429);
         }
 
         $lock = Cache::lock("alert-ai-analysis-running:{$alert->id}", 90);
-        if (!$lock->get()) {
+        if (! $lock->get()) {
             return response()->json([
                 'success' => false,
                 'error' => 'Analisis untuk alert ini sedang berjalan.',
@@ -176,7 +185,7 @@ class AlertController extends Controller
         }
 
         try {
-            if (!$force && ($stored = $alert->latestAiAnalysis()->first())) {
+            if (! $force && ($stored = $alert->latestAiAnalysis()->first())) {
                 return response()->json([
                     'success' => true,
                     'cached' => true,
@@ -245,10 +254,11 @@ class AlertController extends Controller
 
     public function newCount()
     {
-        $this->maybeDispatchFetch();
+        $ingestionStatus = $this->maybeDispatchFetch('new-count');
 
         return response()->json([
             'count' => Alert::where('status', 'new')->count(),
+            'ingestion' => $ingestionStatus,
         ]);
     }
 
@@ -262,7 +272,7 @@ class AlertController extends Controller
             ->orderBy('first_seen_at', 'desc')
             ->limit(100)
             ->get(['id', 'rule_description', 'src_ip', 'dst_ip', 'agent_name',
-                   'rule_id', 'rule_level', 'status', 'first_seen_at']);
+                'rule_id', 'rule_level', 'status', 'first_seen_at']);
 
         return response()->json($alerts);
     }
@@ -272,21 +282,13 @@ class AlertController extends Controller
      ═══════════════════════════════════════════════════════════════════*/
 
     /**
-     * Run siem:fetch-alerts at most once per 60 seconds.
-     * Uses a cache lock so concurrent requests don't pile up.
+     * Queue siem:fetch-alerts at most once per 60 seconds.
+     * The OpenSearch request is always executed by a queue worker.
+     *
+     * @return array<string, bool|int|string|null>
      */
-    private function maybeDispatchFetch(): void
+    private function maybeDispatchFetch(string $trigger): array
     {
-        // Atomically claim this minute. The command also holds a shared lock
-        // across dashboard, scheduler and manual requests.
-        if (!Cache::add('siem_fetch_ran', true, now()->addSeconds(60))) {
-            return;
-        }
-
-        try {
-            Artisan::call('siem:fetch-alerts');
-        } catch (\Throwable $e) {
-            Log::error('[SIEM Dashboard] Auto-fetch error: ' . $e->getMessage());
-        }
+        return $this->ingestion->requestLatestFetch($trigger);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Models\Alert;
 use App\Services\OpenSearchService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -18,7 +19,11 @@ class OpenSearchServiceTest extends TestCase
     {
         parent::setUp();
 
-        config(['services.opensearch.fetch_page_delay_ms' => 0]);
+        config([
+            'services.opensearch.fetch_page_delay_ms' => 0,
+            'services.opensearch.pit_enabled' => true,
+            'services.opensearch.pit_tiebreaker_field' => 'id',
+        ]);
     }
 
     public function test_single_fetch_preserves_the_level_filter_and_page_size(): void
@@ -68,6 +73,241 @@ class OpenSearchServiceTest extends TestCase
         $this->assertSame(25, $body['size']);
         $this->assertArrayNotHasKey('aggs', $body);
         $this->assertLowShardConcurrency($history[0]);
+    }
+
+    public function test_incremental_fetch_uses_pit_and_search_after_then_closes_the_latest_snapshot(): void
+    {
+        $timeRange = [
+            'gte' => '2026-09-17T00:00:00+00:00',
+            'lt' => '2026-09-17T01:00:00+00:00',
+        ];
+        $first = $this->hit('incremental-1');
+        $first['sort'] = ['2026-09-17T00:10:00.000Z', 'wazuh-alerts-4.x-2026.09.17', '1758071400.1'];
+        $second = $this->hit('incremental-2');
+        $second['sort'] = ['2026-09-17T00:20:00.000Z', 'wazuh-alerts-4.x-2026.09.17', '1758072000.2'];
+        $history = [];
+        $service = $this->serviceWithQueue([
+            new Response(200, [], '{"pit_id":"pit-opened"}'),
+            $this->page([$first], null, ['pit_id' => 'pit-page-1']),
+            $this->page([$second], null, ['pit_id' => 'pit-page-2']),
+            $this->page([], null, ['pit_id' => 'pit-final']),
+            $this->cleared(),
+        ], $history);
+
+        $batches = iterator_to_array(
+            $service->fetchIncrementalAlertBatches(8, 1, $timeRange),
+            false,
+        );
+
+        $this->assertSame([[$first], [$second]], $batches);
+        $this->assertCount(5, $history);
+
+        $open = $history[0]['request'];
+        parse_str($open->getUri()->getQuery(), $openQuery);
+        $this->assertSame('POST', $open->getMethod());
+        $this->assertSame(
+            '/wazuh-alerts-*2026.09.17/_search/point_in_time',
+            rawurldecode($open->getUri()->getPath()),
+        );
+        $this->assertSame('120s', $openQuery['keep_alive'] ?? null);
+        $this->assertSame('false', $openQuery['allow_partial_pit_creation'] ?? null);
+
+        foreach ([1, 2, 3] as $position) {
+            $request = $history[$position]['request'];
+            $body = json_decode((string) $request->getBody(), true);
+            $this->assertSame('/_search', $request->getUri()->getPath());
+            $this->assertSame(1, $body['size']);
+            $this->assertFalse($body['track_total_hits']);
+            $this->assertSame([
+                ['@timestamp' => ['order' => 'asc', 'unmapped_type' => 'date']],
+                ['_index' => ['order' => 'asc']],
+                ['id' => ['order' => 'asc']],
+            ], $body['sort']);
+            $this->assertSame($timeRange, $body['query']['bool']['filter'][1]['range']['@timestamp']);
+        }
+        $this->assertSame('pit-opened', json_decode((string) $history[1]['request']->getBody(), true)['pit']['id']);
+        $this->assertSame($first['sort'], json_decode((string) $history[2]['request']->getBody(), true)['search_after']);
+        $this->assertSame('pit-page-1', json_decode((string) $history[2]['request']->getBody(), true)['pit']['id']);
+        $this->assertSame($second['sort'], json_decode((string) $history[3]['request']->getBody(), true)['search_after']);
+        $this->assertSame(
+            ['pit-final'],
+            json_decode((string) $history[4]['request']->getBody(), true)['pit_id'],
+        );
+    }
+
+    public function test_incremental_fetch_falls_back_to_a_scroll_before_consuming_hits_when_pit_is_forbidden(): void
+    {
+        $timeRange = [
+            'gte' => '2026-09-17T00:00:00+00:00',
+            'lt' => '2026-09-17T01:00:00+00:00',
+        ];
+        $hit = $this->hit('fallback-alert');
+        $history = [];
+        $service = $this->serviceWithQueue([
+            new Response(403, [], '{"error":"pit permission is intentionally not echoed"}'),
+            $this->page([$hit], 'fallback-cursor'),
+            $this->page([], 'fallback-final-cursor'),
+            $this->cleared(),
+        ], $history, 'tenant-alerts');
+
+        $batches = iterator_to_array(
+            $service->fetchIncrementalAlertBatches(8, 100, $timeRange),
+            false,
+        );
+
+        $this->assertSame([[$hit]], $batches);
+        $this->assertCount(4, $history);
+        $this->assertSame(
+            '/tenant-alerts/_search/point_in_time',
+            $history[0]['request']->getUri()->getPath(),
+        );
+        $this->assertSame('/tenant-alerts/_search', $history[1]['request']->getUri()->getPath());
+        $this->assertClearedCursor($history[3], 'fallback-final-cursor');
+    }
+
+    public function test_incremental_fetch_refuses_pit_without_a_unique_doc_values_tiebreaker(): void
+    {
+        config(['services.opensearch.pit_tiebreaker_field' => '']);
+        $history = [];
+        $service = $this->serviceWithQueue([], $history);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('OPENSEARCH_PIT_TIEBREAKER_FIELD');
+
+        iterator_to_array($service->fetchIncrementalAlertBatches(8, 100, [
+            'gte' => '2026-09-17T00:00:00+00:00',
+            'lt' => '2026-09-17T01:00:00+00:00',
+        ]), false);
+    }
+
+    public function test_incremental_fetch_uses_scroll_by_default_when_pit_is_disabled(): void
+    {
+        config(['services.opensearch.pit_enabled' => false]);
+        $timeRange = [
+            'gte' => '2026-09-17T00:00:00+00:00',
+            'lt' => '2026-09-17T01:00:00+00:00',
+        ];
+        $hit = $this->hit('scroll-default');
+        $history = [];
+        $service = $this->serviceWithQueue([
+            $this->page([$hit], 'cursor-1'),
+            $this->page([], 'cursor-2'),
+            $this->cleared(),
+        ], $history, 'tenant-alerts');
+
+        $this->assertSame(
+            [[$hit]],
+            iterator_to_array($service->fetchIncrementalAlertBatches(8, 100, $timeRange), false),
+        );
+        $this->assertSame('/tenant-alerts/_search', $history[0]['request']->getUri()->getPath());
+        $this->assertClearedCursor($history[2], 'cursor-2');
+    }
+
+    public function test_incremental_fetch_refuses_a_missing_pit_tiebreaker_value(): void
+    {
+        $hit = $this->hit('missing-tiebreaker');
+        $hit['sort'] = [
+            '2026-09-17T00:10:00.000Z',
+            'wazuh-alerts-4.x-2026.09.17',
+            null,
+        ];
+        $history = [];
+        $service = $this->serviceWithQueue([
+            new Response(200, [], '{"pit_id":"pit-opened"}'),
+            $this->page([$hit]),
+            $this->cleared(),
+        ], $history);
+
+        try {
+            iterator_to_array($service->fetchIncrementalAlertBatches(8, 100, [
+                'gte' => '2026-09-17T00:00:00+00:00',
+                'lt' => '2026-09-17T01:00:00+00:00',
+            ]), false);
+
+            $this->fail('A null PIT tiebreaker must fail before the checkpoint can advance.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('tiebreaker PIT', $exception->getMessage());
+        }
+
+        $this->assertCount(3, $history);
+        $this->assertSame('DELETE', $history[2]['request']->getMethod());
+        $this->assertSame('/_search/point_in_time', $history[2]['request']->getUri()->getPath());
+        $this->assertSame(
+            ['pit-opened'],
+            json_decode((string) $history[2]['request']->getBody(), true)['pit_id'],
+        );
+    }
+
+    public function test_incremental_fetch_rejects_and_closes_a_partial_pit(): void
+    {
+        $history = [];
+        $service = $this->serviceWithQueue([
+            new Response(200, [], json_encode([
+                'pit_id' => 'partial-pit',
+                '_shards' => [
+                    'total' => 3,
+                    'successful' => 2,
+                    'failed' => 1,
+                ],
+            ], JSON_THROW_ON_ERROR)),
+            $this->cleared(),
+        ], $history);
+
+        try {
+            iterator_to_array($service->fetchIncrementalAlertBatches(8, 100, [
+                'gte' => '2026-09-17T00:00:00+00:00',
+                'lt' => '2026-09-17T01:00:00+00:00',
+            ]), false);
+            $this->fail('A partial PIT must never be used for checkpointed ingestion.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('shard', $exception->getMessage());
+        }
+
+        $this->assertCount(2, $history);
+        $this->assertSame(
+            ['partial-pit'],
+            json_decode((string) $history[1]['request']->getBody(), true)['pit_id'],
+        );
+    }
+
+    public function test_parse_hit_records_the_cluster_index_and_document_identity(): void
+    {
+        config(['services.opensearch.source_cluster' => 'wazuh-dr']);
+        $hit = $this->hit('same-id');
+        $hit['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+
+        $parsed = OpenSearchService::parseHit($hit);
+
+        $this->assertSame('same-id', $parsed['wazuh_alert_id']);
+        $this->assertSame('wazuh-dr', $parsed['source_cluster']);
+        $this->assertSame('wazuh-alerts-4.x-2026.09.17', $parsed['source_index']);
+        $this->assertSame('same-id', $parsed['source_id']);
+        $this->assertSame(
+            Alert::sourceIdentityHash('wazuh-dr', 'wazuh-alerts-4.x-2026.09.17', 'same-id'),
+            $parsed['source_identity_hash'],
+        );
+    }
+
+    public function test_parse_hit_rejects_a_document_id_larger_than_512_bytes(): void
+    {
+        $hit = $this->hit(str_repeat('x', 513));
+        $hit['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('1-512 byte');
+
+        OpenSearchService::parseHit($hit);
+    }
+
+    public function test_parse_hit_normalizes_the_event_timestamp_to_utc(): void
+    {
+        $hit = $this->hit('timezone-alert');
+        $hit['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+        $hit['_source']['@timestamp'] = '2026-09-17T07:00:00+07:00';
+
+        $parsed = OpenSearchService::parseHit($hit);
+
+        $this->assertSame('2026-09-17 00:00:00', $parsed['first_seen_at']);
     }
 
     public function test_scroll_keeps_equal_timestamps_and_continues_short_pages_until_empty(): void
@@ -719,8 +959,7 @@ class OpenSearchServiceTest extends TestCase
         int $minLevel,
         ?array $after = null,
         ?array $timeRange = null,
-    ): void
-    {
+    ): void {
         $request = $transaction['request'];
         parse_str($request->getUri()->getQuery(), $parameters);
         $body = json_decode((string) $request->getBody(), true);

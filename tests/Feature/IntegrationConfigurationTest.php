@@ -139,10 +139,14 @@ class IntegrationConfigurationTest extends TestCase
             Configuration::set('min_alert_level', $savedLevel);
         }
         $this->mock(OpenSearchService::class, function (MockInterface $service) use ($savedLevel): void {
-            $service->shouldReceive('fetchAlerts')->once()->with($savedLevel ?? 5, 17, [
+            $service->shouldReceive('fetchIncrementalAlertBatches')->once()->with($savedLevel ?? 5, 17, [
                 'gte' => '2026-09-16T17:00:00+00:00',
-                'lt' => '2026-09-17T17:00:00+00:00',
-            ])->andReturn([]);
+                'lt' => '2026-09-17T03:00:00+00:00',
+            ])->andReturn((function (): \Generator {
+                if (false) {
+                    yield [];
+                }
+            })());
         });
 
         $this->artisan('siem:fetch-alerts')->assertSuccessful();

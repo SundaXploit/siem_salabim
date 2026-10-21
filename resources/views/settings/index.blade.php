@@ -211,7 +211,9 @@
                     </thead>
                     <tbody x-data="{ editingUser: @js((int) old('_editing_user', 0)) }">
                         @foreach($users as $user)
-                        @php($editingOldUser = (int) old('_editing_user', 0) === $user->id)
+                        @php
+                            $editingOldUser = (int) old('_editing_user', 0) === $user->id;
+                        @endphp
                         <tr>
                             <td class="settings-user-name">{{ $user->name }}</td>
                             <td class="settings-user-email">{{ $user->email }}</td>
@@ -325,16 +327,172 @@
     </div>
 
     {{-- ─── Data Management ─────────────────────────────────── --}}
+    @php
+        $initialReleaseState = $latestRelease ?? [
+            'state' => 'unchecked',
+            'current_version' => $applicationVersion,
+            'latest_version' => null,
+            'update_available' => false,
+            'message' => 'Klik Periksa versi untuk membaca GitHub Release resmi terbaru.',
+            'release_url' => null,
+            'releases_url' => config('application_updates.releases_url'),
+        ];
+        $activeApplicationUpdate = $applicationUpdates
+            ->first(fn ($update) => in_array($update->status, ['queued', 'running'], true));
+    @endphp
+    <div
+        class="card settings-update-card"
+        x-data="applicationUpdatePanel(
+            @js($initialReleaseState),
+            @js(route('settings.application-updates.check')),
+            @js(route('settings.application-updates.status', ['applicationUpdate' => '__UPDATE__'])),
+            @js($activeApplicationUpdate?->id)
+        )"
+    >
+        <div class="card-header">
+            <div>
+                <span class="card-title"><i data-lucide="package-check" aria-hidden="true"></i> Versi &amp; update aplikasi</span>
+                <p class="settings-card-caption">Hanya GitHub Release stabil dari repository resmi yang diterima.</p>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm ml-auto" @click="checkVersion()" :disabled="checking">
+                <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                <span x-text="checking ? 'Memeriksa...' : 'Periksa versi'">Periksa versi</span>
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="grid-2" style="margin-bottom:1rem;">
+                <div>
+                    <div class="text-muted text-sm">Versi terpasang</div>
+                    <div style="font-size:1.2rem; font-weight:700;">v{{ $applicationVersion }}</div>
+                </div>
+                <div>
+                    <div class="text-muted text-sm">Rilis stabil terbaru</div>
+                    <div style="font-size:1.2rem; font-weight:700;" x-text="latestVersion ? 'v' + latestVersion : 'Belum diperiksa'"></div>
+                </div>
+            </div>
+
+            <div class="alert-msg" :class="error ? 'error' : (state === 'update_available' ? 'success' : '')" style="margin-bottom:1rem;">
+                <span x-text="error || message"></span>
+                <a
+                    x-show="releaseUrl || releasesUrl"
+                    :href="releaseUrl || releasesUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style="margin-left:auto;"
+                >Lihat release</a>
+            </div>
+
+            @if(!$applicationUpdateEnabled || !$applicationUpdateBackupConfirmed || !$applicationUpdateQueueReady)
+                <div class="alert-msg error" style="margin-bottom:1rem;">
+                    <div>
+                        <strong>Self-update belum siap dijalankan.</strong>
+                        <ul class="form-error">
+                            @unless($applicationUpdateEnabled)
+                                <li>Aktifkan <code>SIEM_SELF_UPDATE_ENABLED=true</code> pada server.</li>
+                            @endunless
+                            @unless($applicationUpdateBackupConfirmed)
+                                <li>Buat backup penuh yang dapat dipulihkan, lalu aktifkan <code>SIEM_UPDATE_BACKUP_CONFIRMED=true</code>.</li>
+                            @endunless
+                            @unless($applicationUpdateQueueReady)
+                                <li>Gunakan queue asynchronous dan jalankan worker khusus <code>--queue=updates</code>.</li>
+                            @endunless
+                        </ul>
+                    </div>
+                </div>
+            @endif
+
+            <div x-show="activeMessage" class="alert-msg" style="margin-bottom:1rem;" x-cloak>
+                <span x-text="activeMessage"></span>
+            </div>
+
+            <form
+                method="POST"
+                action="{{ route('settings.application-updates.store') }}"
+                x-show="state === 'update_available'"
+                x-cloak
+                onsubmit="return confirm('Antrekan update aplikasi? Aplikasi akan masuk maintenance mode ketika worker mulai memasang release.')"
+            >
+                @csrf
+                <input type="hidden" name="target_version" :value="latestVersion">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label class="form-label" for="update-confirmation">Frasa konfirmasi</label>
+                        <input
+                            id="update-confirmation"
+                            type="text"
+                            name="confirmation"
+                            class="form-input"
+                            :placeholder="'UPDATE v' + latestVersion"
+                            required
+                            autocomplete="off"
+                        >
+                        <p class="settings-field-help">Ketik tepat <code x-text="'UPDATE v' + latestVersion"></code>.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="update-current-password">Konfirmasi password admin</label>
+                        <input id="update-current-password" type="password" name="current_password" class="form-input" required autocomplete="current-password">
+                    </div>
+                </div>
+                <label style="display:flex; gap:0.6rem; align-items:flex-start; margin-bottom:1rem;">
+                    <input type="checkbox" name="backup_acknowledged" value="1" required style="margin-top:0.2rem;">
+                    <span class="text-sm">Saya sudah menguji backup penuh aplikasi dan database serta memahami bahwa kegagalan setelah migrasi memerlukan pemulihan manual.</span>
+                </label>
+                <button
+                    type="submit"
+                    class="btn settings-submit settings-submit-inline"
+                    @disabled(!$applicationUpdateEnabled || !$applicationUpdateBackupConfirmed || !$applicationUpdateQueueReady)
+                >
+                    <i data-lucide="download-cloud" aria-hidden="true"></i> Antrekan update terverifikasi
+                </button>
+            </form>
+
+            <div style="margin-top:1.5rem; overflow-x:auto;">
+                <div style="font-weight:600; margin-bottom:0.6rem;">Riwayat update</div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Waktu</th>
+                            <th>Versi</th>
+                            <th>Status / fase</th>
+                            <th>Requester</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($applicationUpdates as $update)
+                            <tr>
+                                <td>{{ $update->created_at?->format('d/m/Y H:i') }}</td>
+                                <td>v{{ $update->from_version }} &rarr; v{{ $update->target_version }}</td>
+                                <td>
+                                    <span class="badge {{ $update->status === 'succeeded' ? 'badge-acknowledged' : (in_array($update->status, ['failed', 'recovery_required'], true) ? 'badge-new' : 'badge-ignored') }}">
+                                        {{ str_replace('_', ' ', $update->status) }}
+                                    </span>
+                                    <div class="text-muted text-sm" style="margin-top:0.3rem;">{{ str_replace('_', ' ', $update->phase) }}</div>
+                                    @if($update->error_message)
+                                        <div class="text-muted text-sm">{{ $update->error_message }}</div>
+                                    @endif
+                                </td>
+                                <td>{{ $update->requested_by_name }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="4" class="text-muted">Belum ada update yang dijalankan.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <div class="card settings-data-card" x-data="dataManagement()">
         <div class="card-header">
             <span class="card-title"><i data-lucide="archive" aria-hidden="true"></i> Manajemen data</span>
-            <span class="text-muted text-sm ml-auto">Backup & hapus data sesuai kebutuhan</span>
+            <span class="text-muted text-sm ml-auto">Ekspor terverifikasi sebelum purge</span>
         </div>
         <div class="card-body">
 
             {{-- Alert preview --}}
             <div x-show="previewCount !== null" class="alert-msg success" style="margin-bottom:1rem;" x-cloak>
                 Estimasi: <strong x-text="previewCount"></strong> alert yang akan terpengaruh
+                <span x-show="previewAiAnalyses !== null">, <strong x-text="previewAiAnalyses"></strong> analisis AI</span>
                 <span x-show="previewTriages !== null">, <strong x-text="previewTriages"></strong> triage</span>
                 <span x-show="previewLogs !== null">, <strong x-text="previewLogs"></strong> log notifikasi</span>
             </div>
@@ -407,9 +565,8 @@
                 </div>
             </div>
 
-            {{-- ── Action Buttons ── --}}
+            {{-- ── Safe export action ── --}}
             <div class="settings-data-actions">
-                {{-- Backup --}}
                 <form method="POST" action="{{ route('settings.data.backup') }}" x-ref="backupForm">
                     @csrf
                     <input type="hidden" name="format" :value="format">
@@ -420,43 +577,95 @@
                     <input type="hidden" name="date_from" :value="periodMode==='range' ? dateFrom : ''">
                     <input type="hidden" name="date_to" :value="periodMode==='range' ? dateTo : ''">
                     <button type="submit" class="btn settings-action-quiet" @click.prevent="submitAction('backup')" :disabled="!hasValidPeriod()">
-                        <i data-lucide="download" aria-hidden="true"></i> Backup saja
-                    </button>
-                </form>
-
-                {{-- Delete --}}
-                <form method="POST" action="{{ route('settings.data.delete') }}" x-ref="deleteForm">
-                    @csrf
-                    <input type="hidden" name="scope" :value="scope">
-                    <input type="hidden" name="period_mode" :value="periodMode">
-                    <input type="hidden" name="amount" :value="periodMode==='relative' ? amount : ''">
-                    <input type="hidden" name="unit" :value="periodMode==='relative' ? unit : ''">
-                    <input type="hidden" name="date_from" :value="periodMode==='range' ? dateFrom : ''">
-                    <input type="hidden" name="date_to" :value="periodMode==='range' ? dateTo : ''">
-                    <button type="submit" class="btn settings-action-quiet is-danger" @click.prevent="submitAction('delete')" :disabled="!hasValidPeriod()">
-                        <i data-lucide="trash-2" aria-hidden="true"></i> Hapus saja
-                    </button>
-                </form>
-
-                {{-- Backup + Delete --}}
-                <form method="POST" action="{{ route('settings.data.backup-delete') }}" x-ref="backupDeleteForm">
-                    @csrf
-                    <input type="hidden" name="format" :value="format">
-                    <input type="hidden" name="scope" :value="scope">
-                    <input type="hidden" name="period_mode" :value="periodMode">
-                    <input type="hidden" name="amount" :value="periodMode==='relative' ? amount : ''">
-                    <input type="hidden" name="unit" :value="periodMode==='relative' ? unit : ''">
-                    <input type="hidden" name="date_from" :value="periodMode==='range' ? dateFrom : ''">
-                    <input type="hidden" name="date_to" :value="periodMode==='range' ? dateTo : ''">
-                    <button type="submit" class="btn settings-action-quiet" @click.prevent="submitAction('backup-delete')" :disabled="!hasValidPeriod()">
-                        <i data-lucide="archive" aria-hidden="true"></i> Backup + hapus
+                        <i data-lucide="archive" aria-hidden="true"></i> Buat backup terverifikasi
                     </button>
                 </form>
             </div>
 
             <p class="text-muted text-sm" style="margin-top:0.75rem;">
-                "Hapus" bersifat <strong style="color:var(--danger);">permanen</strong>. Gunakan "Backup + Hapus" untuk arsip sebelum menghapus.
+                Ekspor dibuat oleh queue secara bertahap ke storage privat. Purge baru tersedia setelah ukuran, jumlah record, manifest, dan SHA-256 arsip terverifikasi. Storage lokal berada di luar web root; enkripsi at-rest harus disediakan oleh volume terenkripsi atau konfigurasi bucket privat.
             </p>
+
+            <div style="margin-top:1.5rem; overflow-x:auto;">
+                <div style="font-weight:600; margin-bottom:0.6rem;">20 ekspor terbaru</div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Dibuat</th>
+                            <th>Scope / periode</th>
+                            <th>Status</th>
+                            <th>Integritas</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($dataExports as $export)
+                            @php
+                                $statusLabel = match($export->status) {
+                                    'queued' => 'Antrean',
+                                    'running' => 'Mengekspor',
+                                    'verified' => 'Terverifikasi',
+                                    'failed' => 'Gagal',
+                                    default => $export->status,
+                                };
+                                $purgeLabel = match($export->purge_status) {
+                                    'queued' => 'Purge antrean',
+                                    'running' => 'Purge berjalan',
+                                    'completed' => 'Sudah dipurge',
+                                    'failed' => 'Purge dibatalkan',
+                                    default => null,
+                                };
+                            @endphp
+                            <tr>
+                                <td>
+                                    {{ $export->created_at?->format('d/m/Y H:i') }}
+                                    <div class="text-muted text-sm">{{ $export->requested_by_name }}</div>
+                                </td>
+                                <td>
+                                    <strong>{{ $export->scope }}</strong> · {{ strtoupper($export->format) }}
+                                    <div class="text-muted text-sm">{{ $export->period_label }}</div>
+                                </td>
+                                <td>
+                                    <span class="badge {{ $export->status === 'verified' ? 'badge-acknowledged' : ($export->status === 'failed' ? 'badge-new' : 'badge-ignored') }}">{{ $statusLabel }}</span>
+                                    @if($purgeLabel)
+                                        <div class="text-muted text-sm" style="margin-top:0.3rem;">{{ $purgeLabel }}</div>
+                                    @endif
+                                    @if($export->error_message)
+                                        <div class="text-muted text-sm" style="margin-top:0.3rem;">{{ $export->error_message }}</div>
+                                    @endif
+                                </td>
+                                <td class="text-sm">
+                                    @if($export->checksum)
+                                        SHA-256 <code title="{{ $export->checksum }}">{{ substr($export->checksum, 0, 12) }}…</code>
+                                        <div class="text-muted">{{ number_format(($export->file_size ?? 0) / 1024, 1) }} KiB</div>
+                                    @else
+                                        <span class="text-muted">Belum tersedia</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                                        @if($export->isVerified())
+                                            <a class="btn btn-ghost btn-sm" href="{{ route('settings.data.exports.download', $export) }}">
+                                                <i data-lucide="download" aria-hidden="true"></i> Unduh
+                                            </a>
+                                        @endif
+                                        @if($export->isVerified() && in_array($export->purge_status, [null, 'failed'], true))
+                                            <form method="POST" action="{{ route('settings.data.exports.purge', $export) }}" onsubmit="return confirm('Verifikasi ulang lalu purge data persis dari backup ini? Tindakan ini permanen.')">
+                                                @csrf
+                                                <button class="btn btn-ghost btn-sm" type="submit" style="color:var(--danger);">
+                                                    <i data-lucide="trash-2" aria-hidden="true"></i> Purge
+                                                </button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="5" class="text-muted">Belum ada ekspor.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -494,6 +703,79 @@ function settingsPage() {
     }
 }
 
+function applicationUpdatePanel(initial, checkUrl, statusUrlTemplate, activeId) {
+    return {
+        state: initial?.state ?? 'unchecked',
+        latestVersion: initial?.latest_version ?? null,
+        message: initial?.message ?? 'Klik Periksa versi untuk membaca release terbaru.',
+        releaseUrl: initial?.release_url ?? null,
+        releasesUrl: initial?.releases_url ?? null,
+        checking: false,
+        error: null,
+        activeId,
+        activeMessage: activeId ? 'Update berada dalam antrean. Menunggu status worker...' : null,
+        pollTimer: null,
+
+        init() {
+            if (!this.activeId) return;
+            this.pollStatus();
+            this.pollTimer = window.setInterval(() => this.pollStatus(), 5000);
+        },
+
+        async checkVersion() {
+            this.checking = true;
+            this.error = null;
+            try {
+                const response = await fetch(checkUrl, {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.message || 'Pemeriksaan versi gagal.');
+                }
+
+                this.state = data.state;
+                this.latestVersion = data.latest_version;
+                this.message = data.message;
+                this.releaseUrl = data.release_url ?? null;
+                this.releasesUrl = data.releases_url ?? this.releasesUrl;
+            } catch (error) {
+                this.error = error.message || 'Pemeriksaan versi gagal.';
+            } finally {
+                this.checking = false;
+            }
+        },
+
+        async pollStatus() {
+            if (!this.activeId) return;
+            try {
+                const url = statusUrlTemplate.replace('__UPDATE__', String(this.activeId));
+                const response = await fetch(url, {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    // A 503 is expected while Laravel maintenance mode is active.
+                    this.activeMessage = 'Update sedang berjalan; aplikasi mungkin sementara berada dalam maintenance mode.';
+                    return;
+                }
+
+                const data = await response.json();
+                this.activeMessage = `Update v${data.target_version}: ${String(data.phase).replaceAll('_', ' ')} (${String(data.status).replaceAll('_', ' ')}).`;
+                if (['succeeded', 'failed', 'recovery_required'].includes(data.status)) {
+                    window.clearInterval(this.pollTimer);
+                    this.pollTimer = null;
+                    if (data.error_message) this.activeMessage += ` ${data.error_message}`;
+                    window.setTimeout(() => window.location.reload(), 1500);
+                }
+            } catch (error) {
+                this.activeMessage = 'Koneksi terputus sementara saat update; pemantauan akan dicoba kembali.';
+            }
+        },
+    };
+}
+
 function dataManagement() {
     return {
         format: 'json',
@@ -504,12 +786,14 @@ function dataManagement() {
         dateFrom: '',
         dateTo: '',
         previewCount: null,
+        previewAiAnalyses: null,
         previewTriages: null,
         previewLogs: null,
         previewError: null,
 
         resetPreview() {
             this.previewCount = null;
+            this.previewAiAnalyses = null;
             this.previewTriages = null;
             this.previewLogs = null;
             this.previewError = null;
@@ -553,9 +837,10 @@ function dataManagement() {
                     this.previewError = data.error ?? data.message ?? Object.values(data.errors ?? {}).flat().join(' ') ?? 'Preview tidak dapat dijalankan.';
                     return;
                 }
-                this.previewCount   = data.counts.alerts   ?? 0;
-                this.previewTriages = data.counts.triages   ?? null;
-                this.previewLogs    = data.counts.notif_logs ?? null;
+                this.previewCount       = data.counts.alerts ?? 0;
+                this.previewAiAnalyses = data.counts.alert_ai_analyses ?? null;
+                this.previewTriages     = data.counts.triages ?? null;
+                this.previewLogs        = data.counts.notif_logs ?? null;
             } catch(e) {
                 this.previewError = e.message || 'Preview tidak dapat dijalankan.';
             }
@@ -568,15 +853,11 @@ function dataManagement() {
             }
 
             const confirmMsg = {
-                delete:          `Hapus data ${this.scope} untuk periode ${this.periodLabel()}? Tindakan ini tidak bisa dibatalkan.`,
-                backup:          `Unduh backup data ${this.scope} untuk periode ${this.periodLabel()}?`,
-                'backup-delete': `Backup lalu hapus data ${this.scope} untuk periode ${this.periodLabel()}? Data akan hilang permanen.`,
+                backup: `Antrekan backup ${this.scope} untuk periode ${this.periodLabel()}?`,
             }[action];
             if (!confirm(confirmMsg)) return;
             const formRef = {
-                backup:          this.$refs.backupForm,
-                delete:          this.$refs.deleteForm,
-                'backup-delete': this.$refs.backupDeleteForm,
+                backup: this.$refs.backupForm,
             }[action];
             if (formRef) formRef.submit();
         }

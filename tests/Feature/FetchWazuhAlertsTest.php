@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\FetchWazuhAlerts as FetchWazuhAlertsCommand;
 use App\Models\Alert;
 use App\Models\Configuration;
-use App\Models\User;
+use App\Models\IngestionCheckpoint;
+use App\Services\ApplicationUpdateRuntimeGuard;
 use App\Services\OpenSearchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -55,7 +57,7 @@ class FetchWazuhAlertsTest extends TestCase
         $this->assertSame(100, Alert::where('rule_description', 'Previously imported description')->count());
     }
 
-    public function test_manual_fetch_checks_all_of_today_after_100_existing_alerts(): void
+    public function test_today_fetch_checks_all_of_today_after_100_existing_alerts(): void
     {
         Configuration::set('min_alert_level', 12);
         $this->travelTo(Carbon::parse('2026-09-16T17:30:00Z'));
@@ -72,12 +74,9 @@ class FetchWazuhAlertsTest extends TestCase
             'lt' => '2026-09-17T17:00:00+00:00',
         ]);
 
-        $this->actingAs(User::factory()->create(['role' => 'admin']))
-            ->post(route('settings.fetch-now'))
-            ->assertRedirect(route('settings.index'))
-            ->assertSessionHas('success', fn (string $message) =>
-                str_contains($message, '[SIEM] Done. New: 1, Skipped (already exists): 100')
-            );
+        $this->artisan('siem:fetch-alerts', ['--today' => true])
+            ->expectsOutput('[SIEM] Done. New: 1, Skipped (already exists): 100')
+            ->assertSuccessful();
 
         $this->assertDatabaseHas('alerts', ['wazuh_alert_id' => 'manual-unseen']);
         $this->assertDatabaseCount('alerts', 101);
@@ -123,7 +122,110 @@ class FetchWazuhAlertsTest extends TestCase
         ];
     }
 
-    public function test_default_fetch_reads_only_the_latest_alerts_in_the_current_jakarta_day(): void
+    public function test_reconciliation_uses_jakarta_calendar_days_and_imports_late_alert_without_advancing_checkpoint(): void
+    {
+        config([
+            'app.timezone' => 'UTC',
+            'services.opensearch.fetch_overlap_seconds' => 900,
+        ]);
+        Configuration::set('min_alert_level', 12);
+        $this->travelTo(Carbon::parse('2026-09-17T10:00:00Z'));
+
+        $checkpointCursor = '2026-09-17T09:59:00+00:00';
+        $checkpointCompleted = '2026-09-17T09:59:30+00:00';
+        IngestionCheckpoint::create([
+            'stream_key' => hash('sha256', "wazuh-primary\0wazuh-alerts-*\0".'12'),
+            'source_cluster' => 'wazuh-primary',
+            'source_index' => 'wazuh-alerts-*',
+            'min_level' => 12,
+            'cursor_at' => $checkpointCursor,
+            'last_completed_at' => $checkpointCompleted,
+        ]);
+
+        $late = $this->hit('late-beyond-incremental-overlap');
+        $late['_index'] = 'wazuh-alerts-4.x-2026.09.15';
+        $late['_source']['@timestamp'] = '2026-09-15T00:00:00.000Z';
+        $this->mockReconciliationBatches([[$late]], [
+            'gte' => '2026-09-14T17:00:00+00:00',
+            'lt' => '2026-09-17T17:00:00+00:00',
+        ]);
+
+        $this->artisan('siem:fetch-alerts', ['--lookback-days' => '3'])
+            ->expectsOutput('[SIEM] Rekonsiliasi 3 hari kalender Asia/Jakarta: 2026-09-14T17:00:00+00:00 sampai sebelum 2026-09-17T17:00:00+00:00.')
+            ->expectsOutput('[SIEM] Done. New: 1, Skipped (already exists): 0')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('alerts', [
+            'wazuh_alert_id' => 'late-beyond-incremental-overlap',
+            'source_index' => 'wazuh-alerts-4.x-2026.09.15',
+            'first_seen_at' => '2026-09-15 00:00:00',
+        ]);
+        $checkpoint = IngestionCheckpoint::query()->sole();
+        $this->assertSame($checkpointCursor, $checkpoint->cursor_at->utc()->toIso8601String());
+        $this->assertSame($checkpointCompleted, $checkpoint->last_completed_at->utc()->toIso8601String());
+    }
+
+    #[DataProvider('invalidLookbackDays')]
+    public function test_reconciliation_rejects_lookback_outside_two_to_thirty_days(string $lookbackDays): void
+    {
+        $this->mock(OpenSearchService::class, function (MockInterface $service): void {
+            $service->shouldNotReceive('fetchAlerts');
+            $service->shouldNotReceive('fetchAlertBatches');
+            $service->shouldNotReceive('fetchIncrementalAlertBatches');
+        });
+
+        $this->artisan('siem:fetch-alerts', ['--lookback-days' => $lookbackDays])
+            ->expectsOutput('[SIEM] --lookback-days harus berupa angka 2-30.')
+            ->assertExitCode(FetchWazuhAlertsCommand::INVALID);
+
+        $this->assertDatabaseCount('alerts', 0);
+        $this->assertDatabaseCount('ingestion_checkpoints', 0);
+        $this->assertFetchLockIsAvailable();
+    }
+
+    public static function invalidLookbackDays(): iterable
+    {
+        yield 'below minimum' => ['1'];
+        yield 'above maximum' => ['31'];
+        yield 'not an integer' => ['2.5'];
+        yield 'not numeric' => ['three'];
+    }
+
+    #[DataProvider('conflictingFetchModes')]
+    public function test_reconciliation_rejects_conflicting_fetch_modes(array $options): void
+    {
+        $this->mock(OpenSearchService::class, function (MockInterface $service): void {
+            $service->shouldNotReceive('fetchAlerts');
+            $service->shouldNotReceive('fetchAlertBatches');
+            $service->shouldNotReceive('fetchIncrementalAlertBatches');
+        });
+
+        $this->artisan('siem:fetch-alerts', $options)
+            ->expectsOutput('[SIEM] Pilih hanya satu mode: --today, --lookback-days, atau --all.')
+            ->assertExitCode(FetchWazuhAlertsCommand::INVALID);
+
+        $this->assertDatabaseCount('alerts', 0);
+        $this->assertDatabaseCount('ingestion_checkpoints', 0);
+        $this->assertFetchLockIsAvailable();
+    }
+
+    public static function conflictingFetchModes(): iterable
+    {
+        yield 'today and reconciliation' => [[
+            '--today' => true,
+            '--lookback-days' => '2',
+        ]];
+        yield 'archive and reconciliation' => [[
+            '--all' => true,
+            '--lookback-days' => '30',
+        ]];
+        yield 'today and archive' => [[
+            '--today' => true,
+            '--all' => true,
+        ]];
+    }
+
+    public function test_default_fetch_scans_a_fixed_incremental_window_and_saves_its_checkpoint(): void
     {
         config(['app.timezone' => 'UTC']);
         $this->travelTo(Carbon::parse('2026-09-16T17:30:00Z'));
@@ -131,15 +233,16 @@ class FetchWazuhAlertsTest extends TestCase
         $hit = $this->hit('default-fetch');
 
         $this->mock(OpenSearchService::class, function (MockInterface $service) use ($hit): void {
-            $service->shouldReceive('fetchAlerts')->once()->with(7, 100, [
+            $service->shouldReceive('fetchIncrementalAlertBatches')->once()->with(7, 100, [
                 'gte' => '2026-09-16T17:00:00+00:00',
-                'lt' => '2026-09-17T17:00:00+00:00',
-            ])->andReturnUsing(function () use ($hit): array {
+                'lt' => '2026-09-16T17:30:00+00:00',
+            ])->andReturnUsing(function () use ($hit): \Generator {
                 $competingLock = Cache::lock('siem_fetch_running', 600);
                 $this->assertFalse($competingLock->get(), 'The fetch lock must cover the OpenSearch request.');
 
-                return [$hit];
+                yield [$hit];
             });
+            $service->shouldNotReceive('fetchAlerts');
             $service->shouldNotReceive('fetchAlertBatches');
         });
 
@@ -148,7 +251,167 @@ class FetchWazuhAlertsTest extends TestCase
             ->assertSuccessful();
 
         $this->assertDatabaseHas('alerts', ['wazuh_alert_id' => 'default-fetch']);
+        $this->assertDatabaseHas('ingestion_checkpoints', [
+            'source_cluster' => 'wazuh-primary',
+            'source_index' => 'wazuh-alerts-*',
+            'min_level' => 7,
+        ]);
+        $this->assertSame(
+            '2026-09-16T17:30:00+00:00',
+            IngestionCheckpoint::sole()->cursor_at->utc()->toIso8601String(),
+        );
         $this->assertFetchLockIsAvailable();
+    }
+
+    public function test_incremental_fetch_replays_overlap_and_deduplicates_late_arrivals(): void
+    {
+        config(['services.opensearch.fetch_overlap_seconds' => 600]);
+        Configuration::set('min_alert_level', 12);
+        $this->travelTo(Carbon::parse('2026-09-17T03:00:00Z'));
+
+        $first = $this->hit('on-time');
+        $first['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+        $this->mockIncrementalBatches([[$first]], [
+            'gte' => '2026-09-16T17:00:00+00:00',
+            'lt' => '2026-09-17T03:00:00+00:00',
+        ]);
+        $this->artisan('siem:fetch-alerts')->assertSuccessful();
+
+        $this->travel(60)->seconds();
+        $late = $this->hit('late-arrival');
+        $late['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+        $late['_source']['@timestamp'] = '2026-09-17T02:55:00.000Z';
+        $this->mockIncrementalBatches([[$first, $late]], [
+            'gte' => '2026-09-17T02:50:00+00:00',
+            'lt' => '2026-09-17T03:01:00+00:00',
+        ]);
+        $this->artisan('siem:fetch-alerts')
+            ->expectsOutput('[SIEM] Done. New: 1, Skipped (already exists): 1')
+            ->assertSuccessful();
+
+        $this->assertDatabaseCount('alerts', 2);
+        $this->assertDatabaseHas('alerts', ['wazuh_alert_id' => 'late-arrival']);
+        $this->assertSame(
+            '2026-09-17T03:01:00+00:00',
+            IngestionCheckpoint::sole()->cursor_at->utc()->toIso8601String(),
+        );
+    }
+
+    public function test_incremental_failure_keeps_the_old_checkpoint_and_replays_saved_rows_next_time(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        $this->travelTo(Carbon::parse('2026-09-17T03:00:00Z'));
+        $this->mockIncrementalBatches([], [
+            'gte' => '2026-09-16T17:00:00+00:00',
+            'lt' => '2026-09-17T03:00:00+00:00',
+        ]);
+        $this->artisan('siem:fetch-alerts')->assertSuccessful();
+
+        $this->travel(60)->seconds();
+        $hit = $this->hit('saved-before-incremental-failure');
+        $pages = (function () use ($hit): \Generator {
+            yield [$hit];
+
+            throw new \RuntimeException('Incremental page failed.');
+        })();
+        $this->mock(OpenSearchService::class, function (MockInterface $service) use ($pages): void {
+            $service->shouldReceive('fetchIncrementalAlertBatches')->once()->with(12, 100, [
+                'gte' => '2026-09-17T02:45:00+00:00',
+                'lt' => '2026-09-17T03:01:00+00:00',
+            ])->andReturn($pages);
+        });
+
+        $this->artisan('siem:fetch-alerts')
+            ->expectsOutput('[SIEM] Fetch gagal: Incremental page failed.')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseHas('alerts', ['wazuh_alert_id' => 'saved-before-incremental-failure']);
+        $this->assertSame(
+            '2026-09-17T03:00:00+00:00',
+            IngestionCheckpoint::sole()->cursor_at->utc()->toIso8601String(),
+        );
+    }
+
+    public function test_same_document_id_from_different_indices_is_stored_once_per_source(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        $first = $this->hit('shared-document-id');
+        $first['_index'] = 'wazuh-alerts-4.x-2026.09.16';
+        $second = $this->hit('shared-document-id');
+        $second['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+        $this->mockBatches([[$first, $second, $first]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])
+            ->expectsOutput('[SIEM] Done. New: 2, Skipped (already exists): 1')
+            ->assertSuccessful();
+
+        $this->assertDatabaseCount('alerts', 2);
+        $this->assertSame(
+            ['wazuh-alerts-4.x-2026.09.16', 'wazuh-alerts-4.x-2026.09.17'],
+            Alert::query()->orderBy('source_index')->pluck('source_index')->all(),
+        );
+    }
+
+    public function test_document_ids_that_differ_only_by_case_remain_distinct(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        $upper = $this->hit('Case-Sensitive-Document-ID');
+        $lower = $this->hit('case-sensitive-document-id');
+        $this->mockBatches([[$upper, $lower, $upper]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])
+            ->expectsOutput('[SIEM] Done. New: 2, Skipped (already exists): 1')
+            ->assertSuccessful();
+
+        $alerts = Alert::query()->orderBy('wazuh_alert_id')->get();
+        $this->assertCount(2, $alerts);
+        $this->assertNotSame($alerts[0]->source_identity_hash, $alerts[1]->source_identity_hash);
+        $this->assertSame(
+            ['Case-Sensitive-Document-ID', 'case-sensitive-document-id'],
+            $alerts->pluck('wazuh_alert_id')->all(),
+        );
+    }
+
+    public function test_import_accepts_the_opensearch_maximum_512_byte_document_id(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        $documentId = str_repeat('x', 512);
+        $this->mockBatches([[$this->hit($documentId)]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])
+            ->expectsOutput('[SIEM] Done. New: 1, Skipped (already exists): 0')
+            ->assertSuccessful();
+
+        $alert = Alert::query()->sole();
+        $this->assertSame($documentId, $alert->wazuh_alert_id);
+        $this->assertSame($documentId, $alert->source_id);
+        $this->assertSame(64, strlen($alert->source_identity_hash));
+    }
+
+    public function test_import_adopts_a_legacy_identity_without_losing_its_triage_state(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        Alert::create([
+            'wazuh_alert_id' => 'legacy-alert',
+            'rule_level' => 12,
+            'status' => 'acknowledged',
+        ]);
+        $hit = $this->hit('legacy-alert');
+        $hit['_index'] = 'wazuh-alerts-4.x-2026.09.17';
+        $this->mockBatches([[$hit]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])
+            ->expectsOutput('[SIEM] Done. New: 0, Skipped (already exists): 1')
+            ->assertSuccessful();
+
+        $this->assertDatabaseCount('alerts', 1);
+        $this->assertDatabaseHas('alerts', [
+            'wazuh_alert_id' => 'legacy-alert',
+            'source_cluster' => 'wazuh-primary',
+            'source_index' => 'wazuh-alerts-4.x-2026.09.17',
+            'source_id' => 'legacy-alert',
+            'status' => 'acknowledged',
+        ]);
     }
 
     public function test_dry_run_distinguishes_existing_alerts_and_counts_unseen_ids_only_once_without_saving(): void
@@ -214,7 +477,7 @@ class FetchWazuhAlertsTest extends TestCase
         Configuration::set('min_alert_level', 12);
 
         $this->mock(OpenSearchService::class, function (MockInterface $service): void {
-            $service->shouldReceive('fetchAlerts')->once()->with(12, 100, \Mockery::type('array'))
+            $service->shouldReceive('fetchIncrementalAlertBatches')->once()->with(12, 100, \Mockery::type('array'))
                 ->andThrow(new \RuntimeException('OpenSearch tidak tersedia.'));
         });
 
@@ -259,12 +522,13 @@ class FetchWazuhAlertsTest extends TestCase
         $this->mock(OpenSearchService::class, function (MockInterface $service): void {
             $service->shouldNotReceive('fetchAlerts');
             $service->shouldNotReceive('fetchAlertBatches');
+            $service->shouldNotReceive('fetchIncrementalAlertBatches');
         });
 
         try {
             $this->artisan('siem:fetch-alerts', $options)
                 ->expectsOutputToContain('Fetch lain masih berjalan')
-                ->assertSuccessful();
+                ->assertExitCode(FetchWazuhAlertsCommand::EXIT_LOCK_BUSY);
 
             $this->assertTrue($ownerLock->isOwnedByCurrentProcess());
             $this->assertDatabaseCount('alerts', 0);
@@ -273,10 +537,35 @@ class FetchWazuhAlertsTest extends TestCase
         }
     }
 
+    public function test_direct_cli_fetch_stops_while_application_update_guard_is_active(): void
+    {
+        $marker = storage_path('framework/testing/fetch-update-guard-'.uniqid('', true).'.lock');
+        config(['application_updates.runtime_marker' => $marker]);
+        $guard = app(ApplicationUpdateRuntimeGuard::class);
+        $guard->activate('63c77122-18d4-4b35-92d8-28c88bfe11e2');
+        $this->mock(OpenSearchService::class, function (MockInterface $service): void {
+            $service->shouldNotReceive('fetchAlerts');
+            $service->shouldNotReceive('fetchAlertBatches');
+            $service->shouldNotReceive('fetchIncrementalAlertBatches');
+        });
+
+        try {
+            $this->artisan('siem:fetch-alerts')
+                ->expectsOutputToContain('update aplikasi sedang berjalan')
+                ->assertExitCode(FetchWazuhAlertsCommand::EXIT_MAINTENANCE);
+
+            $this->assertDatabaseCount('alerts', 0);
+            $this->assertFetchLockIsAvailable();
+        } finally {
+            $guard->deactivate('63c77122-18d4-4b35-92d8-28c88bfe11e2');
+        }
+    }
+
     public static function fetchModes(): iterable
     {
         yield 'automatic latest alerts' => [[]];
         yield 'manual today import' => [['--today' => true]];
+        yield 'reconciliation import' => [['--lookback-days' => '2']];
         yield 'archive import' => [['--all' => true]];
     }
 
@@ -294,11 +583,13 @@ class FetchWazuhAlertsTest extends TestCase
             $service->shouldReceive('fetchAlertBatches')->once()
                 ->with(12, 100, \Mockery::type('array'))->andReturn($pages);
             // This request can only occur after the shared cooldown expires.
-            $service->shouldReceive('fetchAlerts')->once()
-                ->with(12, 100, \Mockery::type('array'))->andReturnUsing(function (): array {
+            $service->shouldReceive('fetchIncrementalAlertBatches')->once()
+                ->with(12, 100, \Mockery::type('array'))->andReturnUsing(function (): \Generator {
                     $this->assertGreaterThanOrEqual(Carbon::parse('2026-09-17T02:02:00Z')->timestamp, now()->timestamp);
 
-                    return [];
+                    if (false) {
+                        yield [];
+                    }
                 });
         });
 
@@ -370,10 +661,41 @@ class FetchWazuhAlertsTest extends TestCase
         });
     }
 
+    private function mockIncrementalBatches(array $batches, array $expectedRange): void
+    {
+        $pages = (function () use ($batches): \Generator {
+            yield from $batches;
+        })();
+
+        $this->mock(OpenSearchService::class, function (MockInterface $service) use ($pages, $expectedRange): void {
+            $service->shouldReceive('fetchIncrementalAlertBatches')->once()
+                ->with(12, 100, $expectedRange)
+                ->andReturn($pages);
+            $service->shouldNotReceive('fetchAlerts');
+            $service->shouldNotReceive('fetchAlertBatches');
+        });
+    }
+
+    private function mockReconciliationBatches(array $batches, array $expectedRange): void
+    {
+        $pages = (function () use ($batches): \Generator {
+            yield from $batches;
+        })();
+
+        $this->mock(OpenSearchService::class, function (MockInterface $service) use ($pages, $expectedRange): void {
+            $service->shouldReceive('fetchAlertBatches')->once()
+                ->with(12, 100, $expectedRange)
+                ->andReturn($pages);
+            $service->shouldNotReceive('fetchAlerts');
+            $service->shouldNotReceive('fetchIncrementalAlertBatches');
+        });
+    }
+
     private function hit(string $id): array
     {
         return [
             '_id' => $id,
+            '_index' => 'wazuh-alerts-4.x-2026.09.17',
             '_source' => [
                 '@timestamp' => '2026-09-17T10:00:00.000Z',
                 'rule' => [

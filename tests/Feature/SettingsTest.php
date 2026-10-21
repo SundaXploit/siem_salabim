@@ -2,14 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\FetchWazuhAlerts;
 use App\Models\Alert;
 use App\Models\AlertAiAnalysis;
+use App\Models\AlertTriage;
 use App\Models\Configuration;
+use App\Models\DataExport;
+use App\Models\NotificationLog;
 use App\Models\User;
 use App\Services\OpenSearchService;
 use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
@@ -60,8 +66,7 @@ class SettingsTest extends TestCase
 
         $page
             ->assertOk()
-            ->assertViewHas('configs', fn ($configs) =>
-                $configs->get('opensearch_host') === 'https://indexer.example.test:9200'
+            ->assertViewHas('configs', fn ($configs) => $configs->get('opensearch_host') === 'https://indexer.example.test:9200'
                 && $configs->get('opensearch_username') === 'siem_alarm_service'
                 && $configs->get('opensearch_index') === 'siem-alarm-*'
                 && ! $configs->has('opensearch_password')
@@ -150,8 +155,7 @@ class SettingsTest extends TestCase
         $this->mock(TelegramService::class, function (MockInterface $service): void {
             $service->shouldReceive('sendMessage')
                 ->once()
-                ->withArgs(fn (string $chatId, string $message, ?string $token) =>
-                    $chatId === '-1001234567890'
+                ->withArgs(fn (string $chatId, string $message, ?string $token) => $chatId === '-1001234567890'
                     && $message !== ''
                     && $token === 'temporary-bot-token'
                 )
@@ -260,10 +264,10 @@ class SettingsTest extends TestCase
     public function test_preview_range_honors_both_start_and_end_dates(): void
     {
         $admin = $this->makeAdmin();
-        $this->makeAlert('before-range', '2026-08-01 12:00:00');
-        $this->makeAlert('inside-range-one', '2026-08-10 00:00:00');
-        $this->makeAlert('inside-range-two', '2026-08-15 23:59:59');
-        $this->makeAlert('after-range', '2026-08-16 00:00:00');
+        $this->makeAlert('before-range', '2026-08-09 16:59:59');
+        $this->makeAlert('inside-range-one', '2026-08-09 17:00:00');
+        $this->makeAlert('inside-range-two', '2026-08-15 16:59:59');
+        $this->makeAlert('after-range', '2026-08-15 17:00:00');
 
         $this->actingAs($admin)
             ->getJson(route('settings.data.preview', [
@@ -274,7 +278,75 @@ class SettingsTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonPath('counts.alerts', 2)
+            ->assertJsonPath('period.from', '2026-08-09T17:00:00+00:00')
+            ->assertJsonPath('period.to_exclusive', '2026-08-15T17:00:00+00:00')
             ->assertJsonPath('period.label', '2026-08-10 s/d 2026-08-15');
+    }
+
+    public function test_preview_counts_every_entity_included_by_each_export_scope(): void
+    {
+        $admin = $this->makeAdmin();
+        $inside = $this->makeAlert('inside-preview-scope', '2026-08-10 12:00:00');
+        $outside = $this->makeAlert('outside-preview-scope', '2026-08-20 12:00:00');
+
+        $this->makeAiAnalysis($inside, $admin);
+        $this->makeAiAnalysis($inside, $admin);
+        $this->makeAiAnalysis($outside, $admin);
+
+        foreach ([$inside, $inside, $outside] as $index => $alert) {
+            AlertTriage::create([
+                'alert_id' => $alert->id,
+                'user_id' => $admin->id,
+                'action' => 'acknowledge',
+                'reason' => "Preview triage {$index}",
+                'created_at' => now(),
+            ]);
+
+            NotificationLog::create([
+                'alert_id' => $alert->id,
+                'user_id' => $admin->id,
+                'chat_id' => '-100123',
+                'message' => "Preview notification {$index}",
+                'response_status' => 200,
+                'sent_at' => now(),
+            ]);
+        }
+
+        $expectedCounts = [
+            'alerts' => [
+                'alerts' => 1,
+                'alert_ai_analyses' => 2,
+                'triages' => 2,
+                'notif_logs' => 2,
+            ],
+            'all' => [
+                'alerts' => 1,
+                'alert_ai_analyses' => 2,
+                'triages' => 2,
+                'notif_logs' => 2,
+            ],
+            'triages' => [
+                'alerts' => 1,
+                'triages' => 2,
+            ],
+            'notif_logs' => [
+                'alerts' => 1,
+                'notif_logs' => 2,
+            ],
+        ];
+
+        foreach ($expectedCounts as $scope => $counts) {
+            $response = $this->actingAs($admin)
+                ->getJson(route('settings.data.preview', [
+                    'scope' => $scope,
+                    'period_mode' => 'range',
+                    'date_from' => '2026-08-10',
+                    'date_to' => '2026-08-10',
+                ]))
+                ->assertOk();
+
+            $this->assertSame($counts, $response->json('counts'));
+        }
     }
 
     public function test_data_selection_rejects_missing_or_invalid_periods(): void
@@ -301,7 +373,7 @@ class SettingsTest extends TestCase
             ->assertJsonValidationErrors(['date_from', 'date_to']);
     }
 
-    public function test_range_deletion_does_not_delete_alerts_outside_the_selected_dates(): void
+    public function test_direct_range_deletion_is_disabled_until_a_verified_export_exists(): void
     {
         $admin = $this->makeAdmin();
         $before = $this->makeAlert('before-delete', '2026-08-01 12:00:00');
@@ -320,18 +392,20 @@ class SettingsTest extends TestCase
                 'date_to' => '2026-08-10',
             ])
             ->assertSessionHasNoErrors()
+            ->assertSessionHas('error')
             ->assertRedirect(route('settings.index'));
 
         $this->assertDatabaseHas('alerts', ['id' => $before->id]);
-        $this->assertDatabaseMissing('alerts', ['id' => $inside->id]);
+        $this->assertDatabaseHas('alerts', ['id' => $inside->id]);
         $this->assertDatabaseHas('alerts', ['id' => $after->id]);
         $this->assertDatabaseHas('alert_ai_analyses', ['id' => $beforeAnalysis->id]);
-        $this->assertDatabaseMissing('alert_ai_analyses', ['id' => $insideAnalysis->id]);
+        $this->assertDatabaseHas('alert_ai_analyses', ['id' => $insideAnalysis->id]);
         $this->assertDatabaseHas('alert_ai_analyses', ['id' => $afterAnalysis->id]);
     }
 
     public function test_json_backup_for_a_range_contains_only_selected_alerts_and_keeps_all_data(): void
     {
+        Storage::fake('local');
         $admin = $this->makeAdmin();
         $before = $this->makeAlert('before-backup', '2026-08-01 12:00:00');
         $inside = $this->makeAlert('inside-backup', '2026-08-10 12:00:00');
@@ -346,10 +420,15 @@ class SettingsTest extends TestCase
                 'date_to' => '2026-08-10',
             ]);
 
-        $response
-            ->assertOk()
-            ->assertDownload()
-            ->assertStreamed();
+        $response->assertRedirect(route('settings.index'));
+
+        $export = DataExport::query()->sole();
+        $this->assertSame('verified', $export->status);
+        Storage::disk('local')->assertExists($export->storage_path);
+        Storage::disk('local')->assertExists($export->manifest_path);
+
+        $response = $this->actingAs($admin)->get(route('settings.data.exports.download', $export));
+        $response->assertOk()->assertDownload($export->filename)->assertStreamed();
 
         $backup = json_decode($response->streamedContent(), true, 512, JSON_THROW_ON_ERROR);
 
@@ -360,8 +439,9 @@ class SettingsTest extends TestCase
         $this->assertDatabaseHas('alerts', ['id' => $after->id]);
     }
 
-    public function test_backup_and_delete_range_only_deletes_selected_alerts(): void
+    public function test_legacy_backup_and_delete_only_exports_then_explicit_purge_deletes_selected_alerts(): void
     {
+        Storage::fake('local');
         $admin = $this->makeAdmin();
         $before = $this->makeAlert('before-backup-delete', '2026-08-01 12:00:00');
         $inside = $this->makeAlert('inside-backup-delete', '2026-08-10 12:00:00');
@@ -376,36 +456,39 @@ class SettingsTest extends TestCase
                 'date_to' => '2026-08-10',
             ]);
 
-        $response
-            ->assertOk()
-            ->assertDownload()
-            ->assertStreamed();
+        $response->assertRedirect(route('settings.index'));
+
+        $this->assertDatabaseHas('alerts', ['id' => $before->id]);
+        $this->assertDatabaseHas('alerts', ['id' => $inside->id]);
+        $this->assertDatabaseHas('alerts', ['id' => $after->id]);
+
+        $export = DataExport::query()->sole();
+        $this->assertSame('verified', $export->status);
+
+        $this->actingAs($admin)
+            ->post(route('settings.data.exports.purge', $export))
+            ->assertRedirect();
 
         $this->assertDatabaseHas('alerts', ['id' => $before->id]);
         $this->assertDatabaseMissing('alerts', ['id' => $inside->id]);
         $this->assertDatabaseHas('alerts', ['id' => $after->id]);
+        $this->assertSame('completed', $export->fresh()->purge_status);
     }
 
-    public function test_manual_fetch_reports_an_error_when_opensearch_fetch_fails(): void
+    public function test_manual_fetch_queues_a_today_scan_without_contacting_opensearch(): void
     {
         $admin = $this->makeAdmin();
-
-        $this->mock(OpenSearchService::class, function (MockInterface $service): void {
-            $service->shouldReceive('fetchAlertBatches')
-                ->once()
-                ->withArgs(fn (int $minLevel, int $size, array $timeRange) =>
-                    $minLevel === 12 && $size === 100 && isset($timeRange['gte'], $timeRange['lt'])
-                )
-                ->andThrow(new \RuntimeException('OpenSearch tidak tersedia.'));
-        });
+        config(['queue.default' => 'database']);
+        Queue::fake();
 
         $this->actingAs($admin)
             ->post(route('settings.fetch-now'))
             ->assertRedirect(route('settings.index'))
-            ->assertSessionHas('error', fn (string $message) =>
-                str_contains($message, 'Fetch selesai dengan error.')
-                && str_contains($message, 'OpenSearch tidak tersedia.')
+            ->assertSessionHas('success', fn (string $message) => str_contains($message, 'masuk antrean')
             );
+
+        Queue::assertPushed(FetchWazuhAlerts::class, fn (FetchWazuhAlerts $job): bool => $job->mode === 'today' && $job->trigger === 'settings-manual'
+        );
     }
 
     private function makeAdmin(): User

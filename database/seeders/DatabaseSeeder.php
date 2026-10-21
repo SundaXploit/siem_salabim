@@ -8,6 +8,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call(DefaultUsersSeeder::class);
+        // Production accounts are created explicitly by the installation
+        // wizard or `siem:create-admin`. Never ship predictable credentials
+        // through `migrate --seed`.
     }
 }

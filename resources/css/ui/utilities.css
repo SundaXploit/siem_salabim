@@ -18,7 +18,6 @@
 .text-success { color: var(--color-success); }
 .text-warning { color: var(--color-warning); }
 .text-accent { color: var(--color-accent); }
-.text-sm { font-size: var(--text-sm); }
 /* More specific than Tailwind's utility so the operational shell stays compact. */
 .app-shell .text-sm, .auth-shell .text-sm { font-size: var(--text-sm); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

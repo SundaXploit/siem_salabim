@@ -20,7 +20,7 @@ class BulkTriageTest extends TestCase
     {
         parent::setUp();
         Http::preventStrayRequests();
-        Cache::put('siem_fetch_ran', true, now()->addMinute());
+        Cache::put('siem_fetch_ran:latest', true, now()->addMinute());
     }
 
     public function test_bulk_ack_changes_only_selected_new_alerts_and_records_the_actor(): void
@@ -58,7 +58,7 @@ class BulkTriageTest extends TestCase
         $new = $this->alert();
         $ack = $this->alert('acknowledged');
         $ignored = $this->alert('ignored');
-        $cacheKey = 'security-insight-snapshot:v2:' . now('Asia/Jakarta')->format('Y-m');
+        $cacheKey = 'security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m');
         Cache::put($cacheKey, ['stale' => true], 60);
 
         $this->actingAs($user)->postJson(route('alerts.bulk-triage'), [
@@ -160,7 +160,9 @@ class BulkTriageTest extends TestCase
 
     public function test_live_alerts_supports_a_bounded_page_size_and_bulk_selection_controls(): void
     {
-        for ($i = 0; $i < 27; $i++) $this->alert();
+        for ($i = 0; $i < 27; $i++) {
+            $this->alert();
+        }
         $this->actingAs(User::factory()->create(['role' => 'analyst']))
             ->get(route('alerts.index', ['per_page' => 50]))->assertOk()
             ->assertSee('ACK massal')->assertSee('Abaikan massal')
@@ -173,7 +175,7 @@ class BulkTriageTest extends TestCase
     private function alert(string $status = 'new'): Alert
     {
         return Alert::create([
-            'wazuh_alert_id' => 'bulk-test-' . fake()->uuid(),
+            'wazuh_alert_id' => 'bulk-test-'.fake()->uuid(),
             'rule_description' => 'Synthetic triage event',
             'rule_level' => 5, 'status' => $status, 'first_seen_at' => now(), 'raw_data' => [],
         ]);

@@ -1,10 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:opsz,wght@14..32,400;14..32,500;14..32,550;14..32,600;14..32,650;14..32,700&display=swap');
+@import 'tailwindcss' source(none);
 @import './ui/tokens.css';
 @import './ui/components.css';
 @import './ui/utilities.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v3 emitted these values directly. Keep them inline so SIEM design
+   tokens with similarly named custom properties do not change utility sizing. */
+@theme inline {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --text-xs: 0.75rem;
+    --text-xs--line-height: 1rem;
+    --text-sm: 0.875rem;
+    --text-sm--line-height: 1.25rem;
+    --text-base: 1rem;
+    --text-base--line-height: 1.5rem;
+    --text-lg: 1.125rem;
+    --text-lg--line-height: 1.75rem;
+    --text-xl: 1.25rem;
+    --text-xl--line-height: 1.75rem;
+    --text-2xl: 1.5rem;
+    --text-2xl--line-height: 2rem;
+}
+
+/* Scan only the same Blade sources used by the previous Tailwind config. */
+@source '../views/**/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
 /* Alpine.js cloak — hide elements until Alpine initializes */
 [x-cloak] { display: none !important; }
+
+/* Compatibility for the two v3 utilities still present in Breeze markup. */
+.ring-black.ring-opacity-5 { --tw-ring-color: rgb(0 0 0 / 0.05); }
+.shadow-sm { --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+.rounded-sm { border-radius: 0.125rem; }

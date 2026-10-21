@@ -2,7 +2,7 @@
 
 [Kembali ke README](../README.md) · [Konfigurasi contoh](../.env.example)
 
-Panduan lengkap untuk integrasi, deployment, backup, dan pengujian. Untuk instalasi cepat dan akun bawaan, ikuti README terlebih dahulu.
+Panduan lengkap untuk integrasi, deployment, backup, dan pengujian. Untuk instalasi melalui wizard dan pembuatan administrator awal, ikuti README terlebih dahulu.
 
 ## Menggunakan MySQL/MariaDB
 
@@ -17,7 +17,7 @@ DB_USERNAME=siem_app
 DB_PASSWORD=
 ```
 
-Isi password pengguna database hanya di `.env` lokal. Setelah itu jalankan `php artisan migrate` dan `php artisan siem:create-admin` untuk membuat administrator dengan password pilihan Anda. Untuk akun bawaan, jalankan `php artisan db:seed`. Migrasi membuat struktur tabel; aplikasi tidak menyediakan migrasi data otomatis dari SQLite ke MySQL.
+Untuk instalasi baru, masukkan koneksi tersebut melalui `/install`; wizard menguji database, menjalankan migrasi tanpa seeder, lalu membuat administrator dengan password pilihan Anda. Jalur CLI `php artisan migrate` dan `php artisan siem:create-admin` tetap tersedia untuk pemulihan oleh administrator server. Aplikasi tidak menyediakan migrasi data otomatis dari SQLite ke MySQL. SQLite cocok untuk pengembangan/volume kecil; untuk ingestion dan ekspor besar gunakan MySQL/MariaDB atau PostgreSQL yang sudah diuji pada lingkungan Anda.
 
 ## Konfigurasi integrasi
 
@@ -39,21 +39,30 @@ Parameter teknis koneksi tetap dikonfigurasi melalui `.env`:
 | Variabel `.env` | Default | Keterangan |
 | --- | --- | --- |
 | `OPENSEARCH_VERIFY_SSL` | `true` | Verifikasi sertifikat TLS. Konfigurasikan CA tepercaya pada PHP untuk sertifikat internal. |
-| `OPENSEARCH_SIZE` | `100` | Batas fetch terbaru sekaligus ukuran batch pemeriksaan menyeluruh. |
+| `OPENSEARCH_SIZE` | `100` | Ukuran setiap batch fetch; bukan batas total alert per proses. |
 | `OPENSEARCH_FETCH_PAGE_DELAY_MS` | `250` | Jeda antarbatch untuk mengurangi lonjakan permintaan. |
+| `OPENSEARCH_SOURCE_CLUSTER` | `wazuh-primary` | Nama logis cluster yang stabil meskipun endpoint berubah. |
+| `OPENSEARCH_FETCH_OVERLAP_SECONDS` | `900` | Rentang waktu yang dibaca ulang untuk menangkap alert terlambat. |
+| `OPENSEARCH_RECONCILE_LOOKBACK_DAYS` | `2` | Jumlah hari kalender WIB (hari ini + hari sebelumnya) yang di-scan ulang berkala; rentang valid 2-30 hari. |
+| `OPENSEARCH_FETCH_INSERT_BATCH_SIZE` | `100` | Jumlah alert per bulk upsert ke database. |
+| `OPENSEARCH_FETCH_LOCK_SECONDS` | `3600` | TTL lock lintas scheduler, queue, dan CLI untuk satu proses ingestion. |
+| `OPENSEARCH_PIT_ENABLED` | `false` | Opt-in PIT + `search_after`; default aman memakai scroll snapshot. |
+| `OPENSEARCH_PIT_TIEBREAKER_FIELD` | Kosong | Field keyword/doc_values yang unik dan selalu terisi pada setiap concrete index; wajib bila PIT aktif. Jangan gunakan `_id`. |
+| `OPENSEARCH_PIT_KEEP_ALIVE_SECONDS` | `120` | Masa hidup snapshot PIT yang diperpanjang pada setiap halaman. |
 
-Fetch reguler memeriksa **100 alert terbaru hari ini** secara default. Hari dihitung dari 00:00 hingga sebelum 00:00 berikutnya dalam zona **Asia/Jakarta**, kemudian dikonversi untuk query OpenSearch. Scheduler menjalankannya setiap menit; refresh tampilan Live Alerts berlangsung setiap 30 detik dan dijeda selama triage massal.
+Fetch reguler memakai checkpoint persisten. Proses pertama dimulai dari awal hari **Asia/Jakarta**; proses berikutnya membaca dari checkpoint dikurangi overlap hingga waktu mulai proses. Checkpoint hanya maju setelah seluruh halaman berhasil disimpan, sehingga kegagalan di tengah proses akan dibaca ulang secara idempoten. Scheduler menjalankannya setiap menit. Setiap enam jam, rekonsiliasi juga memindai ulang hari ini dan hari sebelumnya untuk menangkap dokumen yang baru terindeks setelah event-time melewati overlap. Refresh tampilan Live Alerts berlangsung setiap 30 detik dan dijeda selama triage massal.
 
 | Perintah | Cakupan |
 | --- | --- |
-| `php artisan siem:fetch-alerts` | Alert terbaru hari ini sesuai batas ukuran dan level. |
+| `php artisan siem:fetch-alerts` | Seluruh halaman pada window incremental sejak checkpoint. |
 | `php artisan siem:fetch-alerts --today` | Seluruh halaman alert hari ini yang memenuhi filter; dipakai juga oleh tombol fetch manual di Settings. |
+| `php artisan siem:fetch-alerts --lookback-days=2` | Rekonsiliasi seluruh halaman hari ini dan satu hari sebelumnya (Asia/Jakarta). |
 | `php artisan siem:fetch-alerts --all` | Seluruh riwayat yang cocok; dapat memerlukan waktu dan sumber daya besar. |
 | `php artisan siem:fetch-alerts --today --dry-run` | Memeriksa kandidat impor tanpa menyimpan alert; tetap mengirim query ke OpenSearch. |
 
-Alert yang sudah tersimpan dilewati berdasarkan identitas alert. `New: 0` bisa berarti seluruh hasil sudah pernah diimpor, atau tidak ada hasil untuk kombinasi tanggal, indeks, dan level. Koneksi yang berhasil tidak menjamin ada alert yang cocok dengan filter tersebut.
+Alert yang sudah tersimpan dilewati berdasarkan kombinasi cluster, indeks konkret, dan ID dokumen. `New: 0` bisa berarti seluruh hasil sudah pernah diimpor, atau tidak ada hasil untuk kombinasi tanggal, indeks, dan level. Koneksi yang berhasil tidak menjamin ada alert yang cocok dengan filter tersebut.
 
-Pada volume tinggi, jumlah alert baru di antara dua fetch dapat melebihi batas fetch terbaru. Gunakan pemeriksaan `--today` untuk melengkapi hari berjalan dan sesuaikan jadwal/batas berdasarkan kapasitas server. Pemeriksaan massal memakai scroll per indeks, jeda batch, lock, dan penanganan batas memori; hindari menjalankan backfill arsip berulang tanpa kebutuhan.
+Pada volume tinggi, fetch reguler tidak berhenti pada `OPENSEARCH_SIZE`: nilai tersebut hanya mengatur ukuran halaman. Default memakai scroll snapshot yang kompatibel. PIT dengan `search_after` dapat diaktifkan setelah operator memverifikasi field tiebreaker yang unik, selalu terisi, dan memiliki doc values pada seluruh concrete index. Aplikasi hanya fallback ke scroll bila pembukaan PIT ditolak/tidak tersedia sebelum hit dikonsumsi; konfigurasi tiebreaker yang salah atau kegagalan di tengah pagination menggagalkan proses agar checkpoint tidak maju. Late arrival di dalam lookback rekonsiliasi akan ditemukan secara idempoten; untuk data yang terlambat melebihi SLA lookback, jalankan `--all` atau rekonsiliasi manual dengan rentang 2-30 hari yang sesuai kapasitas. Hindari backfill arsip penuh berulang tanpa kebutuhan.
 
 ### Telegram
 
@@ -70,16 +79,17 @@ Isi endpoint, API key, dan model di **Settings**. Batas sampel, ambang level imp
 - **Otomatis:** scheduler memeriksa kebutuhan pembaruan pada 02:10 WIB setiap hari; interval analisis default 10 hari dan dapat diubah di Settings. Job otomatis diproses pada queue `ai`.
 - **Manual:** analisis yang diminta pengguna menunggu respons layanan. Timeout detail default 60 detik, dashboard 90 detik. `none` mengurangi pekerjaan model tetapi tidak menjamin ketersediaan atau waktu respons layanan.
 
-Jalankan worker dengan `--queue=ai,default --timeout=180`. Default `DB_QUEUE_RETRY_AFTER=240` harus tetap lebih besar daripada timeout worker untuk menghindari job diambil ulang sebelum eksekusi selesai.
+Jalankan worker ingestion/AI dengan `--queue=ai,default --timeout=1800`. Ekspor memakai worker terpisah `--queue=exports --timeout=1800` agar pekerjaan besar tidak menahan ingestion. Pastikan nama queue sama dengan `SIEM_EXPORT_QUEUE`.
 
 ## Deployment dan operasional
 
 - Gunakan HTTPS, `APP_ENV=production`, `APP_DEBUG=false`, URL aplikasi yang benar, dan cookie sesi aman (`SESSION_SECURE_COOKIE=true`) untuk deployment HTTPS.
-- Ganti password akun bawaan sebelum aplikasi dibuka ke publik, atau gunakan akun pribadi melalui `php artisan siem:create-admin` dan hapus akun bawaan yang tidak diperlukan. Login menggunakan email dan password.
+- Tidak ada akun bawaan. Buat administrator awal melalui wizard dan gunakan password organisasi yang unik; login menggunakan email dan password.
 - Web server hanya mengekspos `public/`; berikan izin tulis aplikasi pada `storage/` dan `bootstrap/cache/`.
 - Instal dependency menggunakan `composer install --no-dev --optimize-autoloader`, bangun aset dengan `npm ci` lalu `npm run build`, dan jalankan migrasi sesuai prosedur backup lingkungan Anda.
 - Setelah memperbarui `.env`/kode, jalankan `php artisan config:cache`, `php artisan view:cache`, dan restart worker dengan `php artisan queue:restart`.
 - Kelola queue worker dengan process manager. Worker queue dan scheduler perlu tetap berjalan setelah terminal ditutup.
+- Jalankan worker `ai,default` dan `exports` sebagai proses terpisah. Jika self-update diaktifkan, gunakan satu worker khusus `updates` dengan timeout 3.600 detik. Atur graceful-stop process manager lebih lama daripada timeout worker terkait.
 - `MAIL_MAILER=log` hanya menulis email ke log. Konfigurasikan SMTP/provider email agar reset password benar-benar terkirim.
 
 Contoh cron Linux untuk satu scheduler:
@@ -90,11 +100,64 @@ Contoh cron Linux untuk satu scheduler:
 
 Pada Windows, buat Task Scheduler yang menjalankan `php artisan schedule:run` setiap menit dengan working directory proyek. `schedule:work` cocok untuk terminal pengembangan.
 
+### Update aplikasi terverifikasi
+
+Settings dapat memeriksa GitHub Release stabil terbaru dari repository `SundaXploit/siem_salabim`. Pemeriksaan versi tetap tersedia saat self-update dinonaktifkan. Aplikasi tidak memasang branch `main`, source archive otomatis, prerelease, atau draft. Update hanya menerima tag `vX.Y.Z` dan asset bernama `siem-salabim-vX.Y.Z.zip` yang memiliki digest SHA-256 dari GitHub serta manifest internal per file.
+
+Self-update sengaja **nonaktif secara default** dan ditujukan untuk satu node aplikasi dengan filesystem lokal. Untuk beberapa node/container, immutable image, atau shared deployment, gunakan pipeline/orchestrator eksternal agar rollout dan rollback terkoordinasi. Sebelum mengaktifkannya:
+
+1. buat dan uji restore backup penuh database, `.env`, `APP_KEY`, bukti/unggahan, dan storage privat;
+2. deploy dari worktree bersih atau paket release, tanpa perubahan file terlacak;
+3. gunakan queue asynchronous dan jalankan satu worker khusus update dengan akun OS yang memiliki izin menulis kode aplikasi;
+4. pastikan tidak ada ingestion, ekspor, atau purge yang sedang berjalan;
+5. baru atur flag server berikut dan bangun ulang cache konfigurasi.
+
+```dotenv
+SIEM_SELF_UPDATE_ENABLED=true
+SIEM_UPDATE_BACKUP_CONFIRMED=true
+SIEM_UPDATE_QUEUE=updates
+SIEM_UPDATE_REFUSE_DIRTY_WORKTREE=true
+SIEM_UPDATE_PROCESS_TIMEOUT=900
+```
+
+```bash
+php artisan config:cache
+php artisan queue:work --queue=updates --sleep=3 --tries=1 --timeout=3600
+```
+
+`SIEM_UPDATE_BACKUP_CONFIRMED` adalah konfirmasi operator, bukan proses backup otomatis. Backup kode internal di `storage/app/private/application-updates/` hanya dipakai untuk rollback sebelum migrasi dimulai dan bukan pengganti backup penuh. Nilai `retry_after` queue database/Redis/Beanstalkd harus lebih dari timeout update; konfigurasi bawaan menjaganya minimal 3.660 detik.
+
+Saat admin mengajukan update, server memeriksa kembali release, password admin, frasa konfirmasi, dan kesiapan queue. Worker kemudian mengunduh asset melalui URL API release yang dipatok ke repository/asset ID, memverifikasi ukuran dan SHA-256, menolak traversal/symlink/path runtime, membuat backup kode terverifikasi, masuk maintenance mode, memasang file, menjalankan migrasi, membangun cache, me-restart worker, lalu keluar dari maintenance mode. `.env`, `storage/`, database SQLite lokal, `bootstrap/cache/`, dan symlink tidak pernah berasal dari paket update.
+
+Jika kegagalan terjadi sebelum migrasi, updater mencoba memulihkan kode lama dan keluar dari maintenance mode. Setelah migrasi mulai dijalankan, updater tidak melakukan rollback database secara otomatis; status menjadi `recovery_required` dan maintenance dipertahankan. Pulihkan aplikasi **dan database** dari backup penuh yang cocok, periksa record serta event pada `application_updates`, lalu hapus `storage/framework/application-update.lock` dan jalankan `php artisan up` hanya setelah versi kode/database dinyatakan konsisten. Jangan mengantrekan update baru selama status pemulihan belum diselesaikan.
+
+Untuk menerbitkan release, ubah `VERSION`, commit perubahan, lalu push tag yang persis cocok (misalnya `v0.2.0`). Workflow `.github/workflows/release.yml` menjalankan test/build dan audit advisory, memasang dependency production, merakit paket hanya dari file Git yang terlacak beserta `vendor/` dan hasil build frontend, lalu membuat manifest hash. Release dibuat sebagai draft saat asset diunggah dan baru dipublikasikan setelah ZIP serta `SHA256SUMS` selesai diverifikasi. Tanpa GitHub Release resmi yang memenuhi kontrak tersebut, UI akan melaporkan bahwa belum ada release dan tidak menawarkan pemasangan.
+
+Asset `siem-salabim-vX.Y.Z.zip` adalah paket **khusus updater**, bukan paket instalasi baru. Paket itu sengaja tidak membawa `.env`, `storage/`, `bootstrap/cache/`, database lokal, atau file runtime lain agar data instalasi tidak tertimpa. Untuk instalasi pertama, gunakan alur clone dan wizard pada README sehingga struktur runtime dibuat dari repository lalu dikonfigurasi secara lokal.
+
 ### Backup dan penghapusan data
 
-Ekspor pada Settings mengikuti cakupan dan periode pilihan pengguna. Format SQL menargetkan MySQL/MariaDB; gunakan JSON untuk pertukaran data lintas database. Aplikasi belum menyediakan UI restore.
+Ekspor pada Settings mengikuti cakupan dan periode pilihan pengguna. Format SQL menargetkan MySQL/MariaDB; gunakan JSON untuk pertukaran data lintas database. Aplikasi belum menyediakan UI restore. Pembuatan ekspor berjalan melalui queue asynchronous dan membaca record dalam chunk, sehingga request web tidak menampung seluruh backup di memori. Aplikasi menolak ekspor/purge bila koneksi queue berjalan di request (`sync`, `deferred`, `null`, atau failover yang memuatnya).
 
-Ekspor dari Settings bukan pengganti backup lengkap database, file bukti, dan `APP_KEY`. Simpan backup secara privat dan uji prosedur pemulihan sebelum menghapus data operasional. Periksa preview cakupan sebelum memakai tombol hapus atau backup sekaligus hapus.
+| Variabel `.env` | Default | Keterangan |
+| --- | --- | --- |
+| `SIEM_EXPORT_DISK` | `local` | Disk privat dan durable untuk arsip. |
+| `SIEM_EXPORT_DIRECTORY` | `siem-exports` | Prefix/direktori objek ekspor. |
+| `SIEM_EXPORT_TEMP_DIRECTORY` | `storage/app/private/siem-export-tmp` | Direktori privat di luar web root dengan ruang cukup untuk satu arsip. |
+| `SIEM_EXPORT_CHUNK_SIZE` | `500` | Record yang dibaca per chunk. Sesuaikan setelah load test. |
+| `SIEM_EXPORT_PURGE_MAX_ROWS` | `100000` | Batas seluruh row yang diverifikasi/dikunci dalam satu purge; pecah rentang tanggal bila terlampaui. |
+| `SIEM_EXPORT_QUEUE` | `exports` | Harus sama dengan nama queue pada worker ekspor. |
+| `SIEM_EXPORT_REQUIRE_ASYNC_QUEUE` | `true` | Tolak eksekusi ekspor/purge di request web. Jangan nonaktifkan di produksi. |
+
+Setiap ekspor disimpan pada disk `SIEM_EXPORT_DISK` di direktori `SIEM_EXPORT_DIRECTORY`, bersama manifest berisi batas snapshot, jumlah record, fingerprint sumber, ukuran file, dan SHA-256. Status baru menjadi **Terverifikasi** setelah aplikasi membaca kembali objek dari storage dan mencocokkan checksum serta ukurannya. Worker queue `exports` harus aktif agar ekspor dan purge diproses.
+
+Job ekspor memiliki timeout 1.800 detik. Karena koneksi queue yang sama juga dapat menjalankan updater, `retry_after` database, Redis, dan Beanstalkd dijaga minimal 3.660 detik agar job yang masih berjalan tidak diambil worker kedua. Untuk SQS, atur visibility timeout queue di AWS lebih dari timeout job terpanjang karena nilainya tidak dikendalikan aplikasi.
+
+Penghapusan langsung dan alur "backup lalu hapus" dalam satu request dinonaktifkan. Administrator harus membuat ekspor, menunggu status Terverifikasi, lalu memulai Purge sebagai tindakan terpisah. Sebelum menghapus, worker memverifikasi ulang manifest, checksum arsip, jumlah serta fingerprint record sumber. Bila data berubah atau ada record turunan baru, purge dibatalkan secara aman dan administrator perlu membuat ekspor baru.
+
+Disk `local` berada di `storage/app/private` dan tidak dilayani oleh web server, tetapi aplikasi tidak melakukan enkripsi file sendiri. Untuk produksi, gunakan volume dengan encryption-at-rest atau disk S3 privat dengan bucket-side encryption, versioning/object lock sesuai kebijakan organisasi. Adapter `league/flysystem-aws-s3-v3` belum disertakan proyek ini dan harus dipasang serta dikonfigurasi sebelum memakai disk S3. Ekspor Settings bukan pengganti backup lengkap database, file bukti, konfigurasi storage, dan `APP_KEY`; uji prosedur restore secara berkala.
+
+Transaksi `REPEATABLE READ` dipertahankan selama file sementara dibuat pada MySQL/MariaDB dan PostgreSQL agar isi antartabel konsisten. SQLite memakai snapshot transaksinya. Transaksi panjang dapat menahan versi row/MVCC pada ekspor sangat besar; jadwalkan ekspor di luar jam sibuk, pantau undo/transaction age, dan lakukan uji integrasi pada engine database produksi.
 
 ## Pengujian
 

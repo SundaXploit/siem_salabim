@@ -3,7 +3,6 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
-use Database\Seeders\DatabaseSeeder;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -39,23 +38,6 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
-    #[DataProvider('defaultEmails')]
-    public function test_default_accounts_can_authenticate_using_their_email(string $email, string $role): void
-    {
-        $this->seed(DatabaseSeeder::class);
-        $user = User::where('email', $email)->sole();
-        $this->post('/login', ['email' => ' '.strtoupper($email).' ', 'password' => 'bhapp'])
-            ->assertRedirect(route('dashboard.index', absolute: false));
-        $this->assertAuthenticatedAs($user);
-        $this->assertSame($role, auth()->user()->role);
-    }
-
-    public static function defaultEmails(): iterable
-    {
-        yield 'administrator' => ['adminsoc@siem.local', 'admin'];
-        yield 'analyst' => ['analissoc@siem.local', 'analyst'];
-    }
-
     public function test_existing_mixed_case_email_accounts_can_still_authenticate(): void
     {
         $user = User::factory()->create(['email' => 'SOC.Operator@Example.test']);
@@ -68,7 +50,6 @@ class AuthenticationTest extends TestCase
     #[DataProvider('nonEmailLogins')]
     public function test_a_valid_email_field_is_required_to_authenticate(array $identity): void
     {
-        $this->seed(DatabaseSeeder::class);
         $this->post('/login', [...$identity, 'password' => 'bhapp'])->assertSessionHasErrors('email');
         $this->assertGuest();
     }

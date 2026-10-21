@@ -78,15 +78,15 @@ class CreateAdminTest extends TestCase
         $this->assertDatabaseCount('users', 0);
     }
 
-    public function test_seeding_creates_default_accounts_without_resetting_existing_credentials(): void
+    public function test_seeding_never_creates_default_accounts_or_changes_existing_credentials(): void
     {
         $existing = User::factory()->create(['email' => 'admin@siem.local', 'role' => 'admin']);
         $original = $existing->fresh()->getAttributes();
         $this->seed(DatabaseSeeder::class);
 
-        $this->assertDatabaseCount('users', 3);
+        $this->assertDatabaseCount('users', 1);
         $this->assertSame($original, $existing->fresh()->getAttributes());
-        $this->assertDatabaseHas('users', ['email' => 'adminsoc@siem.local', 'role' => 'admin']);
-        $this->assertDatabaseHas('users', ['email' => 'analissoc@siem.local', 'role' => 'analyst']);
+        $this->assertDatabaseMissing('users', ['email' => 'adminsoc@siem.local']);
+        $this->assertDatabaseMissing('users', ['email' => 'analissoc@siem.local']);
     }
 }

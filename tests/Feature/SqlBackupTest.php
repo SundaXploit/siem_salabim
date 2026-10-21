@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Alert;
 use App\Models\AlertTriage;
+use App\Models\DataExport;
 use App\Models\NotificationLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use PDO;
 use Tests\TestCase;
 
@@ -17,6 +19,7 @@ class SqlBackupTest extends TestCase
 
     public function test_sql_export_round_trips_untrusted_text_nulls_json_and_timestamps(): void
     {
+        Storage::fake('local');
         $admin = User::factory()->create([
             'role' => 'admin',
             'name' => "SOC\nDROP TABLE export_guard;\r\n--",
@@ -82,13 +85,19 @@ class SqlBackupTest extends TestCase
             $expected[$table] = DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
         }
 
-        $response = $this->actingAs($admin)->post(route('settings.data.backup'), [
+        $this->actingAs($admin)->post(route('settings.data.backup'), [
             'format' => 'sql',
             'scope' => 'all',
             'period_mode' => 'range',
             'date_from' => '2026-09-17',
             'date_to' => '2026-09-17',
-        ])->assertOk()->assertDownload();
+        ])->assertRedirect(route('settings.index'));
+
+        $export = DataExport::query()->sole();
+        $response = $this->actingAs($admin)
+            ->get(route('settings.data.exports.download', $export))
+            ->assertOk()
+            ->assertDownload($export->filename);
         $sql = $response->streamedContent();
 
         // Restore into a separate in-memory database using its actual SQL

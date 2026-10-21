@@ -23,7 +23,7 @@ Satu ruang kerja untuk tim SOC: dari alert Wazuh, triage, dan bantuan AI hingga 
   <img src="https://img.shields.io/badge/UI-Blade%20%2B%20Alpine.js-38BDF8?style=flat-square" alt="Blade dan Alpine.js">
 </p>
 
-**[▶ Demo](#demo)** · **[✨ Fitur](#fitur)** · **[🚀 Instalasi](#instalasi)** · **[🔑 Akun bawaan](#akun-bawaan)** · **[💬 Beri masukan](#kontribusi)**
+**[▶ Demo](#demo)** · **[✨ Fitur](#fitur)** · **[🚀 Instalasi](#instalasi)** · **[🔑 Admin awal](#akun-bawaan)** · **[💬 Beri masukan](#kontribusi)**
 
 </div>
 
@@ -81,7 +81,7 @@ Preview berupa gambar yang dapat diklik. Video dibuka di YouTube; README GitHub 
 | 🔎 **Detail & AI alert** | Tinjau rule, agent, bukti, dan bantuan analisis sebelum menentukan tindakan. |
 | 📨 **Telegram** | Kirim laporan berbasis template dan bukti gambar ke chat pilihan. |
 | 🗂️ **Riwayat & leaderboard** | Telusuri penanganan, notifikasi, dan aktivitas analyst. |
-| ⚙️ **Administrasi** | Kelola akun, integrasi, ambang impor, serta fetch manual. |
+| ⚙️ **Administrasi** | Kelola akun, integrasi, ambang impor, fetch manual, serta pemeriksaan release aplikasi. |
 | 💾 **Pengelolaan data** | Preview cakupan, ekspor JSON/SQL, dan kelola retensi berdasarkan periode. |
 
 <details>
@@ -99,7 +99,7 @@ Wazuh agents → Wazuh Manager → OpenSearch / Wazuh Indexer
                             Analisis AI        Telegram
 ```
 
-Fetch reguler mengambil maksimal 100 alert terbaru hari ini secara default. Tombol fetch manual memeriksa seluruh halaman hari ini, berdasarkan zona **Asia/Jakarta**. Alert yang sudah tersimpan akan dilewati.
+Fetch reguler membaca seluruh halaman dalam jendela incremental yang tersimpan, dengan overlap serta rekonsiliasi dua hari untuk alert yang terlambat terindeks. `OPENSEARCH_SIZE` hanya menentukan ukuran halaman, bukan batas total alert. Tombol fetch manual mengantrekan pemeriksaan seluruh halaman hari ini berdasarkan zona **Asia/Jakarta**. Alert yang sudah tersimpan akan dilewati secara idempoten.
 
 </details>
 
@@ -107,15 +107,15 @@ Fetch reguler mengambil maksimal 100 alert terbaru hari ini secara default. Tomb
 
 ## 🚀 Mulai dari sini
 
-**Siapkan:** PHP **8.3+**, Composer 2, Node.js **22.12+** (atau 20.19+), serta SQLite untuk instalasi cepat. OpenSearch diperlukan untuk mengimpor alert; Telegram dan AI dapat dikonfigurasi kemudian.
+**Siapkan:** PHP **8.3+**, Composer 2, Node.js **22.12+** (atau 20.19+), PostgreSQL/MySQL/MariaDB, OpenSearch/Wazuh Indexer, serta bot Telegram. AI dan SMTP bersifat opsional.
 
 <details>
 <summary><strong>📦 Lihat kebutuhan PHP dan pilihan database</strong></summary>
 
-- Ekstensi PHP: Ctype, cURL, DOM, Fileinfo, Filter, Hash, Mbstring, OpenSSL, PCRE, PDO, Session, Tokenizer, dan XML.
-- Aktifkan `pdo_sqlite` dan `sqlite3` untuk SQLite/pengujian, atau `pdo_mysql` untuk MySQL/MariaDB.
+- Ekstensi PHP: Ctype, cURL, DOM, Fileinfo, Filter, Hash, Iconv, JSON, LibXML, Mbstring, OpenSSL, PCRE, PDO, Session, Tokenizer, XML, dan Zip.
+- Aktifkan driver PDO sesuai database: `pdo_pgsql` untuk PostgreSQL atau `pdo_mysql` untuk MySQL/MariaDB. `pdo_sqlite` dan `sqlite3` tetap dipakai oleh pengujian lokal.
 - Pastikan PHP CLI dan web server memakai versi serta ekstensi yang sesuai, terutama pada Laragon.
-- Untuk MySQL/MariaDB, buat database dan atur `DB_*` **sebelum migrasi**. Lihat [panduan MySQL](docs/OPERATIONS.md#menggunakan-mysqlmariadb).
+- Buat database kosong dan pengguna aplikasi terlebih dahulu. Wizard menguji koneksi dan menjalankan migrasi, tetapi tidak membuat database atau memberikan privilege.
 
 </details>
 
@@ -128,71 +128,59 @@ composer install
 npm ci
 ```
 
-### 2. Siapkan konfigurasi
-
-Perintah berikut dapat dijalankan dari PowerShell maupun terminal Linux/macOS:
+### 2. Bangun aset dan siapkan web server
 
 ```bash
-php -r "file_exists('.env') || copy('.env.example', '.env');"
-php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
-```
-
-Atur `APP_URL` di `.env` menjadi `http://127.0.0.1:8000`, atau domain Laragon Anda. Konfigurasi contoh memakai SQLite.
-
-### 3. Buat database dan akun bawaan
-
-```bash
-php artisan key:generate
-php artisan migrate --seed
 npm run build
 ```
 
-> [!IMPORTANT]
-> `key:generate` hanya untuk instalasi baru. Pertahankan `.env` dan `APP_KEY` pada instalasi yang sudah berjalan agar kredensial terenkripsi tetap dapat dibaca.
+Arahkan document root web server ke direktori **`public/`**. Pengguna web server harus dapat menulis `.env`, `storage/`, dan `bootstrap/cache/` selama instalasi. Setelah instalasi produksi selesai, batasi kembali izin tulis `.env`.
 
-### 4. Jalankan dan masuk
+### 3. Buat token installer
+
+```bash
+php artisan siem:prepare-installation
+```
+
+Perintah tersebut membuat `.env` dari `.env.example` bila belum ada, menghasilkan `APP_KEY` yang stabil, dan menampilkan token installer sekali pakai. Token hanya disimpan sebagai hash, kedaluwarsa dalam satu jam secara default, dan tidak pernah ditampilkan oleh halaman web.
+
+> [!IMPORTANT]
+> Jangan kirim token, `.env`, atau `APP_KEY` melalui chat maupun log. Pertahankan `APP_KEY` setelah aplikasi digunakan karena kredensial integrasi dienkripsi menggunakan key tersebut.
+
+### 4. Selesaikan wizard
+
+Jalankan web server, buka URL aplikasi, lalu masukkan token pada **`/install`**. Wizard akan meminta:
+
+- nama, URL, dan zona waktu aplikasi;
+- database (wajib; PostgreSQL direkomendasikan untuk volume besar);
+- OpenSearch/Wazuh Indexer dan Telegram (wajib);
+- AI dan SMTP (opsional);
+- akun administrator pertama (wajib, password minimal 12 karakter).
+
+Koneksi wajib diuji sebelum `.env` diperbarui. Migrasi dijalankan tanpa seeder; secret OpenSearch, Telegram, dan AI disimpan terenkripsi di database. Kredensial database/SMTP berada di `.env` berizin privat. Installer dikunci setelah marker terakhir berhasil dibuat.
+
+Untuk pengembangan lokal, perintah berikut menjalankan server, worker, scheduler, dan Vite:
 
 ```bash
 composer run dev
 ```
 
-Buka **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. Perintah ini menjalankan server aplikasi, worker queue AI, scheduler, dan Vite.
-
 <a id="akun-bawaan"></a>
 
-## 🔑 Akun bawaan
+## 🔑 Akun administrator awal
 
-Setelah `php artisan migrate --seed`, login menggunakan **email** berikut:
-
-| Peran | Email | Password | Akses |
-| :--- | :--- | :--- | :--- |
-| **Admin SOC** | `adminsoc@siem.local` | `bhapp` | Operasional SOC, Settings, integrasi, dan pengelolaan pengguna. |
-| **Analis SOC** | `analissoc@siem.local` | `bhapp` | Dashboard, alert, triage, dan notifikasi sesuai akses analyst. |
-
-Form login menggunakan **email dan password**. Akun lama tetap dapat login dengan email yang sudah terdaftar.
-
-> [!WARNING]
-> Kredensial bawaan ini dipublikasikan untuk memudahkan instalasi/demo. **Ganti password kedua akun sebelum aplikasi digunakan secara publik**, atau buat akun pribadi dan hapus akun bawaan yang tidak diperlukan.
+SIEM Salabim tidak membuat akun atau password bawaan. Administrator pertama dibuat melalui wizard menggunakan identitas dan password milik organisasi Anda. Registrasi publik tetap dinonaktifkan; akun analyst tambahan dibuat oleh admin melalui **Settings**.
 
 <details>
-<summary><strong>Sudah punya instalasi? / Ingin membuat admin sendiri?</strong></summary>
+<summary><strong>Sudah punya instalasi?</strong></summary>
 
-Untuk menambahkan akun bawaan pada instalasi yang sudah ada:
-
-```bash
-php artisan migrate
-php artisan db:seed
-```
-
-Seeder membuat akun berdasarkan email yang belum terdaftar; password, role, dan identitas akun existing tidak ditimpa. Jika email sudah digunakan, periksa pesan seeder dan selesaikan melalui pengelolaan pengguna.
-
-Untuk instalasi dengan akun admin pribadi, jalankan migrasi tanpa `--seed`, lalu:
+Instalasi lama yang telah memiliki akun admin dideteksi dan wizard tetap terkunci. Bila perlu membuat admin dari terminal, gunakan:
 
 ```bash
 php artisan siem:create-admin
 ```
 
-Perintah ini meminta nama, email, serta password minimal 12 karakter dengan input tersembunyi. Login menggunakan email tersebut. Registrasi publik tetap dinonaktifkan.
+Perintah ini meminta nama, email, serta password minimal 12 karakter dengan input tersembunyi. `DatabaseSeeder` tidak membuat akun otomatis agar deployment tidak pernah memperoleh kredensial yang dapat ditebak.
 
 </details>
 
@@ -206,7 +194,7 @@ Login sebagai admin → buka **Settings** → simpan konfigurasi → gunakan tom
 | **Telegram** | Token bot dan chat tujuan yang dapat diakses bot. | [Konfigurasi Telegram](docs/OPERATIONS.md#telegram) |
 | **AmanAI** | API key serta model yang tersedia untuk akun Anda. | [Konfigurasi & cakupan data AI](docs/OPERATIONS.md#analisis-ai) |
 
-Kelola host dan kredensial integrasi, model AI, ambang level, serta interval analisis melalui **Settings**. `.env.example` memuat konfigurasi server seperti database, SMTP, session/cache/queue, serta parameter teknis koneksi. Worker **`ai,default`** dan scheduler perlu tetap berjalan untuk pekerjaan otomatis.
+Kelola host dan kredensial integrasi, model AI, ambang level, serta interval analisis melalui **Settings**. `.env.example` memuat konfigurasi server seperti database, SMTP, session/cache/queue, serta parameter teknis koneksi. Worker **`ai,default`**, worker **`exports`**, dan scheduler perlu tetap berjalan untuk pekerjaan otomatis. Worker **`updates`** hanya diperlukan bila self-update diaktifkan oleh administrator server.
 
 <details>
 <summary><strong>💻 Menggunakan virtual host Laragon?</strong></summary>
@@ -215,7 +203,9 @@ Arahkan document root ke **`public/`** dan sesuaikan `APP_URL`, misalnya `http:/
 
 ```bash
 npm run dev
-php artisan queue:work --queue=ai,default --sleep=3 --tries=2 --timeout=180
+php artisan queue:work --queue=ai,default --sleep=3 --tries=2 --timeout=1800
+php artisan queue:work --queue=exports --sleep=3 --tries=3 --timeout=1800
+php artisan queue:work --queue=updates --sleep=3 --tries=1 --timeout=3600
 php artisan schedule:work
 ```
 
@@ -231,6 +221,7 @@ Jalankan satu scheduler untuk setiap instalasi. Lihat [deployment dan operasiona
 | Mengetahui data yang dikirim ke AI | [Analisis AI](docs/OPERATIONS.md#analisis-ai) |
 | Deploy dengan scheduler dan queue | [Deployment](docs/OPERATIONS.md#deployment-dan-operasional) |
 | Mengelola backup dan retensi | [Backup & penghapusan data](docs/OPERATIONS.md#backup-dan-penghapusan-data) |
+| Memeriksa dan menerapkan release | [Update aplikasi terverifikasi](docs/OPERATIONS.md#update-aplikasi-terverifikasi) |
 | Menjalankan tes atau berkontribusi kode | [Pengujian](docs/OPERATIONS.md#pengujian) |
 | Memeriksa file sebelum commit | [Panduan Git](docs/OPERATIONS.md#sebelum-commit-dan-push) |
 
@@ -245,9 +236,9 @@ Hasil mungkin sudah pernah diimpor, atau tidak ada alert yang cocok dengan tangg
 
 Uji koneksi dan model di Settings. Pastikan API key valid, provider tersedia, dan worker `ai,default` berjalan untuk job otomatis. Profil default meminta `reasoning_effort=none`; kecepatannya tetap bergantung pada provider.
 
-**Akun bawaan tidak bisa login?**
+**Tidak bisa masuk setelah instalasi?**
 
-Pastikan migrasi dan seeder sudah dijalankan. Jika password akun pernah diganti, gunakan password terbaru; seeder tidak meresetnya. Periksa juga pesan email yang sudah terdaftar dari seeder.
+Gunakan email dan password administrator yang dibuat pada wizard. Tidak ada akun bawaan. Jika admin awal belum sempat dibuat, selesaikan `/install`; untuk pemulihan oleh administrator server gunakan `php artisan siem:create-admin`.
 
 **Apakah AI menggantikan analyst?**
 

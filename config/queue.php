@@ -40,7 +40,10 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 240),
+            // Application updates may run for up to 60 minutes. Keeping the
+            // reservation longer prevents a second worker from executing the
+            // same destructive workflow while the first is still active.
+            'retry_after' => max(3660, (int) env('DB_QUEUE_RETRY_AFTER', 3660)),
             'after_commit' => false,
         ],
 
@@ -48,7 +51,7 @@ return [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
             'queue' => env('BEANSTALKD_QUEUE', 'default'),
-            'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => max(3660, (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 3660)),
             'block_for' => 0,
             'after_commit' => false,
         ],
@@ -68,7 +71,7 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => max(3660, (int) env('REDIS_QUEUE_RETRY_AFTER', 3660)),
             'block_for' => null,
             'after_commit' => false,
         ],

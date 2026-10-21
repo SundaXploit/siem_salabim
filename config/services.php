@@ -7,11 +7,29 @@ return [
         'username' => env('OPENSEARCH_USERNAME', ''),
         'password' => env('OPENSEARCH_PASSWORD', ''),
         'index' => env('OPENSEARCH_INDEX', 'wazuh-alerts-*'),
+        // Stable logical name for the source cluster. Do not derive this from
+        // the host: endpoints can change while the source identity stays put.
+        'source_cluster' => env('OPENSEARCH_SOURCE_CLUSTER', 'wazuh-primary'),
         'verify_ssl' => filter_var(env('OPENSEARCH_VERIFY_SSL', true), FILTER_VALIDATE_BOOL),
         'min_level' => (int) env('OPENSEARCH_MIN_LEVEL', 12),
         'size' => (int) env('OPENSEARCH_SIZE', 100),
         // Pace scroll pages so a manual backfill does not send a tight burst.
         'fetch_page_delay_ms' => (int) env('OPENSEARCH_FETCH_PAGE_DELAY_MS', 250),
+        // Routine ingestion replays this much event time on every run so an
+        // alert indexed a little late is still observed and de-duplicated.
+        'fetch_overlap_seconds' => (int) env('OPENSEARCH_FETCH_OVERLAP_SECONDS', 900),
+        // A periodic bounded rescan catches documents indexed after their
+        // event-time window has moved behind the incremental checkpoint.
+        'reconcile_lookback_days' => (int) env('OPENSEARCH_RECONCILE_LOOKBACK_DAYS', 2),
+        'fetch_insert_batch_size' => (int) env('OPENSEARCH_FETCH_INSERT_BATCH_SIZE', 100),
+        'fetch_lock_seconds' => (int) env('OPENSEARCH_FETCH_LOCK_SECONDS', 3600),
+        // PIT/search_after is safe only when the final sort field is a
+        // guaranteed-unique keyword with doc values. Wazuh/custom pipelines
+        // differ, so scroll remains the fail-safe default until an operator
+        // explicitly supplies that field.
+        'pit_enabled' => filter_var(env('OPENSEARCH_PIT_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'pit_tiebreaker_field' => trim((string) env('OPENSEARCH_PIT_TIEBREAKER_FIELD', '')),
+        'pit_keep_alive_seconds' => (int) env('OPENSEARCH_PIT_KEEP_ALIVE_SECONDS', 120),
     ],
 
     /*
