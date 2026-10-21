@@ -31,10 +31,10 @@ class HistoryController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('rule_description', 'like', "%{$search}%")
-                  ->orWhere('src_ip', 'like', "%{$search}%")
-                  ->orWhere('agent_name', 'like', "%{$search}%")
-                  ->orWhere('rule_id', 'like', "%{$search}%");
+                $q->whereLike('rule_description', "%{$search}%")
+                  ->orWhereLike('src_ip', "%{$search}%")
+                  ->orWhereLike('agent_name', "%{$search}%")
+                  ->orWhereLike('rule_id', "%{$search}%");
             });
         }
 
@@ -50,8 +50,8 @@ class HistoryController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('chat_id', 'like', "%{$search}%")
-                  ->orWhere('message', 'like', "%{$search}%");
+                $q->whereLike('chat_id', "%{$search}%")
+                  ->orWhereLike('message', "%{$search}%");
             });
         }
 

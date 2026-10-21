@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\Alert;
 use App\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -14,7 +14,7 @@ use Tests\TestCase;
 
 class BulkTriageTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseMigrations;
 
     protected function setUp(): void
     {
@@ -121,7 +121,12 @@ class BulkTriageTest extends TestCase
     {
         $first = $this->alert();
         $second = $this->alert();
-        DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages WHEN NEW.alert_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'test history failure'); END");
+        $trigger = match (DB::connection()->getDriverName()) {
+            'pgsql' => "CREATE FUNCTION pg_temp.fail_triage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.alert_id = {$second->id} THEN RAISE EXCEPTION 'test history failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_triage();",
+            'mysql', 'mariadb' => "CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages FOR EACH ROW BEGIN IF NEW.alert_id = {$second->id} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'test history failure'; END IF; END",
+            default => "CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages WHEN NEW.alert_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'test history failure'); END",
+        };
+        DB::unprepared($trigger);
         $this->withoutExceptionHandling();
         try {
             $this->actingAs(User::factory()->create(['role' => 'analyst']))
@@ -133,6 +138,8 @@ class BulkTriageTest extends TestCase
             $this->assertSame('new', $first->fresh()->status);
             $this->assertSame('new', $second->fresh()->status);
             $this->assertDatabaseCount('alert_triages', 0);
+        } finally {
+            DB::unprepared('DROP TRIGGER fail_triage'.(DB::connection()->getDriverName() === 'pgsql' ? ' ON alert_triages' : ''));
         }
     }
 

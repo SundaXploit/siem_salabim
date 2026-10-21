@@ -507,7 +507,7 @@
                     <label class="form-label">Format output</label>
                     <select x-model="format" class="form-select">
                         <option value="json">JSON (universal)</option>
-                        <option value="sql">SQL (INSERT statements, reimportable ke MySQL)</option>
+                        <option value="sql">SQL (restore ke jenis database yang sama)</option>
                     </select>
                 </div>
                 <div class="form-group">

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\Installation\EnvironmentFileWriter;
 use App\Services\Installation\InstallationState;
 use App\Services\Installation\Installer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class InstallerHttpTest extends TestCase
@@ -151,6 +152,83 @@ class InstallerHttpTest extends TestCase
             ->assertSessionMissing('installer.unlocked_at');
     }
 
+    public static function optionalIntegrations(): array
+    {
+        return [
+            'both skipped' => [false, false],
+            'only OpenSearch' => [true, false],
+            'only Telegram' => [false, true],
+        ];
+    }
+
+    #[DataProvider('optionalIntegrations')]
+    public function test_form_accepts_skipped_integrations(bool $openSearchEnabled, bool $telegramEnabled): void
+    {
+        $input = $this->validInput();
+        foreach (['opensearch' => $openSearchEnabled, 'telegram' => $telegramEnabled] as $prefix => $enabled) {
+            if (! $enabled) {
+                foreach (array_keys($input) as $key) {
+                    if (str_starts_with($key, $prefix.'_')) {
+                        unset($input[$key]);
+                    }
+                }
+            }
+        }
+        $installer = $this->mock(Installer::class);
+        $installer->shouldReceive('install')->once()->withArgs(function (array $data) use ($openSearchEnabled, $telegramEnabled): bool {
+            return $data['opensearch_enabled'] === $openSearchEnabled
+                && $data['telegram_enabled'] === $telegramEnabled
+                && array_key_exists('opensearch_host', $data) === $openSearchEnabled
+                && array_key_exists('telegram_bot_token', $data) === $telegramEnabled;
+        });
+
+        $this->withSession([
+            'installer.unlocked' => true,
+            'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.store'), $input)
+            ->assertRedirect(route('install.complete'))
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_enabled_integrations_require_credentials(): void
+    {
+        $this->mock(Installer::class)->shouldNotReceive('install');
+        $input = array_replace($this->validInput(), [
+            'opensearch_password' => '',
+            'telegram_bot_token' => '',
+            'telegram_chat_ids' => [''],
+        ]);
+
+        $this->withSession([
+            'installer.unlocked' => true,
+            'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.store'), $input)
+            ->assertSessionHasErrors(['opensearch_password', 'telegram_bot_token', 'telegram_chat_ids']);
+    }
+
+    public function test_disabled_integrations_ignore_invalid_fields(): void
+    {
+        $input = array_replace($this->validInput(), [
+            'opensearch_enabled' => '0',
+            'telegram_enabled' => '0',
+            'opensearch_host' => 'invalid-url',
+            'telegram_bot_token' => 'incomplete-token',
+            'telegram_chat_ids' => ['invalid-chat'],
+        ]);
+        $this->mock(Installer::class)->shouldReceive('install')->once()->withArgs(function (array $data): bool {
+            return ! array_key_exists('opensearch_host', $data)
+                && ! array_key_exists('telegram_bot_token', $data)
+                && ! array_key_exists('telegram_chat_ids', $data);
+        });
+
+        $this->withSession([
+            'installer.unlocked' => true,
+            'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.store'), $input)
+            ->assertRedirect(route('install.complete'))
+            ->assertSessionHasNoErrors();
+    }
+
     public function test_installed_and_legacy_applications_cannot_reopen_wizard(): void
     {
         $this->environment->update(['APP_INSTALLED' => true]);
@@ -179,6 +257,8 @@ class InstallerHttpTest extends TestCase
             'db_username' => 'siem',
             'db_password' => 'database-secret',
             'db_sslmode' => 'require',
+            'opensearch_enabled' => true,
+            'telegram_enabled' => true,
             'opensearch_host' => 'https://indexer.example.test:9200',
             'opensearch_username' => 'wazuh',
             'opensearch_password' => 'indexer-secret',

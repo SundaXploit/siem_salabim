@@ -9,7 +9,13 @@ permissions:
   contents: write
 
 jobs:
+  databases:
+    uses: ./.github/workflows/databases.yml
+    permissions:
+      contents: read
+
   release:
+    needs: databases
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 

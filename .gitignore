@@ -23,28 +23,3 @@
 !/storage/**/
 !/storage/**/.gitignore
 /vendor
-# Local databases, exports, credentials, and manual diagnostic scripts.
-*.sqlite*
-*.db
-*.db-*
-*.sql
-*.sql.gz
-*.dump
-*.pem
-*.key
-*.p12
-*.pfx
-/backups/
-/exports/
-/dumps/
-/test_telegram.php
-# Test/build output and local assistant/editor state.
-/coverage/
-/.agents/
-/.codex/
-Homestead.json
-Homestead.yaml
-Thumbs.db
-/DESIGN_SYSTEM.md
-/UI_AUDIT.md
-/UI_REFACTOR_REPORT.md

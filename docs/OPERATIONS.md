@@ -4,7 +4,27 @@
 
 Panduan lengkap untuk integrasi, deployment, backup, dan pengujian. Untuk instalasi melalui wizard dan pembuatan administrator awal, ikuti README terlebih dahulu.
 
-## Menggunakan MySQL/MariaDB
+## Database untuk instalasi baru
+
+Gunakan **PostgreSQL 18 dengan minor release terbaru** sebagai default produksi. Wizard `/install`, `.env.example`, dan fallback konfigurasi menggunakan PostgreSQL. Instalasi lama tetap memakai `DB_CONNECTION` yang tersimpan; pembaruan kode tidak memindahkan atau mengonversi data otomatis.
+
+PostgreSQL menyimpan alert operasional, triage, pengguna, hasil AI, dan metadata ekspor. OpenSearch/Wazuh Indexer tetap menjadi sumber indeks log. Untuk volume besar, tetapkan batas retensi dan filter alert yang diimpor; jangan mengandalkan pergantian DBMS saja sebagai solusi kapasitas.
+
+```dotenv
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=siem_salabim
+DB_USERNAME=siem_app
+DB_PASSWORD=
+DB_SSLMODE=prefer
+```
+
+Siapkan database UTF-8 dan role khusus aplikasi yang dapat membuat/mengubah tabel di schema `public` untuk migrasi. Aktifkan `pdo_pgsql` pada **PHP web dan CLI/worker**. Untuk server terpisah gunakan TLS dengan verifikasi sertifikat (`verify-full`) dan CA yang sesuai. Jangan memakai akun superuser sebagai akun aplikasi.
+
+Pilihan `/install` adalah PostgreSQL, MySQL, dan MariaDB. SQLite hanya untuk pengembangan/pengujian dan tidak ditawarkan dalam wizard. Matrix CI menjalankan seluruh suite pada PostgreSQL 18, MySQL 8.0/8.4, dan MariaDB 11.8. Hasil eksekusi lokal serta batas verifikasinya dicatat di [audit database](DATABASE_AUDIT.md).
+
+### Alternatif MySQL/MariaDB
 
 Buat database dan pengguna aplikasi terlebih dahulu, kemudian ganti konfigurasi database **sebelum menjalankan migrasi**:
 
@@ -17,7 +37,17 @@ DB_USERNAME=siem_app
 DB_PASSWORD=
 ```
 
-Untuk instalasi baru, masukkan koneksi tersebut melalui `/install`; wizard menguji database, menjalankan migrasi tanpa seeder, lalu membuat administrator dengan password pilihan Anda. Jalur CLI `php artisan migrate` dan `php artisan siem:create-admin` tetap tersedia untuk pemulihan oleh administrator server. Aplikasi tidak menyediakan migrasi data otomatis dari SQLite ke MySQL. SQLite cocok untuk pengembangan/volume kecil; untuk ingestion dan ekspor besar gunakan MySQL/MariaDB atau PostgreSQL yang sudah diuji pada lingkungan Anda.
+Untuk MariaDB gunakan `DB_CONNECTION=mariadb`. Untuk instalasi baru, masukkan koneksi melalui `/install`; wizard menguji database, menjalankan migrasi tanpa seeder, lalu membuat administrator. Jalur CLI `php artisan migrate` dan `php artisan siem:create-admin` tetap tersedia. Perpindahan engine pada instalasi berisi data membutuhkan migrasi data terpisah dan uji restore; mengganti `.env` saja tidak memindahkan data.
+
+### Kapasitas dan pemrosesan log
+
+- Jalankan ingestion, AI, dan ekspor melalui worker asynchronous. Untuk deployment besar, pertimbangkan Redis sebagai queue/cache bersama agar pekerjaan antrean tidak menambah beban database alert; siapkan Redis terlebih dahulu sebelum mengubah konfigurasinya.
+- Pertahankan indeks identitas sumber untuk deduplikasi. Import membaca halaman dan menulis batch; besar batch dan jumlah worker harus diukur dengan ukuran log nyata serta kapasitas CPU, RAM, dan IOPS server.
+- Batasi retensi melalui ekspor terverifikasi dan purge bertahap. Atur rollover/retensi indeks OpenSearch secara terpisah.
+- Pantau query lambat, jumlah koneksi, pertumbuhan tabel/indeks, autovacuum, disk, dan umur transaksi ekspor. Pencarian substring pada seluruh JSON serta statistik seluruh tabel masih bisa memindai banyak baris; belum ada klaim kapasitas jutaan log atau EPS tertentu.
+- Untuk pemulihan lengkap PostgreSQL, gunakan backup native (`pg_dump`/`pg_restore`, atau physical backup dan WAL untuk PITR), disertai backup `APP_KEY`, konfigurasi, dan file bukti. Ekspor aplikasi hanya mencakup data yang dipilih.
+
+Rujukan: [MVCC PostgreSQL](https://www.postgresql.org/docs/18/mvcc-intro.html), [masa dukungan versi](https://www.postgresql.org/support/versioning/), dan [retensi indeks OpenSearch](https://docs.opensearch.org/latest/im-plugin/ism/index/).
 
 ## Konfigurasi integrasi
 
@@ -137,7 +167,7 @@ Asset `siem-salabim-vX.Y.Z.zip` adalah paket **khusus updater**, bukan paket ins
 
 ### Backup dan penghapusan data
 
-Ekspor pada Settings mengikuti cakupan dan periode pilihan pengguna. Format SQL menargetkan MySQL/MariaDB; gunakan JSON untuk pertukaran data lintas database. Aplikasi belum menyediakan UI restore. Pembuatan ekspor berjalan melalui queue asynchronous dan membaca record dalam chunk, sehingga request web tidak menampung seluruh backup di memori. Aplikasi menolak ekspor/purge bila koneksi queue berjalan di request (`sync`, `deferred`, `null`, atau failover yang memuatnya).
+Ekspor pada Settings mengikuti cakupan dan periode pilihan pengguna. Format SQL mengikuti engine sumber (PostgreSQL, MySQL/MariaDB, atau SQLite), yang tercantum pada header SQL dan manifest. Restore memerlukan schema aplikasi yang sesuai dan record pengguna yang direferensikan sudah tersedia. PostgreSQL memulihkan sequence ID setelah insert. Arsip SQL lama tetap berformat MySQL; gunakan JSON untuk pertukaran lintas engine, dengan proses impor terpisah. Aplikasi belum menyediakan UI restore. Pembuatan ekspor berjalan melalui queue asynchronous dan membaca record dalam chunk, sehingga request web tidak menampung seluruh backup di memori. Aplikasi menolak ekspor/purge bila koneksi queue berjalan di request (`sync`, `deferred`, `null`, atau failover yang memuatnya).
 
 | Variabel `.env` | Default | Keterangan |
 | --- | --- | --- |
@@ -178,11 +208,25 @@ php -d extension=pdo_sqlite -d extension=sqlite3 vendor/bin/phpunit
 
 Audit dependency memerlukan koneksi internet. Jalankan ulang sebelum rilis karena advisory dapat berubah. Tes otomatis memakai fake/mock untuk integrasi; lakukan uji koneksi lingkungan melalui Settings secara terpisah.
 
+Untuk pengujian database server, buat database **kosong khusus tes** yang namanya berakhiran `_test`. Suite melakukan `migrate:fresh`/rollback dan dapat menghapus seluruh tabel; jangan arahkan ke database operasional. Guard pengujian menolak konfigurasi yang di-cache dan nama database server tanpa akhiran tersebut. Contoh PowerShell dalam terminal khusus pengujian:
+
+```powershell
+$env:DB_CONNECTION = 'pgsql'
+$env:DB_HOST = '127.0.0.1'
+$env:DB_PORT = '5432'
+$env:DB_DATABASE = 'siem_audit_test'
+$env:DB_USERNAME = 'siem_test'
+$env:DB_PASSWORD = '<password-role-test>'
+php -d extension=pdo_pgsql -d extension=pdo_sqlite -d extension=sqlite3 vendor/bin/phpunit
+```
+
+Gunakan driver/port yang sesuai untuk MySQL atau MariaDB. Tes `ServerDatabaseTest` memeriksa installer tanpa mock database dan reservasi queue dengan dua koneksi serta row lock nyata. Tes ekspor menjalankan SQL hasil ekspor langsung di engine sumber, menguji replay, integritas isi, rollback, dan sequence. Workflow `databases.yml` dipanggil sebelum job publikasi rilis; rilis tidak dilanjutkan bila salah satu engine gagal. Workflow yang ditambahkan secara lokal belum dianggap lulus sampai benar-benar dijalankan di GitHub Actions.
+
 ## Sebelum commit dan push
 
 Repository menyertakan kode aplikasi, migrasi, pengujian, `.env.example`, `composer.lock`, dan `package-lock.json`. Lock file perlu ikut di-commit agar instalasi menggunakan versi dependency yang sama.
 
-`.gitignore` mengecualikan konfigurasi lokal `.env` beserta variasinya, dependency terpasang, hasil build, database lokal, dump/backup, log, session/cache, file unggahan, key/sertifikat privat, keluaran tes, dan skrip diagnostik Telegram lokal. File `.gitignore` di dalam `storage/` tetap dipertahankan untuk struktur direktori.
+`.gitignore` mengecualikan konfigurasi lokal `.env` beserta variasinya, dependency terpasang, hasil build, log, dan isi runtime `storage/`. File `.gitignore` di dalam `storage/` tetap dipertahankan untuk struktur direktori. Database atau hasil ekspor di luar direktori yang diabaikan perlu diperiksa melalui `git status` sebelum commit.
 
 Setelah repository Git diinisialisasi, periksa daftar file:
 

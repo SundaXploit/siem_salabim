@@ -11,7 +11,7 @@ use App\Models\User;
 use App\Services\ApplicationUpdateRuntimeGuard;
 use App\Services\DataExportArchiveService;
 use App\Services\DataExportPurgeService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -22,7 +22,7 @@ use Tests\TestCase;
 
 class DataExportSafetyTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseMigrations;
 
     public function test_export_is_persisted_with_a_verified_manifest_before_download(): void
     {
@@ -37,7 +37,8 @@ class DataExportSafetyTest extends TestCase
         $this->assertSame('verified', $export->status);
         $this->assertNotNull($export->verified_at);
         $this->assertSame(64, strlen((string) $export->checksum));
-        $this->assertSame(['alerts' => 1, 'alert_ai_analyses' => 0, 'alert_triages' => 0, 'notification_logs' => 0], $export->record_counts);
+        // Native JSON engines may reorder object keys.
+        $this->assertEquals(['alerts' => 1, 'alert_ai_analyses' => 0, 'alert_triages' => 0, 'notification_logs' => 0], $export->record_counts);
 
         $manifest = json_decode(
             Storage::disk('local')->get($export->manifest_path),
@@ -204,14 +205,36 @@ class DataExportSafetyTest extends TestCase
         $this->actingAs($admin)->post(route('settings.data.backup'), $this->payload());
         $export = DataExport::query()->sole();
 
-        DB::unprepared(<<<'SQL'
+        $trigger = match (DB::connection()->getDriverName()) {
+            'pgsql' => <<<'SQL'
+                CREATE FUNCTION pg_temp.reject_completed_purge() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.purge_status = 'completed' THEN
+                        RAISE EXCEPTION 'forced completed status failure';
+                    END IF;
+                    RETURN NEW;
+                END $$;
+                CREATE TRIGGER reject_completed_purge BEFORE UPDATE ON data_exports
+                FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_completed_purge();
+                SQL,
+            'mysql', 'mariadb' => <<<'SQL'
+                CREATE TRIGGER reject_completed_purge BEFORE UPDATE ON data_exports
+                FOR EACH ROW BEGIN
+                    IF NEW.purge_status = 'completed' THEN
+                        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced completed status failure';
+                    END IF;
+                END
+                SQL,
+            default => <<<'SQL'
             CREATE TRIGGER reject_completed_purge
             BEFORE UPDATE OF purge_status ON data_exports
             WHEN NEW.purge_status = 'completed'
             BEGIN
                 SELECT RAISE(ABORT, 'forced completed status failure');
             END
-            SQL);
+            SQL,
+        };
+        DB::unprepared($trigger);
 
         $this->actingAs($admin)
             ->post(route('settings.data.exports.purge', $export))

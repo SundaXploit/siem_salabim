@@ -107,7 +107,7 @@ Fetch reguler membaca seluruh halaman dalam jendela incremental yang tersimpan, 
 
 ## 🚀 Mulai dari sini
 
-**Siapkan:** PHP **8.3+**, Composer 2, Node.js **22.12+** (atau 20.19+), PostgreSQL/MySQL/MariaDB, OpenSearch/Wazuh Indexer, serta bot Telegram. AI dan SMTP bersifat opsional.
+**Siapkan:** PHP **8.3+**, Composer 2, Node.js **22.12+** (atau 20.19+), dan **PostgreSQL 18 dengan minor release terbaru** sebagai default instalasi baru. MySQL/MariaDB tetap tersedia sebagai alternatif. OpenSearch/Wazuh Indexer, Telegram, AI, dan SMTP bersifat opsional saat instalasi. Lihat [dukungan dan kapasitas database](docs/OPERATIONS.md#database-untuk-instalasi-baru) serta [hasil audit](docs/DATABASE_AUDIT.md).
 
 <details>
 <summary><strong>📦 Lihat kebutuhan PHP dan pilihan database</strong></summary>
@@ -153,11 +153,11 @@ Jalankan web server, buka URL aplikasi, lalu masukkan token pada **`/install`**.
 
 - nama, URL, dan zona waktu aplikasi;
 - database (wajib; PostgreSQL direkomendasikan untuk volume besar);
-- OpenSearch/Wazuh Indexer dan Telegram (wajib);
+- OpenSearch/Wazuh Indexer dan Telegram (opsional, dapat dikonfigurasi nanti melalui Settings);
 - AI dan SMTP (opsional);
 - akun administrator pertama (wajib, password minimal 12 karakter).
 
-Koneksi wajib diuji sebelum `.env` diperbarui. Migrasi dijalankan tanpa seeder; secret OpenSearch, Telegram, dan AI disimpan terenkripsi di database. Kredensial database/SMTP berada di `.env` berizin privat. Installer dikunci setelah marker terakhir berhasil dibuat.
+Koneksi database selalu diuji; koneksi OpenSearch dan Telegram diuji hanya jika diaktifkan, sebelum `.env` diperbarui. Migrasi dijalankan tanpa seeder; secret OpenSearch, Telegram, dan AI disimpan terenkripsi di database. Kredensial database/SMTP berada di `.env` berizin privat. Installer dikunci setelah marker terakhir berhasil dibuat.
 
 Untuk pengembangan lokal, perintah berikut menjalankan server, worker, scheduler, dan Vite:
 

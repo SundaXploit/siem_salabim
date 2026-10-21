@@ -7,15 +7,14 @@ use App\Models\AlertTriage;
 use App\Models\DataExport;
 use App\Models\NotificationLog;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use PDO;
 use Tests\TestCase;
 
 class SqlBackupTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseMigrations;
 
     public function test_sql_export_round_trips_untrusted_text_nulls_json_and_timestamps(): void
     {
@@ -25,6 +24,11 @@ class SqlBackupTest extends TestCase
             'name' => "SOC\nDROP TABLE export_guard;\r\n--",
         ]);
         $hostile = "O'Brien\\path\n'); DROP TABLE export_guard; --\r\n\0雪 🔎";
+        // PostgreSQL text rejects NUL bytes; preserve them in the JSON payload.
+        $rawHostile = $hostile;
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            $hostile = str_replace("\0", '', $hostile);
+        }
         $alert = Alert::create([
             'wazuh_alert_id' => "event'); DROP TABLE export_guard; --",
             'rule_description' => $hostile,
@@ -35,7 +39,7 @@ class SqlBackupTest extends TestCase
             'rule_level' => 5,
             'status' => 'new',
             'first_seen_at' => '2026-09-17 04:00:00',
-            'raw_data' => ['text' => $hostile, 'empty' => '', 'null' => null, 'number' => 42],
+            'raw_data' => ['text' => $rawHostile, 'empty' => '', 'null' => null, 'number' => 42],
         ]);
         Alert::create([
             'wazuh_alert_id' => 'nullable-alert',
@@ -100,30 +104,33 @@ class SqlBackupTest extends TestCase
             ->assertDownload($export->filename);
         $sql = $response->streamedContent();
 
-        // Restore into a separate in-memory database using its actual SQL
-        // parser. Translate only MySQL syntax, not the exported string data.
-        $restored = new PDO('sqlite::memory:');
-        $restored->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $restored->exec('CREATE TABLE export_guard (id INTEGER PRIMARY KEY)');
-        $restored->exec('INSERT INTO export_guard VALUES (1)');
+        // Check source preservation, then restore the exact SQL through the
+        // actual engine in this disposable test database, without translation.
         foreach ($tables as $table) {
-            $schema = DB::table('sqlite_master')->where('type', 'table')->where('name', $table)->value('sql');
-            $restored->exec($schema);
+            $this->assertSame($expected[$table], DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all());
         }
-        $sqlite = preg_replace('/^SET [^\r\n]*;$/m', '', $sql);
-        $sqlite = str_replace('INSERT IGNORE INTO', 'INSERT OR IGNORE INTO', $sqlite);
-        $sqlite = preg_replace("/_utf8mb4 (X'[0-9a-f]*')/", 'CAST($1 AS TEXT)', $sqlite);
-        $restored->exec($sqlite);
-
-        $this->assertSame(1, (int) $restored->query('SELECT COUNT(*) FROM export_guard')->fetchColumn());
-        foreach ($tables as $table) {
-            $actual = $restored->query("SELECT * FROM `{$table}` ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
-            $this->assertSame($expected[$table], $actual, "Export did not preserve {$table} values.");
-            $this->assertSame(
-                $expected[$table],
-                DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(),
-                "Export changed source rows in {$table}.",
-            );
+        DB::statement('CREATE TABLE export_guard (id INTEGER PRIMARY KEY)');
+        DB::table('export_guard')->insert(['id' => 1]);
+        foreach (['alert_ai_analyses', 'alert_triages', 'notification_logs', 'alerts'] as $table) {
+            DB::table($table)->delete();
+        }
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            foreach ($tables as $table) {
+                DB::statement("ALTER SEQUENCE {$table}_id_seq RESTART WITH 1");
+            }
+        }
+        try {
+            DB::unprepared($sql);
+            DB::unprepared($sql);
+            $this->assertSame(1, DB::table('export_guard')->count());
+            foreach ($tables as $table) {
+                $actual = DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
+                $this->assertSame($expected[$table], $actual, "Export did not preserve {$table} values.");
+            }
+            $newAlert = Alert::create(['wazuh_alert_id' => 'after-restore', 'rule_level' => 1]);
+            $this->assertGreaterThan(max(array_column($expected['alerts'], 'id')), $newAlert->id);
+        } finally {
+            DB::statement('DROP TABLE export_guard');
         }
     }
 

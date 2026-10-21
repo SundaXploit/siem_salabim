@@ -624,6 +624,47 @@ class FetchWazuhAlertsTest extends TestCase
         $nextLock->release();
     }
 
+    public function test_streamed_ingestion_replays_two_thousand_events_without_duplicates_or_lost_triage(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        $this->mock(OpenSearchService::class, function (MockInterface $service): void {
+            $service->shouldReceive('fetchAlertBatches')->twice()->andReturnUsing(function (): \Generator {
+                for ($page = 0; $page < 20; $page++) {
+                    $hits = [];
+                    for ($offset = 0; $offset < 100; $offset++) {
+                        $hit = $this->hit('volume-'.($page * 100 + $offset));
+                        $hit['_source']['data']['full_log'] = str_repeat('event payload ', 160);
+                        $hits[] = $hit;
+                    }
+                    yield $hits;
+                }
+            });
+        });
+        $this->artisan('siem:fetch-alerts', ['--all' => true])->assertSuccessful();
+        $this->assertDatabaseCount('alerts', 2000);
+        $triaged = Alert::query()->firstOrFail();
+        $triaged->update(['status' => 'acknowledged']);
+        $this->artisan('siem:fetch-alerts', ['--all' => true])->assertSuccessful();
+        $this->assertDatabaseCount('alerts', 2000);
+        $this->assertSame('acknowledged', $triaged->fresh()->status);
+        $this->assertSame(str_repeat('event payload ', 160), $triaged->fresh()->raw_data['data']['full_log']);
+    }
+
+    public function test_log_null_bytes_are_visible_in_text_and_preserved_in_raw_json(): void
+    {
+        Configuration::set('min_alert_level', 12);
+        $hit = $this->hit('nul-log');
+        $hit['_source']['rule']['description'] = "before\0after";
+        $hit['_source']['agent']['name'] = "host\0name";
+        $this->mockBatches([[$hit]]);
+        $this->artisan('siem:fetch-alerts', ['--all' => true])->assertSuccessful();
+
+        $alert = Alert::sole();
+        $this->assertSame('before\u0000after', $alert->rule_description);
+        $this->assertSame('host\u0000name', $alert->agent_name);
+        $this->assertSame("before\0after", $alert->raw_data['rule']['description']);
+    }
+
     private function mockBatches(array $batches): void
     {
         $pages = (function () use ($batches): \Generator {

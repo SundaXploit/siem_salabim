@@ -722,16 +722,23 @@ class OpenSearchService
             'source_index' => $sourceIndex,
             'source_id' => $sourceId,
             'source_identity_hash' => Alert::sourceIdentityHash($sourceCluster, $sourceIndex, $sourceId),
-            'rule_description' => $src['rule']['description'] ?? null,
-            'src_ip' => $data['srcip'] ?? $src['data']['src_ip'] ?? null,
-            'dst_ip' => $data['dstip'] ?? $src['data']['dst_ip'] ?? null,
-            'agent_name' => $src['agent']['name'] ?? null,
-            'rule_id' => (string) ($src['rule']['id'] ?? null),
+            'rule_description' => self::textColumn($src['rule']['description'] ?? null),
+            'src_ip' => self::textColumn($data['srcip'] ?? $src['data']['src_ip'] ?? null),
+            'dst_ip' => self::textColumn($data['dstip'] ?? $src['data']['dst_ip'] ?? null),
+            'agent_name' => self::textColumn($src['agent']['name'] ?? null),
+            'rule_id' => self::textColumn((string) ($src['rule']['id'] ?? null)),
             'rule_level' => (int) ($src['rule']['level'] ?? 0),
             'raw_data' => $src,
             'first_seen_at' => isset($src['@timestamp'])
                 ? Carbon::parse($src['@timestamp'])->utc()->toDateTimeString()
                 : now('UTC')->toDateTimeString(),
         ];
+    }
+
+    private static function textColumn(mixed $value): ?string
+    {
+        // PostgreSQL text cannot contain NUL. Render it visibly in searchable
+        // projections while raw_data retains the original escaped JSON value.
+        return $value === null ? null : str_replace("\0", '\u0000', (string) $value);
     }
 }

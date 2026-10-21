@@ -293,31 +293,40 @@
                     <section class="step-panel" data-step-panel="2" hidden>
                         <p class="eyebrow">Tahap 3 dari 6</p>
                         <h2>Wazuh / OpenSearch</h2>
-                        <p class="step-description">Sumber alert utama yang akan dibaca dan dinormalisasi oleh SIEM Salabim.</p>
-                        <div class="grid">
+                        <p class="step-description">Sumber alert utama. Opsional saat instalasi dan dapat dikonfigurasi nanti melalui Settings.</p>
+                        <div class="toggle-box">
+                            <input type="hidden" name="opensearch_enabled" value="0">
+                            <input id="opensearch_enabled" name="opensearch_enabled" type="checkbox" value="1" @checked((bool) old('opensearch_enabled', false)) data-toggle="opensearch-fields">
+                            <div>
+                                <label for="opensearch_enabled">Aktifkan OpenSearch</label>
+                                <p>Aktifkan untuk mengisi konfigurasi dan menguji koneksi saat instalasi.</p>
+                            </div>
+                        </div>
+                        @error('opensearch_enabled')<div class="field-error">{{ $message }}</div>@enderror
+                        <div class="optional-fields grid" id="opensearch-fields" @if(! old('opensearch_enabled', false)) hidden @endif>
                             <div class="field span-2">
                                 <label for="opensearch_host">Endpoint OpenSearch</label>
-                                <input id="opensearch_host" name="opensearch_host" type="url" value="{{ old('opensearch_host', $defaults['opensearch_host']) }}" required maxlength="2048">
+                                <input id="opensearch_host" name="opensearch_host" type="url" value="{{ old('opensearch_host', $defaults['opensearch_host']) }}" data-conditional-required maxlength="2048">
                                 @error('opensearch_host')<div class="field-error">{{ $message }}</div>@enderror
                             </div>
                             <div class="field">
                                 <label for="opensearch_username">Pengguna</label>
-                                <input id="opensearch_username" name="opensearch_username" value="{{ old('opensearch_username') }}" required maxlength="255" autocomplete="off">
+                                <input id="opensearch_username" name="opensearch_username" value="{{ old('opensearch_username') }}" data-conditional-required maxlength="255" autocomplete="off">
                                 @error('opensearch_username')<div class="field-error">{{ $message }}</div>@enderror
                             </div>
                             <div class="field">
                                 <label for="opensearch_password">Kata sandi</label>
-                                <input id="opensearch_password" name="opensearch_password" type="password" required maxlength="4096" autocomplete="new-password">
+                                <input id="opensearch_password" name="opensearch_password" type="password" data-conditional-required maxlength="4096" autocomplete="new-password">
                                 @error('opensearch_password')<div class="field-error">{{ $message }}</div>@enderror
                             </div>
                             <div class="field">
                                 <label for="opensearch_index">Pola indeks alert</label>
-                                <input id="opensearch_index" name="opensearch_index" value="{{ old('opensearch_index', $defaults['opensearch_index']) }}" required maxlength="255">
+                                <input id="opensearch_index" name="opensearch_index" value="{{ old('opensearch_index', $defaults['opensearch_index']) }}" data-conditional-required maxlength="255">
                                 @error('opensearch_index')<div class="field-error">{{ $message }}</div>@enderror
                             </div>
                             <div class="field">
                                 <label for="opensearch_source_cluster">Identitas sumber</label>
-                                <input id="opensearch_source_cluster" name="opensearch_source_cluster" value="{{ old('opensearch_source_cluster', $defaults['opensearch_source_cluster']) }}" required maxlength="64" pattern="[A-Za-z0-9_.-]+">
+                                <input id="opensearch_source_cluster" name="opensearch_source_cluster" value="{{ old('opensearch_source_cluster', $defaults['opensearch_source_cluster']) }}" data-conditional-required maxlength="64" pattern="[A-Za-z0-9_.-]+">
                                 @error('opensearch_source_cluster')<div class="field-error">{{ $message }}</div>@enderror
                                 <span class="hint">Nama stabil untuk deduplikasi; jangan mengikuti hostname.</span>
                             </div>
@@ -338,20 +347,29 @@
                     <section class="step-panel" data-step-panel="3" hidden>
                         <p class="eyebrow">Tahap 4 dari 6</p>
                         <h2>Notifikasi Telegram</h2>
-                        <p class="step-description">Telegram diwajibkan agar alarm penting dapat diteruskan kepada tim operasional.</p>
-                        <div class="grid">
+                        <p class="step-description">Notifikasi Telegram bersifat opsional dan dapat dikonfigurasi nanti melalui Settings.</p>
+                        <div class="toggle-box">
+                            <input type="hidden" name="telegram_enabled" value="0">
+                            <input id="telegram_enabled" name="telegram_enabled" type="checkbox" value="1" @checked((bool) old('telegram_enabled', false)) data-toggle="telegram-fields">
+                            <div>
+                                <label for="telegram_enabled">Aktifkan Telegram</label>
+                                <p>Aktifkan untuk mengisi konfigurasi dan menguji koneksi saat instalasi.</p>
+                            </div>
+                        </div>
+                        @error('telegram_enabled')<div class="field-error">{{ $message }}</div>@enderror
+                        <div class="optional-fields grid" id="telegram-fields" @if(! old('telegram_enabled', false)) hidden @endif>
                             <div class="field span-2">
                                 <label for="telegram_bot_token">Token bot</label>
-                                <input id="telegram_bot_token" name="telegram_bot_token" type="password" required maxlength="4096" autocomplete="new-password">
+                                <input id="telegram_bot_token" name="telegram_bot_token" type="password" data-conditional-required maxlength="4096" autocomplete="new-password">
                                 @error('telegram_bot_token')<div class="field-error">{{ $message }}</div>@enderror
                             </div>
                             <div class="field span-2">
                                 <label>Tujuan chat</label>
                                 <div class="chat-list" data-chat-list>
-                                    @foreach((array) old('telegram_chat_ids', ['']) as $index => $chatId)
+                                    @foreach(((array) old('telegram_chat_ids') ?: ['']) as $index => $chatId)
                                         <div class="chat-row">
                                             <div>
-                                                <input name="telegram_chat_ids[]" value="{{ $chatId }}" required maxlength="100" placeholder="-1001234567890 atau @nama_channel" aria-label="ID chat Telegram {{ $index + 1 }}">
+                                                <input name="telegram_chat_ids[]" value="{{ $chatId }}" data-conditional-required maxlength="100" placeholder="-1001234567890 atau @nama_channel" aria-label="ID chat Telegram {{ $index + 1 }}">
                                                 @error('telegram_chat_ids.'.$index)<div class="field-error">{{ $message }}</div>@enderror
                                             </div>
                                             <button class="icon-button" type="button" data-remove-chat aria-label="Hapus tujuan chat">&times;</button>
@@ -554,6 +572,7 @@
                     const target = document.getElementById(toggle.dataset.toggle);
                     const sync = () => {
                         target.hidden = !toggle.checked;
+                        target.querySelectorAll('input, select, button').forEach(control => control.disabled = !toggle.checked);
                         target.querySelectorAll('[data-conditional-required]').forEach(input => input.required = toggle.checked);
                     };
                     toggle.addEventListener('change', sync);
@@ -574,7 +593,7 @@
                     if (chatList.children.length >= 20) return;
                     const row = document.createElement('div');
                     row.className = 'chat-row';
-                    row.innerHTML = '<div><input name="telegram_chat_ids[]" required maxlength="100" placeholder="-1001234567890 atau @nama_channel" aria-label="ID chat Telegram"></div><button class="icon-button" type="button" data-remove-chat aria-label="Hapus tujuan chat">&times;</button>';
+                    row.innerHTML = '<div><input name="telegram_chat_ids[]" required data-conditional-required maxlength="100" placeholder="-1001234567890 atau @nama_channel" aria-label="ID chat Telegram"></div><button class="icon-button" type="button" data-remove-chat aria-label="Hapus tujuan chat">&times;</button>';
                     chatList.appendChild(row);
                     row.querySelector('input').focus();
                 });

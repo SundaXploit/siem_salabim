@@ -75,7 +75,7 @@ class LiveAlertSearchTest extends TestCase
             'raw_data' => ['data' => ['message' => 'ordinary event']],
         ]);
 
-        foreach (['wazuh-event-unique-4f91', 'EncodedCommand unique-payload-marker', (string) $target->id] as $search) {
+        foreach (['wazuh-event-unique-4f91', 'WAZUH-EVENT-UNIQUE-4F91', 'EncodedCommand unique-payload-marker', 'encodedcommand UNIQUE-PAYLOAD-MARKER', 'GENERIC PROCESS', (string) $target->id] as $search) {
             $this->actingAs($user)
                 ->get(route('alerts.index', ['status' => 'all', 'search' => $search]))
                 ->assertOk()

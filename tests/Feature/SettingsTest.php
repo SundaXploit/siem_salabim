@@ -12,7 +12,7 @@ use App\Models\NotificationLog;
 use App\Models\User;
 use App\Services\OpenSearchService;
 use App\Services\TelegramService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -21,7 +21,7 @@ use Tests\TestCase;
 
 class SettingsTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseMigrations;
 
     public function test_only_admin_can_open_settings(): void
     {

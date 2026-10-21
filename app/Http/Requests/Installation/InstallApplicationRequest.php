@@ -57,6 +57,8 @@ class InstallApplicationRequest extends SecureInstallerRequest
         $trimmed['opensearch_host'] = isset($trimmed['opensearch_host'])
             ? rtrim($trimmed['opensearch_host'], '/')
             : $this->input('opensearch_host');
+        $trimmed['opensearch_enabled'] = $this->boolean('opensearch_enabled');
+        $trimmed['telegram_enabled'] = $this->boolean('telegram_enabled');
         $trimmed['opensearch_verify_ssl'] = $this->boolean('opensearch_verify_ssl');
         $trimmed['ai_enabled'] = $this->boolean('ai_enabled');
         $trimmed['smtp_enabled'] = $this->boolean('smtp_enabled');
@@ -90,21 +92,25 @@ class InstallApplicationRequest extends SecureInstallerRequest
             'db_password' => ['nullable', 'string', 'max:4096'],
             'db_sslmode' => ['nullable', Rule::in(['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'])],
 
-            'opensearch_host' => ['required', 'url', 'starts_with:http://,https://', 'max:2048'],
-            'opensearch_username' => ['required', 'string', 'max:255'],
-            'opensearch_password' => ['required', 'string', 'max:4096'],
-            'opensearch_index' => ['required', 'string', 'max:255'],
-            'opensearch_source_cluster' => ['required', 'string', 'max:64', 'regex:/\A[a-zA-Z0-9_.-]+\z/'],
-            'opensearch_verify_ssl' => ['required', 'boolean'],
+            'opensearch_enabled' => ['required', 'boolean'],
+            'opensearch_host' => ['exclude_unless:opensearch_enabled,true', 'required', 'url', 'starts_with:http://,https://', 'max:2048'],
+            'opensearch_username' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:255'],
+            'opensearch_password' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:4096'],
+            'opensearch_index' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:255'],
+            'opensearch_source_cluster' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:64', 'regex:/\A[a-zA-Z0-9_.-]+\z/'],
+            'opensearch_verify_ssl' => ['exclude_unless:opensearch_enabled,true', 'required', 'boolean'],
 
+            'telegram_enabled' => ['required', 'boolean'],
             'telegram_bot_token' => [
+                'exclude_unless:telegram_enabled,true',
                 'required',
                 'string',
                 'max:4096',
                 'regex:/\A\d{5,20}:[A-Za-z0-9_-]{20,}\z/',
             ],
-            'telegram_chat_ids' => ['required', 'array', 'min:1', 'max:20'],
+            'telegram_chat_ids' => ['exclude_unless:telegram_enabled,true', 'required', 'array', 'min:1', 'max:20'],
             'telegram_chat_ids.*' => [
+                'exclude_unless:telegram_enabled,true',
                 'required',
                 'string',
                 'max:100',

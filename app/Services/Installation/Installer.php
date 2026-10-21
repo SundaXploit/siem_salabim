@@ -36,11 +36,15 @@ class Installer
             }
 
             $database = $this->connections->testDatabase($data);
-            $this->connections->testOpenSearch($data);
-            $this->connections->testTelegram(
-                $data['telegram_bot_token'],
-                $data['telegram_chat_ids'],
-            );
+            if ($data['opensearch_enabled']) {
+                $this->connections->testOpenSearch($data);
+            }
+            if ($data['telegram_enabled']) {
+                $this->connections->testTelegram(
+                    $data['telegram_bot_token'],
+                    $data['telegram_chat_ids'],
+                );
+            }
 
             // Persist only after every required endpoint has passed its
             // read-only connection test. The writer uses a lock and atomic
@@ -68,15 +72,19 @@ class Installer
                     'role' => 'admin',
                 ]);
 
-                Configuration::set('opensearch_host', rtrim($data['opensearch_host'], '/'));
-                Configuration::set('opensearch_username', $data['opensearch_username']);
-                Configuration::set('opensearch_password', $data['opensearch_password']);
-                Configuration::set('opensearch_index', $data['opensearch_index']);
-                Configuration::set('telegram_bot_token', $data['telegram_bot_token']);
-                Configuration::set('telegram_chat_ids', json_encode(
-                    array_values(array_unique($data['telegram_chat_ids'])),
-                    JSON_THROW_ON_ERROR,
-                ));
+                if ($data['opensearch_enabled']) {
+                    Configuration::set('opensearch_host', rtrim($data['opensearch_host'], '/'));
+                    Configuration::set('opensearch_username', $data['opensearch_username']);
+                    Configuration::set('opensearch_password', $data['opensearch_password']);
+                    Configuration::set('opensearch_index', $data['opensearch_index']);
+                }
+                if ($data['telegram_enabled']) {
+                    Configuration::set('telegram_bot_token', $data['telegram_bot_token']);
+                    Configuration::set('telegram_chat_ids', json_encode(
+                        array_values(array_unique($data['telegram_chat_ids'])),
+                        JSON_THROW_ON_ERROR,
+                    ));
+                }
 
                 if ($data['ai_enabled']) {
                     Configuration::set('ai_api_key', $data['ai_api_key']);
@@ -117,6 +125,8 @@ class Installer
     /** @param array<string, mixed> $input */
     private function validated(array $input): array
     {
+        $input['opensearch_enabled'] = filter_var($input['opensearch_enabled'] ?? false, FILTER_VALIDATE_BOOL);
+        $input['telegram_enabled'] = filter_var($input['telegram_enabled'] ?? false, FILTER_VALIDATE_BOOL);
         $input['ai_enabled'] = filter_var($input['ai_enabled'] ?? false, FILTER_VALIDATE_BOOL);
         $input['smtp_enabled'] = filter_var($input['smtp_enabled'] ?? false, FILTER_VALIDATE_BOOL);
         $input['opensearch_verify_ssl'] = filter_var(
@@ -137,16 +147,18 @@ class Installer
             'db_password' => ['nullable', 'string', 'max:4096'],
             'db_sslmode' => ['nullable', Rule::in(['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'])],
 
-            'opensearch_host' => ['required', 'url:http,https', 'max:2048'],
-            'opensearch_username' => ['required', 'string', 'max:255'],
-            'opensearch_password' => ['required', 'string', 'max:4096'],
-            'opensearch_index' => ['required', 'string', 'max:255', 'regex:/\A[a-zA-Z0-9_.\-*,]+\z/'],
-            'opensearch_source_cluster' => ['required', 'string', 'max:64', 'regex:/\A[a-zA-Z0-9_.-]+\z/'],
-            'opensearch_verify_ssl' => ['boolean'],
+            'opensearch_enabled' => ['boolean'],
+            'opensearch_host' => ['exclude_unless:opensearch_enabled,true', 'required', 'url:http,https', 'max:2048'],
+            'opensearch_username' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:255'],
+            'opensearch_password' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:4096'],
+            'opensearch_index' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:255', 'regex:/\A[a-zA-Z0-9_.\-*,]+\z/'],
+            'opensearch_source_cluster' => ['exclude_unless:opensearch_enabled,true', 'required', 'string', 'max:64', 'regex:/\A[a-zA-Z0-9_.-]+\z/'],
+            'opensearch_verify_ssl' => ['exclude_unless:opensearch_enabled,true', 'boolean'],
 
-            'telegram_bot_token' => ['required', 'string', 'max:4096', 'regex:/\A\d{5,20}:[A-Za-z0-9_-]{20,}\z/'],
-            'telegram_chat_ids' => ['required', 'array', 'min:1', 'max:20'],
-            'telegram_chat_ids.*' => ['required', 'string', 'max:100'],
+            'telegram_enabled' => ['boolean'],
+            'telegram_bot_token' => ['exclude_unless:telegram_enabled,true', 'required', 'string', 'max:4096', 'regex:/\A\d{5,20}:[A-Za-z0-9_-]{20,}\z/'],
+            'telegram_chat_ids' => ['exclude_unless:telegram_enabled,true', 'required', 'array', 'min:1', 'max:20'],
+            'telegram_chat_ids.*' => ['exclude_unless:telegram_enabled,true', 'required', 'string', 'max:100'],
 
             'ai_enabled' => ['boolean'],
             'ai_api_key' => [Rule::requiredIf($input['ai_enabled']), 'nullable', 'string', 'max:4096'],
@@ -203,8 +215,8 @@ class Installer
             'DB_USERNAME' => $data['db_username'],
             'DB_PASSWORD' => $data['db_password'] ?? '',
             'DB_SSLMODE' => $data['db_sslmode'] ?? 'prefer',
-            'OPENSEARCH_SOURCE_CLUSTER' => $data['opensearch_source_cluster'],
-            'OPENSEARCH_VERIFY_SSL' => $data['opensearch_verify_ssl'] ? 'true' : 'false',
+            'OPENSEARCH_SOURCE_CLUSTER' => $data['opensearch_source_cluster'] ?? 'wazuh-primary',
+            'OPENSEARCH_VERIFY_SSL' => ($data['opensearch_verify_ssl'] ?? true) ? 'true' : 'false',
             'MAIL_MAILER' => $data['smtp_enabled'] ? 'smtp' : 'log',
             'MAIL_URL' => null,
             'MAIL_SCHEME' => $data['smtp_enabled'] ? $mailScheme : null,
@@ -227,8 +239,8 @@ class Installer
             'app.name' => $data['app_name'],
             'app.url' => rtrim($data['app_url'], '/'),
             'app.timezone' => $data['app_timezone'],
-            'services.opensearch.source_cluster' => $data['opensearch_source_cluster'],
-            'services.opensearch.verify_ssl' => $data['opensearch_verify_ssl'],
+            'services.opensearch.source_cluster' => $data['opensearch_source_cluster'] ?? 'wazuh-primary',
+            'services.opensearch.verify_ssl' => $data['opensearch_verify_ssl'] ?? true,
         ]);
 
         date_default_timezone_set($data['app_timezone']);

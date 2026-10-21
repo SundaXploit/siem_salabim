@@ -79,7 +79,7 @@ class AlertController extends Controller
             $query->where('rule_level', '>=', (int) $request->level);
         }
         if ($request->filled('agent')) {
-            $query->where('agent_name', 'like', '%'.$request->agent.'%');
+            $query->whereLike('agent_name', '%'.$request->agent.'%');
         }
         if ($request->filled('date_from')) {
             $query->where('first_seen_at', '>=', $request->date_from.' 00:00:00');
@@ -90,6 +90,7 @@ class AlertController extends Controller
         if ($request->filled('search')) {
             $rawDataSearch = match (DB::connection()->getDriverName()) {
                 'mysql', 'mariadb' => 'CAST(raw_data AS CHAR) LIKE ?',
+                'pgsql' => 'CAST(raw_data AS TEXT) ILIKE ?',
                 // PostgreSQL cannot apply LIKE directly to json/jsonb, while
                 // TEXT is also the portable representation on SQLite.
                 default => 'CAST(raw_data AS TEXT) LIKE ?',
@@ -101,13 +102,13 @@ class AlertController extends Controller
                 $like = "%{$term}%";
 
                 $query->where(function ($q) use ($term, $like, $rawDataSearch) {
-                    $q->where('rule_description', 'like', $like)
-                        ->orWhere('src_ip', 'like', $like)
-                        ->orWhere('dst_ip', 'like', $like)
-                        ->orWhere('agent_name', 'like', $like)
-                        ->orWhere('rule_id', 'like', $like)
-                        ->orWhere('wazuh_alert_id', 'like', $like)
-                        ->orWhere('status', 'like', $like)
+                    $q->whereLike('rule_description', $like)
+                        ->orWhereLike('src_ip', $like)
+                        ->orWhereLike('dst_ip', $like)
+                        ->orWhereLike('agent_name', $like)
+                        ->orWhereLike('rule_id', $like)
+                        ->orWhereLike('wazuh_alert_id', $like)
+                        ->orWhereLike('status', $like)
                         ->orWhereRaw($rawDataSearch, [$like]);
 
                     if (ctype_digit($term)) {

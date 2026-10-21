@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -80,6 +81,103 @@ class InstallerServiceTest extends TestCase
         $this->assertSame('true', $this->environment->value('APP_INSTALLED'));
         $this->assertTrue($this->state->isInstalled());
         $this->assertFileExists($this->directory.'/private/installed.json');
+    }
+
+    public static function optionalIntegrations(): array
+    {
+        return [
+            'both skipped' => [false, false],
+            'only OpenSearch' => [true, false],
+            'only Telegram' => [false, true],
+        ];
+    }
+
+    #[DataProvider('optionalIntegrations')]
+    public function test_installation_can_skip_integrations(bool $openSearchEnabled, bool $telegramEnabled): void
+    {
+        $input = $this->validInput([
+            'opensearch_enabled' => $openSearchEnabled,
+            'telegram_enabled' => $telegramEnabled,
+        ]);
+        foreach (['opensearch' => $openSearchEnabled, 'telegram' => $telegramEnabled] as $prefix => $enabled) {
+            if (! $enabled) {
+                foreach (array_keys($input) as $key) {
+                    if (str_starts_with($key, $prefix.'_')) {
+                        unset($input[$key]);
+                    }
+                }
+            }
+        }
+
+        $connections = Mockery::mock(InstallationConnectionTester::class);
+        $connections->shouldReceive('testDatabase')->once()->andReturn(config('database.connections.sqlite'));
+        $connections->shouldReceive('activateDatabase')->once()->andReturn(DB::connection());
+        if ($openSearchEnabled) {
+            $connections->shouldReceive('testOpenSearch')->once()->andReturn(['count' => 0]);
+        } else {
+            $connections->shouldNotReceive('testOpenSearch');
+        }
+        if ($telegramEnabled) {
+            $connections->shouldReceive('testTelegram')->once()->andReturnNull();
+        } else {
+            $connections->shouldNotReceive('testTelegram');
+        }
+
+        $this->manager($connections)->install($input);
+
+        $this->assertSame('admin', User::sole()->role);
+        $this->assertTrue($this->state->isInstalled());
+        $this->assertSame($openSearchEnabled ? 'open-search-secret' : null, Configuration::get('opensearch_password'));
+        $this->assertSame($telegramEnabled ? '123456789:telegram-secret-token-value' : null, Configuration::get('telegram_bot_token'));
+        if (! $openSearchEnabled) {
+            $this->assertSame('wazuh-primary', $this->environment->value('OPENSEARCH_SOURCE_CLUSTER'));
+            $this->assertSame('true', $this->environment->value('OPENSEARCH_VERIFY_SSL'));
+            $this->assertTrue(config('services.opensearch.verify_ssl'));
+            $this->assertDatabaseMissing('configurations', ['key' => 'opensearch_host']);
+        }
+        if (! $telegramEnabled) {
+            $this->assertSame([], Configuration::getTelegramChatIds());
+        }
+    }
+
+    public function test_disabled_integrations_ignore_leftover_invalid_values(): void
+    {
+        $connections = Mockery::mock(InstallationConnectionTester::class);
+        $connections->shouldReceive('testDatabase')->once()->andReturn(config('database.connections.sqlite'));
+        $connections->shouldReceive('activateDatabase')->once()->andReturn(DB::connection());
+        $connections->shouldNotReceive('testOpenSearch', 'testTelegram');
+
+        $this->manager($connections)->install($this->validInput([
+            'opensearch_enabled' => false,
+            'telegram_enabled' => false,
+            'opensearch_host' => 'invalid-url',
+            'telegram_bot_token' => 'incomplete-token',
+            'telegram_chat_ids' => [''],
+        ]));
+
+        $this->assertTrue($this->state->isInstalled());
+        $this->assertDatabaseCount('configurations', 0);
+    }
+
+    public function test_enabled_integrations_require_configuration_before_testing_connections(): void
+    {
+        $connections = Mockery::mock(InstallationConnectionTester::class);
+        $connections->shouldNotReceive('testDatabase', 'testOpenSearch', 'testTelegram');
+
+        try {
+            $this->manager($connections)->install($this->validInput([
+                'opensearch_host' => '',
+                'telegram_bot_token' => '',
+                'telegram_chat_ids' => [],
+            ]));
+            $this->fail('Enabled integrations must require configuration.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('opensearch_host', $exception->errors());
+            $this->assertArrayHasKey('telegram_bot_token', $exception->errors());
+            $this->assertArrayHasKey('telegram_chat_ids', $exception->errors());
+        }
+        $this->assertDatabaseCount('users', 0);
+        $this->assertFileDoesNotExist($this->directory.'/private/installed.json');
     }
 
     public function test_failed_required_connection_writes_no_environment_admin_or_marker(): void
@@ -160,6 +258,8 @@ class InstallerServiceTest extends TestCase
             'db_username' => 'siem_app',
             'db_password' => 'db # secret $ value',
             'db_sslmode' => 'require',
+            'opensearch_enabled' => true,
+            'telegram_enabled' => true,
             'opensearch_host' => 'https://indexer.example.test:9200',
             'opensearch_username' => 'wazuh',
             'opensearch_password' => 'open-search-secret',

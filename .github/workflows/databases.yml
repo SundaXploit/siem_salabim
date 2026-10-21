@@ -1,0 +1,84 @@
+name: Database compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  databases:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - driver: pgsql
+            image: postgres:18
+            port: 5432
+            username: siem_test
+            health: pg_isready -U siem_test -d siem_audit_test
+          - driver: mysql
+            image: mysql:8.0
+            port: 3306
+            username: root
+            health: mysqladmin ping -h 127.0.0.1 -ptest-only-password
+          - driver: mysql
+            image: mysql:8.4
+            port: 3306
+            username: root
+            health: mysqladmin ping -h 127.0.0.1 -ptest-only-password
+          - driver: mariadb
+            image: mariadb:11.8
+            port: 3306
+            username: root
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_USER: siem_test
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: siem_audit_test
+          MYSQL_ROOT_PASSWORD: test-only-password
+          MYSQL_DATABASE: siem_audit_test
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: >-
+          --health-cmd "${{ matrix.health }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: ${{ matrix.driver }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ matrix.port }}
+      DB_DATABASE: siem_audit_test
+      DB_USERNAME: ${{ matrix.username }}
+      DB_PASSWORD: test-only-password
+      DB_SSLMODE: disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          extensions: curl, dom, fileinfo, mbstring, openssl, pdo_mysql, pdo_pgsql, pdo_sqlite, sqlite3, xml, zip
+          coverage: none
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Build frontend for HTTP tests
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci && npm run build
+      - name: Run the full suite on the real database
+        run: php vendor/bin/phpunit --log-junit database-results.xml
