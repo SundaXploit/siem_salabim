@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\DashboardInsight;
-use App\Services\AmanaiInsightService;
+use App\Services\AiInsightService;
 use App\Services\SecurityInsightSnapshotService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -14,13 +14,16 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
-class GenerateDashboardInsight implements ShouldQueue, ShouldBeUnique
+class GenerateDashboardInsight implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 180;
+
     public int $tries = 2;
+
     public int $backoff = 60;
+
     public int $uniqueFor = 900;
 
     public function __construct(
@@ -33,20 +36,21 @@ class GenerateDashboardInsight implements ShouldQueue, ShouldBeUnique
 
     public function uniqueId(): string
     {
-        return 'dashboard-insight:' . $this->periodKey;
+        return 'dashboard-insight:'.$this->periodKey;
     }
 
     public function handle(
         SecurityInsightSnapshotService $snapshots,
-        AmanaiInsightService $amanai,
+        AiInsightService $ai,
     ): void {
-        if (!$amanai->isConfigured()) {
-            Log::notice('[Dashboard Insight] Skipped because AmanAI is not configured.');
+        if (! $ai->isConfigured()) {
+            Log::notice('[Dashboard Insight] Skipped because AI is not configured.');
+
             return;
         }
 
-        $lock = Cache::lock('dashboard-insight:running:' . $this->periodKey, 240);
-        if (!$lock->get()) {
+        $lock = Cache::lock('dashboard-insight:running:'.$this->periodKey, 240);
+        if (! $lock->get()) {
             return;
         }
 
@@ -59,22 +63,22 @@ class GenerateDashboardInsight implements ShouldQueue, ShouldBeUnique
 
             $summary = $input['metrics']['total'] === 0
                 ? 'Belum ada alert yang diimpor untuk periode ini. Kesimpulan tren akan tersedia setelah data alert masuk ke SIEM Salabim.'
-                : $amanai->generate($input);
+                : $ai->generate($input);
 
             DashboardInsight::create([
-                'period_key'            => $period['key'],
-                'period_start'          => $period['start_local']->toDateString(),
-                'period_end'            => $period['end_local']->copy()->subDay()->toDateString(),
-                'status'                => 'completed',
-                'summary'               => $summary,
-                'source_snapshot'       => $input,
-                'source_fingerprint'    => $this->fingerprint($input),
-                'provider'              => 'amanai',
-                'model'                 => $amanai->modelName(),
-                'trigger'               => $this->trigger,
-                'requested_by_user_id'  => $this->requestedByUserId,
-                'generated_at'          => now(),
-                'next_refresh_at'       => now()->addDays($amanai->refreshDays()),
+                'period_key' => $period['key'],
+                'period_start' => $period['start_local']->toDateString(),
+                'period_end' => $period['end_local']->copy()->subDay()->toDateString(),
+                'status' => 'completed',
+                'summary' => $summary,
+                'source_snapshot' => $input,
+                'source_fingerprint' => $this->fingerprint($input),
+                'provider' => $ai->providerName(),
+                'model' => $ai->modelName(),
+                'trigger' => $this->trigger,
+                'requested_by_user_id' => $this->requestedByUserId,
+                'generated_at' => now(),
+                'next_refresh_at' => now()->addDays($ai->refreshDays()),
             ]);
         } catch (\Throwable $exception) {
             Log::error('[Dashboard Insight] Generation failed', [
@@ -87,18 +91,18 @@ class GenerateDashboardInsight implements ShouldQueue, ShouldBeUnique
             // Laravel records a final operational failure in failed_jobs.
             if ($snapshot !== null && $this->attempts() >= $this->tries) {
                 DashboardInsight::create([
-                    'period_key'            => $this->periodKey,
-                    'period_start'          => $snapshot['period']['start_local']->toDateString(),
-                    'period_end'            => $snapshot['period']['end_local']->copy()->subDay()->toDateString(),
-                    'status'                => 'failed',
-                    'source_snapshot'       => $snapshot['analysis_input'],
-                    'source_fingerprint'    => $this->fingerprint($snapshot['analysis_input']),
-                    'provider'              => 'amanai',
-                    'model'                 => $amanai->modelName(),
-                    'trigger'               => $this->trigger,
-                    'requested_by_user_id'  => $this->requestedByUserId,
-                    'generated_at'          => now(),
-                    'error_message'         => 'Permintaan analisis AI gagal. Coba ulangi beberapa saat lagi.',
+                    'period_key' => $this->periodKey,
+                    'period_start' => $snapshot['period']['start_local']->toDateString(),
+                    'period_end' => $snapshot['period']['end_local']->copy()->subDay()->toDateString(),
+                    'status' => 'failed',
+                    'source_snapshot' => $snapshot['analysis_input'],
+                    'source_fingerprint' => $this->fingerprint($snapshot['analysis_input']),
+                    'provider' => $ai->providerName(),
+                    'model' => $ai->modelName(),
+                    'trigger' => $this->trigger,
+                    'requested_by_user_id' => $this->requestedByUserId,
+                    'generated_at' => now(),
+                    'error_message' => 'Permintaan analisis AI gagal. Coba ulangi beberapa saat lagi.',
                 ]);
             }
 

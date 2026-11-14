@@ -120,6 +120,20 @@ class EnvironmentFileWriterTest extends TestCase
         $writer->ensureEnvironmentAndKey();
     }
 
+    public function test_cli_updates_still_advance_the_environment_timestamp(): void
+    {
+        file_put_contents($this->directory.'/.env.example', "APP_KEY=\n");
+        $writer = new EnvironmentFileWriter($this->directory);
+        $writer->ensureEnvironmentAndKey();
+        $oldTimestamp = time() - 120;
+        touch($writer->path(), $oldTimestamp);
+
+        $writer->update(['APP_INSTALLED' => false]);
+
+        clearstatcache(false, $writer->path());
+        $this->assertGreaterThan($oldTimestamp, filemtime($writer->path()));
+    }
+
     private function deleteDirectory(string $directory): void
     {
         if (! is_dir($directory)) {

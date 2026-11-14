@@ -42,7 +42,7 @@ class IngestionCheckpoint extends Model
         return Attribute::make(
             get: static fn (?string $value): ?CarbonImmutable => $value === null
                 ? null
-                : CarbonImmutable::createFromFormat('Y-m-d H:i:s', $value, 'UTC'),
+                : CarbonImmutable::parse($value, 'UTC'),
             set: static function (mixed $value): ?string {
                 if ($value === null) {
                     return null;

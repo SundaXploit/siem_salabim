@@ -3,6 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "prebuild": "node scripts/build-ina-tokens.mjs",
+        "predev": "node scripts/build-ina-tokens.mjs",
         "build": "vite build",
         "dev": "vite",
         "test": "node --test tests/js/*.test.mjs"

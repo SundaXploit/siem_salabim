@@ -17,7 +17,7 @@ return new class extends Migration
             $table->longText('summary')->nullable();
             $table->json('source_snapshot')->nullable();
             $table->string('source_fingerprint', 64)->nullable();
-            $table->string('provider', 80)->default('amanai');
+            $table->string('provider', 80)->default('custom');
             $table->string('model', 255)->nullable();
             $table->string('trigger', 20)->default('scheduled');
             $table->foreignId('requested_by_user_id')->nullable()->constrained('users')->nullOnDelete();

@@ -12,17 +12,19 @@ $maxWidth = [
     'xl' => 'sm:max-w-xl',
     '2xl' => 'sm:max-w-2xl',
 ][$maxWidth];
+$dialogWidth = ['sm:max-w-sm' => '24rem', 'sm:max-w-md' => '28rem', 'sm:max-w-lg' => '32rem', 'sm:max-w-xl' => '36rem', 'sm:max-w-2xl' => '42rem'][$maxWidth];
 @endphp
 
 <div
     x-data="{
         show: @js($show),
+        previousFocus: null,
         focusables() {
             // All focusable element types...
             let selector = 'a, button, input:not([type=\'hidden\']), textarea, select, details, [tabindex]:not([tabindex=\'-1\'])'
             return [...$el.querySelectorAll(selector)]
                 // All non-disabled elements...
-                .filter(el => ! el.hasAttribute('disabled'))
+                .filter(el => ! el.hasAttribute('disabled') && el.getClientRects().length)
         },
         firstFocusable() { return this.focusables()[0] },
         lastFocusable() { return this.focusables().slice(-1)[0] },
@@ -33,12 +35,18 @@ $maxWidth = [
     }"
     x-init="$watch('show', value => {
         if (value) {
+            previousFocus = document.activeElement;
             document.body.classList.add('overflow-y-hidden');
-            {{ $attributes->has('focusable') ? 'setTimeout(() => firstFocusable().focus(), 100)' : '' }}
+            $nextTick(() => firstFocusable()?.focus());
         } else {
             document.body.classList.remove('overflow-y-hidden');
+            if (previousFocus?.isConnected) previousFocus.focus();
         }
-    })"
+    }); if (show) {
+        previousFocus = document.activeElement;
+        document.body.classList.add('overflow-y-hidden');
+        $nextTick(() => firstFocusable()?.focus());
+    }"
     x-on:open-modal.window="$event.detail == '{{ $name }}' ? show = true : null"
     x-on:close-modal.window="$event.detail == '{{ $name }}' ? show = false : null"
     x-on:close.stop="show = false"
@@ -59,9 +67,11 @@ $maxWidth = [
 
     <div
         x-show="show"
-        class="modal-box {{ $maxWidth }}"
+        class="modal-box"
+        style="--dialog-max-width: {{ $dialogWidth }}"
         role="dialog"
         aria-modal="true"
+        aria-label="{{ $attributes->get('aria-label', 'Konfirmasi tindakan') }}"
     >
         {{ $slot }}
     </div>

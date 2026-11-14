@@ -1,0 +1,28 @@
+/* A dark brand surface keeps the white teapot visible in both themes. */
+.application-logo { display: block; width: 2.5rem; height: 2.5rem; object-fit: contain; flex: 0 0 auto; border-radius: 4px; background: var(--ina-neutral-900); }
+.sidebar-brand-link { gap: var(--spacing-8); font-size: var(--ina-font-size-body-small); line-height: var(--ina-line-height-body-small); }
+.sidebar-brand-link .application-logo { width: 2rem; height: 2rem; }
+.brand-name { white-space: nowrap; line-height: inherit; }
+code, pre, kbd, samp { font-family: var(--font-mono); }
+.brand-name strong { font-weight: var(--font-weight-bold); }
+.topbar-identity { display: inline-flex; min-width: 0; flex: 0 0 auto; gap: var(--spacing-12); align-items: center; color: inherit; text-decoration: none; font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
+.topbar-identity:hover { color: inherit; }
+.topbar-identity .application-logo { width: 2rem; height: 2rem; }
+.access-workspace .access-brand { gap: var(--spacing-12); align-items: center; }
+.auth-login-shell .auth-brand-content .auth-brand-logo { display: inline-flex; width: auto; max-width: 100%; gap: var(--spacing-16); align-items: center; }
+.auth-login-shell .auth-brand-logo .application-logo { width: 8rem; height: 8rem; filter: none; }
+.auth-brand-logo .brand-name { font-size: var(--ina-font-size-heading-5); color: var(--color-text-primary); line-height: var(--ina-line-height-heading-5); }
+.masthead .application-logo { width: 3rem; height: 3rem; }
+.completion-brand { display: flex; justify-content: center; align-items: center; gap: var(--spacing-12); margin-bottom: var(--spacing-24); }
+.brand.error-brand { display: inline-flex; align-items: center; gap: var(--spacing-12); }
+@media (min-width: 961px) {
+    html.sidebar-collapsed .sidebar .sidebar-logo { column-gap: var(--spacing-4); }
+    html.sidebar-collapsed .sidebar-brand-link .application-logo { width: 1.5rem; height: 1.5rem; }
+}
+@media (max-width: 640px) {
+    .topbar-identity { gap: var(--spacing-8); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
+    .topbar-identity .application-logo { width: 2rem; height: 2rem; }
+    .topbar .workspace-label { display: none; }
+    .auth-login-shell .auth-brand-logo .application-logo { width: 5rem; height: 5rem; }
+    .auth-brand-logo .brand-name { font-size: var(--ina-font-size-body-large); line-height: var(--ina-line-height-body-large); }
+}

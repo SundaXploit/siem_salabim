@@ -108,6 +108,19 @@ final class InstallationState
         });
     }
 
+    /** Call only after the application's database has been emptied. */
+    public function reset(): void
+    {
+        $this->removeToken();
+        ($this->environment ?? new EnvironmentFileWriter)->update(['APP_INSTALLED' => false]);
+
+        $this->withExclusiveLock($this->markerPath.'.lock', function (): void {
+            if (is_file($this->markerPath) && ! @unlink($this->markerPath)) {
+                throw new RuntimeException('Marker instalasi tidak dapat dihapus.');
+            }
+        });
+    }
+
     /**
      * Verify and remove a token while holding the same exclusive lock.
      *

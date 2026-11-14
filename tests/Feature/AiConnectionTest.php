@@ -12,6 +12,13 @@ class AiConnectionTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Http::preventStrayRequests();
+        config(['services.ai.reasoning_effort' => 'none']);
+    }
+
     public function test_successful_http_without_answer_is_not_reported_as_working_ai(): void
     {
         Http::fake(['*/responses' => Http::response(['status' => 'completed', 'output' => []])]);
@@ -19,7 +26,7 @@ class AiConnectionTest extends TestCase
             ->postJson(route('settings.test.ai'), $this->connectionSettings())
             ->assertOk()
             ->assertJsonPath('success', false)
-            ->assertJsonPath('error', 'Endpoint AI terhubung, tetapi tidak mengembalikan teks jawaban. Periksa dukungan model untuk reasoning none.');
+            ->assertJsonPath('error', 'Endpoint AI terhubung, tetapi tidak mengembalikan teks jawaban. Periksa model dan batas token.');
         Http::assertSentCount(1);
     }
 
@@ -37,9 +44,11 @@ class AiConnectionTest extends TestCase
     private function connectionSettings(): array
     {
         return [
+            'ai_provider' => 'custom',
+            'ai_api_format' => 'responses',
             'ai_api_key' => 'test-only-key',
-            'ai_base_url' => 'https://api.amanai.dev/v1',
-            'ai_model' => 'amanai/deepseek-v4.1-flash',
+            'ai_base_url' => 'https://ai.example.test/v1',
+            'ai_model' => 'test/deepseek-v4.1-flash',
         ];
     }
 }

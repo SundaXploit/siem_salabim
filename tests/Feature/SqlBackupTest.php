@@ -91,14 +91,19 @@ class SqlBackupTest extends TestCase
             'period_mode' => 'range',
             'date_from' => '2026-09-17',
             'date_to' => '2026-09-17',
-        ])->assertRedirect(route('settings.index'));
+        ])->assertRedirect(route('settings.index', ['section' => 'data']));
 
         $export = DataExport::query()->sole();
         $response = $this->actingAs($admin)
-            ->get(route('settings.data.exports.download', $export))
+            ->get($this->authorizedDownloadUrl($export))
             ->assertOk()
             ->assertDownload($export->filename);
-        $sql = $response->streamedContent();
+        $this->assertSame(Storage::disk('local')->get($export->storage_path), $response->streamedContent());
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open(Storage::disk('local')->path($export->storage_path)));
+        $sql = $zip->getFromName('data.sql');
+        $zip->close();
+        $this->assertIsString($sql);
 
         // Restore into a separate in-memory database using its actual SQL
         // parser. Translate only MySQL syntax, not the exported string data.
@@ -125,6 +130,12 @@ class SqlBackupTest extends TestCase
                 "Export changed source rows in {$table}.",
             );
         }
+    }
+
+    private function authorizedDownloadUrl(DataExport $export): string
+    {
+        return $this->postJson(route('settings.data.exports.authorize-download', $export), ['current_password' => 'password'])
+            ->assertOk()->json('download_url');
     }
 
     public function test_analyst_cannot_download_sql_backups(): void

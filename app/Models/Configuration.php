@@ -53,8 +53,45 @@ class Configuration extends Model
      */
     public static function getTelegramChatIds(): array
     {
-        $raw = static::get('telegram_chat_ids', '[]');
-        return array_values(json_decode($raw, true) ?? []);
+        return array_values(array_unique(array_column(static::getTelegramDestinations(), 'chat_id')));
+    }
+
+    public static function getTelegramDestinations(): array
+    {
+        $saved = static::get('telegram_destinations');
+        if ($saved !== null) {
+            $destinations = json_decode($saved, true);
+
+            return is_array($destinations) ? array_values($destinations) : [];
+        }
+
+        $legacyIds = json_decode(static::get('telegram_chat_ids', '[]'), true);
+        $destinations = [];
+        foreach (is_array($legacyIds) ? $legacyIds : [] as $chatId) {
+            if (is_string($chatId) && trim($chatId) !== '') {
+                $destinations[] = ['label' => 'Tujuan '.(count($destinations) + 1), 'chat_id' => trim($chatId), 'agents' => []];
+            }
+        }
+
+        return $destinations;
+    }
+
+    public static function telegramDestinationsForAgent(?string $agent, ?array $destinations = null): array
+    {
+        if ($agent === null || $agent === '') {
+            return [];
+        }
+
+        $matched = [];
+        foreach ($destinations ?? static::getTelegramDestinations() as $destination) {
+            if (is_array($destination) && is_string($destination['label'] ?? null)
+                && is_string($destination['chat_id'] ?? null) && $destination['chat_id'] !== ''
+                && is_array($destination['agents'] ?? null) && in_array($agent, $destination['agents'], true)) {
+                $matched[$destination['chat_id']] = $destination;
+            }
+        }
+
+        return array_values($matched);
     }
 
     private static function isSecret(string $key): bool

@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ProfileTest extends TestCase
@@ -18,7 +20,12 @@ class ProfileTest extends TestCase
             ->actingAs($user)
             ->get('/profile');
 
-        $response->assertOk();
+        $response->assertOk()
+            ->assertSee('Informasi akun')
+            ->assertSee('Kata sandi')
+            ->assertDontSee('Penghapusan akun')
+            ->assertDontSee('Hapus akun')
+            ->assertDontSee('confirm-user-deletion');
     }
 
     public function test_profile_information_can_be_updated(): void
@@ -61,9 +68,10 @@ class ProfileTest extends TestCase
         $this->assertNotNull($user->refresh()->email_verified_at);
     }
 
-    public function test_user_can_delete_their_account(): void
+    #[DataProvider('roles')]
+    public function test_self_service_account_deletion_is_unavailable(string $role): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => $role]);
 
         $response = $this
             ->actingAs($user)
@@ -71,29 +79,14 @@ class ProfileTest extends TestCase
                 'password' => 'password',
             ]);
 
-        $response
-            ->assertSessionHasNoErrors()
-            ->assertRedirect('/');
-
-        $this->assertGuest();
-        $this->assertNull($user->fresh());
+        $response->assertStatus(405);
+        $this->assertAuthenticatedAs($user);
+        $this->assertNotNull($user->fresh());
+        $this->assertFalse(Route::has('profile.destroy'));
     }
 
-    public function test_correct_password_must_be_provided_to_delete_account(): void
+    public static function roles(): array
     {
-        $user = User::factory()->create();
-
-        $response = $this
-            ->actingAs($user)
-            ->from('/profile')
-            ->delete('/profile', [
-                'password' => 'wrong-password',
-            ]);
-
-        $response
-            ->assertSessionHasErrorsIn('userDeletion', 'password')
-            ->assertRedirect('/profile');
-
-        $this->assertNotNull($user->fresh());
+        return ['admin' => ['admin'], 'analyst' => ['analyst']];
     }
 }

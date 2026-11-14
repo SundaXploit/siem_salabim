@@ -22,7 +22,7 @@ class AlertIngestionCoordinatorTest extends TestCase
     {
         parent::setUp();
 
-        config(['queue.default' => 'database']);
+        config(['queue.default' => 'database', 'services.opensearch.host' => 'https://indexer.example.test:9200']);
         Queue::fake();
     }
 

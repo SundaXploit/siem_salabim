@@ -876,7 +876,102 @@ class OpenSearchServiceTest extends TestCase
         yield 'failed shard' => ['{"_shards":{"failed":1},"hits":{"hits":[]}}'];
     }
 
-    private function serviceWithQueue(array $queue, array &$history, string $index = 'wazuh-alerts-*'): OpenSearchService
+    public function test_agent_inventory_reads_every_page_of_the_latest_monitoring_snapshot_instead_of_alerts(): void
+    {
+        $history = [];
+        $timestamp = '2026-11-12T03:30:00.900Z';
+        $record = fn (string $id, string $name, string $status) => [
+            'key' => ['id' => $id],
+            'record' => ['hits' => ['hits' => [['_source' => compact('id', 'name', 'status')]]]],
+        ];
+        $service = $this->serviceWithQueue([
+            $this->page([['_source' => ['timestamp' => $timestamp]]]),
+            $this->page([], null, ['aggregations' => ['agents' => [
+                'buckets' => [$record('004', 'Agent-Demo-11', 'active')], 'after_key' => ['id' => '004'],
+            ]]]),
+            $this->page([], null, ['aggregations' => ['agents' => [
+                'buckets' => [$record('005', 'No-alert-agent', 'disconnected')],
+            ]]]),
+        ], $history, 'custom-alerts-*');
+
+        $inventory = $service->fetchAgents();
+        $this->assertSame(2, $inventory['total']);
+        $this->assertSame($timestamp, $inventory['updated_at']);
+        $this->assertSame(['Agent-Demo-11', 'No-alert-agent'], array_column($inventory['agents'], 'name'));
+        $this->assertSame('disconnected', $inventory['agents'][1]['status']);
+        foreach ($history as $position => $transaction) {
+            $this->assertSame('/wazuh-monitoring-*/_search', $transaction['request']->getUri()->getPath());
+            $query = json_decode((string) $transaction['request']->getBody(), true);
+            $this->assertSame([['term' => ['id' => '000']]], $query['query']['bool']['must_not']);
+            if ($position > 0) {
+                $this->assertSame([['term' => ['timestamp' => $timestamp]]], $query['query']['bool']['filter']);
+                $this->assertSame('id', $query['aggs']['agents']['composite']['sources'][0]['id']['terms']['field']);
+            }
+            $this->assertLowShardConcurrency($transaction);
+        }
+        $last = json_decode((string) $history[2]['request']->getBody(), true);
+        $this->assertSame(['id' => '004'], $last['aggs']['agents']['composite']['after']);
+    }
+
+    public function test_empty_monitoring_does_not_fall_back_to_historical_alert_agents(): void
+    {
+        $history = [];
+        $service = $this->serviceWithQueue([$this->page([])], $history);
+        $this->assertSame(['agents' => [], 'total' => 0, 'updated_at' => null], $service->fetchAgents());
+        $this->assertCount(1, $history);
+    }
+
+    public function test_agent_inventory_rejects_a_partial_snapshot(): void
+    {
+        $history = [];
+        $service = $this->serviceWithQueue([
+            $this->page([['_source' => ['timestamp' => '2026-11-12T03:30:00Z']]]),
+            $this->page([], null, ['_shards' => ['failed' => 1], 'aggregations' => ['agents' => ['buckets' => []]]]),
+        ], $history);
+        $this->expectException(RuntimeException::class);
+        $service->fetchAgents();
+    }
+
+    public function test_agent_inventory_reports_access_denied_without_exposing_upstream_details(): void
+    {
+        $history = [];
+        $service = $this->serviceWithQueue([new Response(403, [], '{"error":"private credentials and server details"}')], $history);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Akses ke indeks OpenSearch ditolak. Periksa role akun service.');
+        $service->fetchAgents();
+    }
+
+    public function test_permanent_ignore_terms_are_sent_on_single_fetch_index_discovery_and_scroll(): void
+    {
+        $history = [];
+        $rules = ['40101', '100001'];
+        $service = $this->serviceWithQueue([
+            $this->page([]), $this->indices(['wazuh-alerts-4.x-2026.11.12']),
+            $this->page([], 'cursor'), $this->cleared(),
+        ], $history, 'wazuh-alerts-*', $rules);
+        $service->fetchAlerts(5, 10);
+        iterator_to_array($service->fetchAlertBatches(5, 10));
+        foreach ([0, 1, 2] as $position) {
+            $query = json_decode((string) $history[$position]['request']->getBody(), true)['query']['bool'];
+            $this->assertSame([['range' => ['rule.level' => ['gte' => 5]]]], $query['filter']);
+            $this->assertSame([['terms' => ['rule.id' => $rules]]], $query['must_not']);
+        }
+    }
+
+    public function test_permanent_ignore_terms_preserve_time_bounds_in_pit_queries(): void
+    {
+        $history = [];
+        $range = ['gte' => '2026-11-12T00:00:00Z', 'lt' => '2026-11-12T01:00:00Z'];
+        $service = $this->serviceWithQueue([
+            new Response(200, [], '{"pit_id":"snapshot"}'), $this->page([]), $this->cleared(),
+        ], $history, 'wazuh-alerts-*', ['40101']);
+        iterator_to_array($service->fetchIncrementalAlertBatches(7, 100, $range));
+        $query = json_decode((string) $history[1]['request']->getBody(), true)['query']['bool'];
+        $this->assertSame([['range' => ['rule.level' => ['gte' => 7]]], ['range' => ['@timestamp' => $range]]], $query['filter']);
+        $this->assertSame([['terms' => ['rule.id' => ['40101']]]], $query['must_not']);
+    }
+
+    private function serviceWithQueue(array $queue, array &$history, string $index = 'wazuh-alerts-*', array $ignoredRuleIds = []): OpenSearchService
     {
         $stack = HandlerStack::create(new MockHandler($queue));
         $stack->push(Middleware::history($history));
@@ -885,12 +980,17 @@ class OpenSearchServiceTest extends TestCase
             'handler' => $stack,
         ]);
 
-        return new class($client, $index) extends OpenSearchService
+        return new class($client, $index, $ignoredRuleIds) extends OpenSearchService
         {
-            public function __construct(Client $client, string $index)
+            public function __construct(Client $client, string $index, private array $rules)
             {
                 $this->client = $client;
                 $this->index = $index;
+            }
+
+            protected function refreshAlertFilters(): void
+            {
+                $this->ignoredRuleIds = $this->rules;
             }
         };
     }

@@ -20,9 +20,11 @@ class DashboardOverviewTest extends TestCase
     {
         parent::setUp();
         config([
-            'services.amanai.api_key' => 'test-only-key',
-            'services.amanai.base_url' => 'https://api.amanai.dev/v1',
-            'services.amanai.reasoning_effort' => 'none',
+            'services.ai.api_key' => 'test-only-key',
+            'services.ai.base_url' => 'https://ai.example.test/v1',
+            'services.ai.model' => 'test-model',
+            'services.ai.api_format' => 'responses',
+            'services.ai.reasoning_effort' => 'none',
         ]);
         Http::preventStrayRequests();
     }
@@ -51,8 +53,7 @@ class DashboardOverviewTest extends TestCase
             ->assertSee('Belum dianalisis')
             ->assertSee('Kesimpulan analitis AI')
             ->assertSee('Brute Force')
-            ->assertViewHas('dashboard', fn (array $dashboard): bool =>
-                $dashboard['metrics']['total'] === 2
+            ->assertViewHas('dashboard', fn (array $dashboard): bool => $dashboard['metrics']['total'] === 2
                 && $dashboard['metrics']['actioned'] === 1
                 && $dashboard['metrics']['pending'] === 1
             );
@@ -73,16 +74,16 @@ class DashboardOverviewTest extends TestCase
         );
 
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::response([
+            'https://ai.example.test/v1/responses' => Http::response([
                 'output_text' => $summary,
             ]),
         ]);
         config([
-            'services.amanai.api_key' => 'test-only-key',
-            'services.amanai.base_url' => 'https://api.amanai.dev/v1',
+            'services.ai.api_key' => 'test-only-key',
+            'services.ai.base_url' => 'https://ai.example.test/v1',
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $this->makeAlert('dashboard-direct-ai', 12, 'web-01');
 
         $this->actingAs($analyst)
@@ -101,16 +102,15 @@ class DashboardOverviewTest extends TestCase
         $this->assertTrue(
             DashboardInsight::query()->latest('id')->first()->summary === trim($summary)
         );
-        Http::assertSent(fn (Request $request): bool =>
-            data_get($request->data(), 'reasoning.effort') === 'none'
+        Http::assertSent(fn (Request $request): bool => data_get($request->data(), 'reasoning.effort') === 'none'
         );
         Http::assertSentCount(1);
     }
 
     public function test_old_empty_period_summary_is_hidden_after_alerts_are_imported(): void
     {
-        $analyst = User::factory()->create(['role' => 'analyst']);
-        $this->storeEmptyInsight();
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
+        $this->storeEmptyInsight($analyst);
         $this->makeAlert('imported-after-insight', 5, 'test-agent');
 
         $this->actingAs($analyst)->get(route('dashboard.index'))
@@ -123,8 +123,8 @@ class DashboardOverviewTest extends TestCase
 
     public function test_empty_period_summary_remains_valid_while_there_are_no_alerts(): void
     {
-        $analyst = User::factory()->create(['role' => 'analyst']);
-        $stored = $this->storeEmptyInsight();
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
+        $stored = $this->storeEmptyInsight($analyst);
 
         $this->actingAs($analyst)->get(route('dashboard.index'))
             ->assertOk()
@@ -134,7 +134,7 @@ class DashboardOverviewTest extends TestCase
 
     public function test_manual_refresh_reads_imported_alerts_even_when_snapshot_cache_is_empty(): void
     {
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $snapshots = app(SecurityInsightSnapshotService::class);
         $this->assertSame(0, $snapshots->build($snapshots->currentPeriod())['metrics']['total']);
         $this->makeAlert('newly-imported', 5, 'test-agent');
@@ -152,7 +152,7 @@ class DashboardOverviewTest extends TestCase
 
     public function test_reasoning_only_response_reports_incomplete_output_instead_of_connection_error(): void
     {
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $this->makeAlert('empty-ai-reply', 5, 'test-agent');
         Http::fake(['*/responses' => Http::response([
             'status' => 'completed',
@@ -163,13 +163,13 @@ class DashboardOverviewTest extends TestCase
         $this->actingAs($analyst)->postJson(route('dashboard.insight.refresh'))
             ->assertStatus(502)
             ->assertJsonPath('success', false)
-            ->assertJsonPath('error', 'Layanan AI merespons tanpa kesimpulan yang lengkap. Silakan analisis ulang.')
+            ->assertJsonPath('error', 'Endpoint AI terhubung, tetapi tidak mengembalikan teks jawaban. Periksa model dan batas token.')
             ->assertDontSee('private-provider-text');
         $this->assertDatabaseCount('dashboard_insights', 0);
         Http::assertSentCount(1);
     }
 
-    private function storeEmptyInsight(): DashboardInsight
+    private function storeEmptyInsight(User $viewer): DashboardInsight
     {
         return DashboardInsight::create([
             'period_key' => now('Asia/Jakarta')->format('Y-m'),
@@ -179,9 +179,10 @@ class DashboardOverviewTest extends TestCase
             'summary' => 'Belum ada alert yang diimpor untuk periode ini. Kesimpulan tren akan tersedia setelah data alert masuk ke SIEM Salabim.',
             'source_snapshot' => ['metrics' => ['total' => 0]],
             'source_fingerprint' => str_repeat('a', 64),
-            'provider' => 'amanai',
+            'provider' => 'custom',
             'model' => 'test-model',
             'trigger' => 'scheduled',
+            'access_scope' => $viewer->alertAccessFingerprint(),
             'generated_at' => now()->subDays(1),
         ]);
     }
@@ -189,12 +190,13 @@ class DashboardOverviewTest extends TestCase
     private function makeAlert(string $suffix, int $level, string $agent): Alert
     {
         return Alert::create([
-            'wazuh_alert_id' => 'test-' . $suffix,
+            'wazuh_alert_id' => 'test-'.$suffix,
             'rule_description' => 'Brute Force login pattern',
             'agent_name' => $agent,
             'rule_id' => '5710',
             'rule_level' => $level,
             'raw_data' => [
+                'agent' => ['id' => '001'],
                 'rule' => [
                     'mitre' => [
                         'id' => ['T1110'],

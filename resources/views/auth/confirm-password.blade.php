@@ -1,27 +1,21 @@
+@section('title', 'Konfirmasi akses')
+@section('auth-title', 'Konfirmasi akses')
+@section('auth-context', 'Keamanan akun')
+@section('auth-view', 'auth/confirm-password')
+@section('auth-description', 'Masukkan kata sandi akun Anda untuk melanjutkan ke tindakan yang memerlukan konfirmasi.')
 <x-guest-layout>
-    <div class="mb-4 text-sm text-gray-600 dark:text-gray-400">
-        {{ __('This is a secure area of the application. Please confirm your password before continuing.') }}
+    <div class="access-context">
+        <span class="access-context-label">Akun yang digunakan</span>
+        <p class="technical-value">{{ auth()->user()->email }}</p>
     </div>
-
-    <form method="POST" action="{{ route('password.confirm') }}">
+    <form method="POST" action="{{ route('password.confirm') }}" class="access-form">
         @csrf
-
-        <!-- Password -->
-        <div>
-            <x-input-label for="password" :value="__('Password')" />
-
-            <x-text-input id="password" class="block mt-1 w-full"
-                            type="password"
-                            name="password"
-                            required autocomplete="current-password" />
-
-            <x-input-error :messages="$errors->get('password')" class="mt-2" />
+        <div class="access-field">
+            <x-input-label for="password" value="Kata sandi saat ini" />
+            <x-text-input id="password" name="password" type="password" required autocomplete="current-password" autofocus aria-describedby="password-error" />
+            <div id="password-error"><x-input-error :messages="$errors->get('password')" /></div>
         </div>
-
-        <div class="flex justify-end mt-4">
-            <x-primary-button>
-                {{ __('Confirm') }}
-            </x-primary-button>
-        </div>
+        <x-primary-button class="access-submit">Konfirmasi dan lanjutkan</x-primary-button>
     </form>
+    <div class="access-footer"><a href="{{ route('profile.edit') }}">Kembali ke profil</a></div>
 </x-guest-layout>

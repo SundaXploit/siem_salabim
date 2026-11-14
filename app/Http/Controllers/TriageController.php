@@ -63,6 +63,10 @@ class TriageController extends Controller
             $message .= " {$result['skipped']} alert dilewati karena statusnya tidak sesuai atau sudah ditangani.";
         }
 
+        if (! $request->expectsJson()) {
+            return back()->with('success', $message);
+        }
+
         return response()->json(['success' => true, 'message' => $message, ...$result]);
     }
 }

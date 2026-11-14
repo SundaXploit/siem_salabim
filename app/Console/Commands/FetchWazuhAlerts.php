@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\IngestionCheckpoint;
+use App\Models\PermanentAlertIgnore;
+use App\Services\AutomaticAlertNotifier;
 use App\Services\ApplicationUpdateRuntimeGuard;
 use App\Services\OpenSearchService;
 use Carbon\CarbonImmutable;
@@ -144,6 +146,7 @@ class FetchWazuhAlerts extends Command
 
         $newCount = 0;
         $skippedCount = 0;
+        $permanentlyIgnoredCount = 0;
         $retrievedCount = 0;
         $pageCount = 0;
         $dryRunIdentities = [];
@@ -177,23 +180,30 @@ class FetchWazuhAlerts extends Command
                 $pageCount++;
                 $retrievedCount += count($hits);
 
-                $parsedRows = array_map(
-                    static fn (array $hit): array => OpenSearchService::parseHit($hit),
-                    $hits,
-                );
+                // A rule can be added while a source scroll/PIT is already
+                // open. Recheck each page under the same short lock used by
+                // Settings so no batch commits after an exclusion was saved.
+                [$inserted, $skipped, $ignored, $notificationIds] = Cache::lock(PermanentAlertIgnore::WRITE_LOCK, 60)->block(10, function () use ($hits, $isDryRun, &$dryRunIdentities): array {
+                    $rules = PermanentAlertIgnore::ruleIds();
+                    $parsedRows = array_map(static fn (array $hit): array => OpenSearchService::parseHit($hit), $hits);
+                    $allowed = array_values(array_filter($parsedRows, static fn (array $row): bool => ! in_array($row['rule_id'], $rules, true)));
+                    $ignored = count($parsedRows) - count($allowed);
+                    if ($isDryRun) {
+                        [$inserted, $skipped] = $this->countDryRunRows($allowed, $dryRunIdentities);
 
-                if ($isDryRun) {
-                    [$wouldInsert, $wouldSkip] = $this->countDryRunRows($parsedRows, $dryRunIdentities);
-                    $newCount += $wouldInsert;
-                    $skippedCount += $wouldSkip;
+                        return [$inserted, $skipped, $ignored, []];
+                    }
+                    $this->adoptLegacyIdentities($allowed);
+                    [$inserted, $notificationIds] = $this->insertAlertBatch($allowed);
 
-                    continue;
+                    return [$inserted, count($allowed) - $inserted, $ignored, $notificationIds];
+                });
+                if ($notificationIds !== []) {
+                    app(AutomaticAlertNotifier::class)->dispatchPending($notificationIds);
                 }
-
-                $this->adoptLegacyIdentities($parsedRows);
-                $inserted = $this->insertAlertBatch($parsedRows);
                 $newCount += $inserted;
-                $skippedCount += count($parsedRows) - $inserted;
+                $skippedCount += $skipped;
+                $permanentlyIgnoredCount += $ignored;
             }
 
             if ($isIncremental && ! $isDryRun && $checkpointTarget !== null) {
@@ -237,11 +247,14 @@ class FetchWazuhAlerts extends Command
                 default => '',
             };
             $this->warn("[SIEM] Tidak ada alert{$period} yang cocok dengan filter level >= {$minLevel} pada indeks yang dikonfigurasi.");
-        } elseif ($newCount === 0) {
+        } elseif ($newCount === 0 && $permanentlyIgnoredCount === 0) {
             $this->info("[SIEM] Semua {$retrievedCount} alert yang diperiksa sudah tersimpan. Tidak ada alert baru untuk diimpor.");
         }
 
         $summary = $isDryRun ? 'Dry run. Would import' : 'Done. New';
+        if ($permanentlyIgnoredCount > 0) {
+            $this->info("[SIEM] Ignore permanen: {$permanentlyIgnoredCount} alert tidak disimpan.");
+        }
         $this->info("[SIEM] {$summary}: {$newCount}, Skipped (already exists): {$skippedCount}");
         Log::info('[SIEM] FetchWazuhAlerts completed', [
             'mode' => match (true) {
@@ -256,6 +269,7 @@ class FetchWazuhAlerts extends Command
             'retrieved' => $retrievedCount,
             'new' => $newCount,
             'skipped' => $skippedCount,
+            'permanently_ignored' => $permanentlyIgnoredCount,
         ]);
 
         return self::SUCCESS;
@@ -367,8 +381,10 @@ class FetchWazuhAlerts extends Command
         }
     }
 
-    /** @param list<array<string, mixed>> $rows */
-    private function insertAlertBatch(array $rows): int
+    /** @param list<array<string, mixed>> $rows
+     *  @return array{int, list<int>}
+     */
+    private function insertAlertBatch(array $rows): array
     {
         $existing = array_fill_keys(
             Alert::query()
@@ -384,6 +400,9 @@ class FetchWazuhAlerts extends Command
                 continue;
             }
             $novel[$identity] = $row;
+        }
+        if ($novel === []) {
+            return [0, []];
         }
 
         $timestamp = now()->toDateTimeString();
@@ -405,17 +424,22 @@ class FetchWazuhAlerts extends Command
             1000,
             (int) config('services.opensearch.fetch_insert_batch_size', 100),
         ));
-        foreach (array_chunk($prepared, $batchSize) as $chunk) {
-            Alert::query()->upsert(
-                $chunk,
-                ['source_identity_hash'],
-                // A no-op update makes a concurrent replay idempotent while
-                // preserving status, triage and the originally stored event.
-                ['source_identity_hash'],
-            );
-        }
+        $notificationIds = DB::transaction(function () use ($prepared, $batchSize, $novel): array {
+            foreach (array_chunk($prepared, $batchSize) as $chunk) {
+                Alert::query()->upsert(
+                    $chunk,
+                    ['source_identity_hash'],
+                    // Preserve status, triage and the originally stored event on replay.
+                    ['source_identity_hash'],
+                );
+            }
 
-        return count($prepared);
+            return app(AutomaticAlertNotifier::class)->prepare(
+                Alert::whereIn('source_identity_hash', array_keys($novel))->cursor(),
+            );
+        });
+
+        return [count($prepared), $notificationIds];
     }
 
     /** @param array<string, mixed> $identity */

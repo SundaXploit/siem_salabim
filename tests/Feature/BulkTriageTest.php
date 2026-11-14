@@ -25,7 +25,7 @@ class BulkTriageTest extends TestCase
 
     public function test_bulk_ack_changes_only_selected_new_alerts_and_records_the_actor(): void
     {
-        $user = User::factory()->create(['role' => 'analyst']);
+        $user = User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create();
         $first = $this->alert();
         $second = $this->alert();
         $ack = $this->alert('acknowledged');
@@ -81,7 +81,7 @@ class BulkTriageTest extends TestCase
     #[DataProvider('invalidBatches')]
     public function test_invalid_batch_does_not_change_alerts(array $overrides, string $error): void
     {
-        $user = User::factory()->create(['role' => 'analyst']);
+        $user = User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create();
         $alert = $this->alert();
         $this->actingAs($user)->postJson(route('alerts.bulk-triage'), array_replace([
             'action' => 'acknowledge', 'alert_ids' => [$alert->id],
@@ -109,7 +109,7 @@ class BulkTriageTest extends TestCase
     public function test_missing_alert_rejects_the_entire_batch(): void
     {
         $alert = $this->alert();
-        $this->actingAs(User::factory()->create(['role' => 'analyst']))
+        $this->actingAs(User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create())
             ->postJson(route('alerts.bulk-triage'), [
                 'action' => 'acknowledge', 'alert_ids' => [$alert->id, $alert->id + 100],
             ])->assertUnprocessable()->assertJsonValidationErrors('alert_ids');
@@ -124,7 +124,7 @@ class BulkTriageTest extends TestCase
         DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages WHEN NEW.alert_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'test history failure'); END");
         $this->withoutExceptionHandling();
         try {
-            $this->actingAs(User::factory()->create(['role' => 'analyst']))
+            $this->actingAs(User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create())
                 ->postJson(route('alerts.bulk-triage'), [
                     'action' => 'acknowledge', 'alert_ids' => [$first->id, $second->id],
                 ]);
@@ -147,7 +147,7 @@ class BulkTriageTest extends TestCase
     public function test_individual_triage_shares_idempotency_with_bulk_triage(): void
     {
         $alert = $this->alert();
-        $user = User::factory()->create(['role' => 'analyst']);
+        $user = User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create();
         $this->actingAs($user)->post(route('alerts.acknowledge', $alert))->assertSessionHas('success');
         $this->postJson(route('alerts.bulk-triage'), ['action' => 'acknowledge', 'alert_ids' => [$alert->id]])
             ->assertOk()->assertJsonPath('processed', 0);
@@ -163,7 +163,7 @@ class BulkTriageTest extends TestCase
         for ($i = 0; $i < 27; $i++) {
             $this->alert();
         }
-        $this->actingAs(User::factory()->create(['role' => 'analyst']))
+        $this->actingAs(User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create())
             ->get(route('alerts.index', ['per_page' => 50]))->assertOk()
             ->assertSee('ACK massal')->assertSee('Abaikan massal')
             ->assertSee('Pilih semua alert yang dapat ditangani pada halaman ini')
@@ -177,7 +177,7 @@ class BulkTriageTest extends TestCase
         return Alert::create([
             'wazuh_alert_id' => 'bulk-test-'.fake()->uuid(),
             'rule_description' => 'Synthetic triage event',
-            'rule_level' => 5, 'status' => $status, 'first_seen_at' => now(), 'raw_data' => [],
+            'rule_level' => 5, 'status' => $status, 'first_seen_at' => now(), 'raw_data' => ['agent' => ['id' => '001']],
         ]);
     }
 }

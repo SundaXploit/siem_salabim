@@ -141,8 +141,14 @@ export function alertTable(bulkUrl) {
                 // A dialog or selection may have opened while the request was in flight.
                 if (this.refreshPaused) return;
                 const body = this.$root.querySelector('#alert-table-card-body');
+                const previousIds = new Set(this.pageIds);
                 body.innerHTML = newBody.innerHTML;
                 this.readPageIds();
+                this.$root.querySelectorAll('[data-triage-id]').forEach(input => {
+                    if (!previousIds.has(input.dataset.triageId)) {
+                        input.closest?.('tr')?.classList.add('is-new-alert');
+                    }
+                });
                 window.SIEMUI?.refreshIcons?.(body);
                 const newTotal = doc.getElementById('alert-total-count');
                 if (newTotal) this.$root.querySelector('#alert-total-count').textContent = newTotal.textContent;

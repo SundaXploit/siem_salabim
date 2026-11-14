@@ -127,3 +127,41 @@ test('a refresh already in flight cannot replace newly selected rows', async t =
     assert.deepEqual(table.selectedIds, ['1']);
     assert.equal(table.isRefreshing, false);
 });
+
+test('successful refresh updates rows and icons and highlights only newly arrived alerts', async t => {
+    const table = component(t);
+    const highlighted = [];
+    let ids = ['1', '2'];
+    let html = '';
+    let iconRefreshes = 0;
+    let stats;
+    const total = { textContent: '2' };
+    const body = { set innerHTML(value) { html = value; ids = ['2', '3']; } };
+    table.$root.querySelectorAll = selector => selector === '[data-triage-id]'
+        ? ids.map(id => ({ dataset: { triageId: id }, closest: () => ({ classList: { add: name => highlighted.push([id, name]) } }) }))
+        : [];
+    table.$root.querySelector = selector => selector === '#alert-table-card-body' ? body : total;
+    table.$dispatch = (event, value) => { assert.equal(event, 'alerts-updated'); stats = value; };
+    window.SIEMUI = { refreshIcons: node => { assert.equal(node, body); iconRefreshes++; } };
+    globalThis.DOMParser = class {
+        parseFromString() {
+            return {
+                getElementById: id => id === 'alert-table-card-body' ? { innerHTML: 'updated rows' } : { textContent: '3' },
+                querySelector: () => ({ dataset: { alertStats: '{"new":3}' } }),
+            };
+        }
+    };
+    t.mock.method(globalThis, 'fetch', async url => {
+        assert.equal(url, 'http://localhost/live-alerts?status=new&per_page=100');
+        return { ok: true, redirected: false, text: async () => 'server-rendered html' };
+    });
+    await table.refreshData();
+    assert.equal(html, 'updated rows');
+    assert.deepEqual(table.pageIds, ['2', '3']);
+    assert.deepEqual(highlighted, [['3', 'is-new-alert']]);
+    assert.equal(iconRefreshes, 1);
+    assert.equal(total.textContent, '3');
+    assert.deepEqual(stats, { new: 3 });
+    assert.equal(table.countdown, 30);
+    assert.equal(table.refreshError, '');
+});

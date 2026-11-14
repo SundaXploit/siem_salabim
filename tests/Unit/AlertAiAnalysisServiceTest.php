@@ -47,4 +47,30 @@ JSON;
         $this->assertSame('Bukti belum cukup untuk menghasilkan ringkasan.', $result['summary']);
         $this->assertStringNotContainsString('{"verdict"', $result['summary']);
     }
+
+    public function test_bulk_correlation_rejects_invented_references_and_downgrades_the_verdict(): void
+    {
+        $result = (new AlertAiAnalysisService())->normaliseBatchText(json_encode([
+            'verdict' => 'malicious', 'confidence' => 99, 'summary' => 'A proposed relationship.',
+            'correlations' => [
+                ['alert_ids' => [1, 2], 'strength' => 'strong', 'evidence' => 'Observed source IP matches.'],
+                ['alert_ids' => [1, 999], 'strength' => 'strong', 'evidence' => 'Invented event.'],
+            ],
+        ]), [1, 2], 'test-model');
+        $this->assertCount(1, $result['correlations']);
+        $this->assertSame([1, 2], $result['correlations'][0]['alert_ids']);
+        $this->assertSame('inconclusive', $result['verdict']);
+        $this->assertNull($result['confidence']);
+        $this->assertNotEmpty($result['limitations']);
+    }
+
+    public function test_bulk_truncated_response_cannot_keep_a_confident_verdict(): void
+    {
+        $result = (new AlertAiAnalysisService())->normaliseBatchText(
+            '{"verdict":"malicious","confidence":99,"summary":"Incomplete conclusion","correlations":[',
+            [1, 2], 'test-model',
+        );
+        $this->assertSame('inconclusive', $result['verdict']);
+        $this->assertNull($result['confidence']);
+    }
 }

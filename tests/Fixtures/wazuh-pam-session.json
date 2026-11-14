@@ -1,0 +1,32 @@
+{
+  "id": "1794460923.1477622",
+  "data": { "uid": "0", "dstuser": "www" },
+  "rule": {
+    "id": "40101",
+    "tsc": ["CC6.1", "CC6.8", "CC7.2", "CC7.3"],
+    "gdpr": ["IV_35.7.d", "IV_32.2"],
+    "mail": true,
+    "gpg13": ["7.8"],
+    "hipaa": ["164.312.b"],
+    "level": 12,
+    "mitre": {
+      "id": ["T1078"],
+      "tactic": ["Defense Evasion", "Persistence", "Privilege Escalation", "Initial Access"],
+      "technique": ["Valid Accounts"]
+    },
+    "groups": ["syslog", "attacks", "invalid_login"],
+    "pci_dss": ["10.2.4", "10.2.5"],
+    "firedtimes": 24,
+    "description": "System user successfully logged to the system.",
+    "nist_800_53": ["AU.14", "AC.7"]
+  },
+  "agent": { "id": "007", "ip": "192.0.2.20", "name": "Agent-Demo-A" },
+  "input": { "type": "log" },
+  "decoder": { "name": "pam", "parent": "pam" },
+  "manager": { "name": "manager-demo" },
+  "full_log": "Nov 12 05:22:01 host-demo-a sudo[1735876]: pam_unix(sudo:session): session opened for user www(uid=1003) by (uid=0)",
+  "location": "journald",
+  "timestamp": "2026-11-12T05:22:03.307+0000",
+  "@timestamp": "2026-11-12T05:22:03.307Z",
+  "predecoder": { "hostname": "host-demo-a", "timestamp": "Nov 12 05:22:01", "program_name": "sudo" }
+}

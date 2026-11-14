@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Alert;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -40,6 +41,20 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    public function forAgent(string $id, array $privileges = [], string $cluster = 'wazuh-primary'): static
+    {
+        return $this->state(fn () => [
+            'role' => 'analyst',
+            'allowed_agents' => [[
+                'key' => Alert::agentScopeKey($cluster, $id),
+                'id' => $id,
+                'name' => 'Test agent '.$id,
+                'source_cluster' => $cluster,
+            ]],
+            'privileges' => $privileges,
         ]);
     }
 }

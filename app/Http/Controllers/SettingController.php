@@ -2,32 +2,36 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\AiAnalysisException;
 use App\Jobs\GenerateDataExport;
 use App\Jobs\PurgeDataExport;
+use App\Jobs\PrepareAutomaticAlertNotifications;
 use App\Models\Alert;
 use App\Models\AlertAiAnalysis;
 use App\Models\AlertTriage;
-use App\Models\ApplicationUpdate;
 use App\Models\Configuration;
 use App\Models\DataExport;
 use App\Models\NotificationLog;
+use App\Models\PermanentAlertIgnore;
 use App\Models\User;
+use App\Services\AiInsightService;
+use App\Services\AiProviderService;
 use App\Services\AlertIngestionCoordinator;
-use App\Services\AmanaiInsightService;
 use App\Services\ApplicationUpdateRuntimeGuard;
-use App\Services\ApplicationVersionService;
+use App\Services\AutomaticAlertNotifier;
 use App\Services\DataExportArchiveService;
-use App\Services\GitHubReleaseService;
 use App\Services\OpenSearchService;
 use App\Services\QueueExecutionPolicy;
 use App\Services\TelegramService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -41,14 +45,29 @@ class SettingController extends Controller
         }
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $this->adminOnly();
+        $settingsSections = [
+            'opensearch' => ['title' => 'Konfigurasi OpenSearch & Alert', 'description' => 'Koneksi Wazuh Indexer, kredensial, pola indeks, ambang level, dan fetch alert manual.', 'icon' => 'database'],
+            'permanent-ignore' => ['title' => 'Ignore permanen', 'description' => 'Hentikan impor alert baru berdasarkan Rule ID.', 'icon' => 'filter'],
+            'ai' => ['title' => 'Konfigurasi AI', 'description' => 'Provider, endpoint, model, serta jadwal analisis AI.', 'icon' => 'sparkles'],
+            'telegram' => ['title' => 'Konfigurasi Telegram', 'description' => 'Token bot, manajemen tujuan, dan aturan pengiriman berdasarkan agent.', 'icon' => 'send'],
+            'users' => ['title' => 'Manajemen user', 'description' => 'Akun, role, dan akses anggota tim SOC.', 'icon' => 'users'],
+            'data' => ['title' => 'Manajemen data', 'description' => 'Ekspor ZIP, riwayat backup, dan retensi data.', 'icon' => 'archive'],
+        ];
+        $activeSettingsSection = old('_section', session('settings_section', $request->query('section')));
+        if ($activeSettingsSection === 'alerts') {
+            $activeSettingsSection = 'opensearch';
+        }
+        abort_unless($activeSettingsSection === null || (is_string($activeSettingsSection) && isset($settingsSections[$activeSettingsSection])), 404);
         $configKeys = [
             'opensearch_host',
             'opensearch_username',
             'opensearch_index',
             'min_alert_level',
+            'ai_provider',
+            'ai_api_format',
             'ai_base_url',
             'ai_model',
             'ai_snapshot_limit',
@@ -59,47 +78,48 @@ class SettingController extends Controller
             'opensearch_username' => config('services.opensearch.username'),
             'opensearch_index' => config('services.opensearch.index'),
             'min_alert_level' => config('services.opensearch.min_level'),
-            'ai_base_url' => config('services.amanai.base_url'),
-            'ai_model' => config('services.amanai.model'),
-            'ai_snapshot_limit' => config('services.amanai.snapshot_limit'),
-            'ai_refresh_days' => config('services.amanai.refresh_days'),
+            'ai_base_url' => config('services.ai.base_url'),
+            'ai_model' => config('services.ai.model'),
+            'ai_snapshot_limit' => config('services.ai.snapshot_limit'),
+            'ai_refresh_days' => config('services.ai.refresh_days'),
         ];
         $configs = collect($configKeys)->mapWithKeys(
             fn (string $key) => [$key => Configuration::get($key, $defaults[$key] ?? null)]
         );
+        $aiClient = app(AiProviderService::class);
+        $aiSettings = $aiClient->settings();
+        $aiKeyAvailable = filled($aiSettings['api_key']);
+        $configs->put('ai_provider', $aiSettings['provider']);
+        $configs->put('ai_api_format', $aiSettings['api_format']);
+        $aiProviders = config('ai_providers');
+        $telegramDestinations = Configuration::getTelegramDestinations();
+        $automaticNotifications = app(AutomaticAlertNotifier::class)->settings();
         $users = User::orderBy('name')->get();
-        $dataExports = DataExport::query()
+        $permanentIgnores = PermanentAlertIgnore::whereNotNull('rule_id')->orderByDesc('id')->paginate(15, ['*'], 'ignored_page')->appends(['section' => 'permanent-ignore']);
+        $legacyPermanentIgnores = PermanentAlertIgnore::whereNull('rule_id')->orderByDesc('id')->paginate(15, ['*'], 'legacy_ignored_page')->appends(['section' => 'permanent-ignore']);
+        $dataExportsReady = Schema::hasTable('data_exports') && Schema::hasColumn('data_exports', 'archive_password');
+        $dataExports = $dataExportsReady ? DataExport::query()
             ->with(['requestedBy', 'purgeRequestedBy'])
             ->latest()
             ->limit(20)
-            ->get();
-        $aiConfigured = app(AmanaiInsightService::class)->isConfigured();
-        $aiKeyStoredInSettings = Configuration::query()
-            ->where('key', 'ai_api_key')
-            ->exists();
-        $applicationVersion = app(ApplicationVersionService::class)->current();
-        $latestRelease = app(GitHubReleaseService::class)->cached();
-        $applicationUpdates = ApplicationUpdate::query()
-            ->latest()
-            ->limit(10)
-            ->get();
-        $applicationUpdateEnabled = (bool) config('application_updates.self_update_enabled', false);
-        $applicationUpdateBackupConfirmed = (bool) config('application_updates.backup_confirmed', false);
-        $applicationUpdateQueueReady = app(QueueExecutionPolicy::class)->runsOutsideRequest();
+            ->get() : collect();
+        $aiConfigured = app(AiInsightService::class)->isConfigured();
 
-        return view('settings.index', compact(
+        return response()->view('settings.index', compact(
             'configs',
             'users',
+            'permanentIgnores',
+            'legacyPermanentIgnores',
             'dataExports',
+            'dataExportsReady',
             'aiConfigured',
-            'aiKeyStoredInSettings',
-            'applicationVersion',
-            'latestRelease',
-            'applicationUpdates',
-            'applicationUpdateEnabled',
-            'applicationUpdateBackupConfirmed',
-            'applicationUpdateQueueReady',
-        ));
+            'aiProviders',
+            'aiKeyAvailable',
+            'telegramDestinations',
+            'automaticNotifications',
+            'settingsSections',
+            'activeSettingsSection',
+        ))->withHeaders(['Cache-Control' => 'no-store, private']);
     }
 
     public function updateOpenSearch(Request $request)
@@ -110,6 +130,7 @@ class SettingController extends Controller
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['nullable', 'string', 'max:4096'],
             'opensearch_index' => ['required', 'string', 'max:255'],
+            'min_alert_level' => ['sometimes', 'required', 'integer', Rule::in([3, 5, 7, 10, 12, 13, 14, 15])],
         ]);
 
         Configuration::set('opensearch_host', trim($data['opensearch_host']));
@@ -118,8 +139,87 @@ class SettingController extends Controller
         if (filled($data['opensearch_password'] ?? null)) {
             Configuration::set('opensearch_password', $data['opensearch_password']);
         }
+        if (array_key_exists('min_alert_level', $data)) {
+            Configuration::set('min_alert_level', (int) $data['min_alert_level']);
+            Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
+        }
 
-        return back()->with('success', 'Konfigurasi OpenSearch berhasil disimpan.');
+        return back()->with('settings_section', 'opensearch')->with('success', 'Konfigurasi OpenSearch & Alert berhasil disimpan.');
+    }
+
+    public function telegramAgents()
+    {
+        $this->adminOnly();
+        try {
+            $inventory = app(OpenSearchService::class)->fetchAgents();
+
+            return response()->json(['success' => true, ...$inventory])
+                ->withHeaders(['Cache-Control' => 'no-store, private']);
+        } catch (\Throwable $e) {
+            Log::warning('[OpenSearch] agent inventory failed', ['exception_class' => $e::class]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e instanceof \RuntimeException ? $e->getMessage() : 'Daftar agent belum dapat dimuat dari OpenSearch. Coba muat ulang.',
+            ], 502)->withHeaders(['Cache-Control' => 'no-store, private']);
+        }
+    }
+
+    public function userAgents()
+    {
+        $this->adminOnly();
+        try {
+            return response()->json(['success' => true, 'agents' => $this->userAgentInventory()])
+                ->header('Cache-Control', 'no-store, private');
+        } catch (\Throwable $exception) {
+            return response()->json(['success' => false, 'error' => 'Daftar agent belum dapat dimuat dari monitoring Wazuh. Coba muat ulang.'], 502)
+                ->header('Cache-Control', 'no-store, private');
+        }
+    }
+
+    private function userAgentInventory(): array
+    {
+        $cluster = trim((string) config('services.opensearch.source_cluster', 'wazuh-primary'));
+
+        return collect(app(OpenSearchService::class)->fetchAgents()['agents'])->map(fn (array $agent) => [
+            'key' => Alert::agentScopeKey($cluster, $agent['id']), 'id' => $agent['id'],
+            'name' => $agent['name'], 'source_cluster' => $cluster,
+        ])->all();
+    }
+
+    private function userAccessData(Request $request, ?User $current = null): array
+    {
+        $data = $request->validate([
+            'agent_keys' => ['nullable', 'array', 'max:1000'],
+            'agent_keys.*' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/', 'distinct'],
+            'privileges' => ['nullable', 'array', 'max:5'],
+            'privileges.*' => ['required', 'string', Rule::in(array_keys(User::PRIVILEGES)), 'distinct'],
+        ]);
+        if ($request->role === 'admin') {
+            return ['allowed_agents' => [], 'privileges' => []];
+        }
+        if ($current?->isAnalyst() && ! $request->hasAny(['_access_settings', 'agent_keys', 'privileges'])) {
+            return ['allowed_agents' => $current->allowed_agents ?? [], 'privileges' => $current->privileges ?? []];
+        }
+        $keys = $data['agent_keys'] ?? [];
+        $available = collect($current?->allowed_agents ?? [])->keyBy('key');
+        if (array_diff($keys, $available->keys()->all()) !== []) {
+            try {
+                $available = $available->merge(collect($this->userAgentInventory())->keyBy('key'));
+            } catch (\Throwable $exception) {
+                throw ValidationException::withMessages(['agent_keys' => 'Agent baru belum dapat diverifikasi. Muat ulang daftar agent lalu coba simpan kembali.']);
+            }
+        }
+        foreach ($keys as $key) {
+            if (! $available->has($key)) {
+                throw ValidationException::withMessages(['agent_keys' => 'Pilihan agent tidak tersedia di monitoring Wazuh. Muat ulang dan pilih kembali.']);
+            }
+        }
+
+        return [
+            'allowed_agents' => $available->only($keys)->values()->all(),
+            'privileges' => array_values(array_diff($data['privileges'] ?? [], ['alerts.view'])),
+        ];
     }
 
     public function updateTelegram(Request $request)
@@ -129,6 +229,18 @@ class SettingController extends Controller
             'telegram_bot_token' => 'nullable|string|max:4096',
             'telegram_chat_ids' => 'nullable|array',
             'telegram_chat_ids.*' => 'nullable|string|max:100',
+            'update_telegram_destinations' => ['sometimes', 'boolean'],
+            'telegram_destinations' => ['sometimes', 'array', 'max:100'],
+            'telegram_destinations.*' => ['array:label,chat_id,agents'],
+            'telegram_destinations.*.label' => ['required', 'string', 'max:100'],
+            'telegram_destinations.*.chat_id' => ['required', 'string', 'max:100', 'regex:/^-?[1-9][0-9]*$/', 'distinct:strict'],
+            'telegram_destinations.*.agents' => ['required', 'array', 'min:1', 'max:1000'],
+            'telegram_destinations.*.agents.*' => ['required', 'string', 'max:255'],
+        ], [
+            'telegram_destinations.*.agents.required' => 'Pilih minimal satu agent untuk setiap tujuan Telegram.',
+            'telegram_destinations.*.agents.min' => 'Pilih minimal satu agent untuk setiap tujuan Telegram.',
+            'telegram_destinations.*.chat_id.distinct' => 'Chat ID tidak boleh digunakan pada dua baris tujuan.',
+            'telegram_destinations.*.chat_id.regex' => 'Chat ID harus berupa angka; ID grup boleh diawali tanda minus.',
         ]);
 
         if (filled($data['telegram_bot_token'] ?? null)) {
@@ -139,119 +251,153 @@ class SettingController extends Controller
             ]);
         }
 
-        Configuration::set('telegram_chat_ids', json_encode(
-            array_values(array_filter(array_map('trim', $data['telegram_chat_ids'] ?? [])))
-        ));
+        if ($request->boolean('update_telegram_destinations') || array_key_exists('telegram_destinations', $data)) {
+            $destinations = array_map(static fn (array $destination): array => [
+                'label' => trim($destination['label']),
+                'chat_id' => trim($destination['chat_id']),
+                'agents' => array_values(array_unique(array_map('trim', $destination['agents']))),
+            ], $data['telegram_destinations'] ?? []);
+            Configuration::set('telegram_destinations', json_encode(array_values($destinations), JSON_THROW_ON_ERROR));
+        } elseif (array_key_exists('telegram_chat_ids', $data)) {
+            Configuration::set('telegram_chat_ids', json_encode(
+                array_values(array_unique(array_filter(array_map('trim', $data['telegram_chat_ids'] ?? []))))
+            ));
+        }
 
-        return back()->with('success', 'Konfigurasi Telegram berhasil disimpan.');
+        return back()->with('settings_section', 'telegram')->with('success', 'Konfigurasi Telegram berhasil disimpan.');
+    }
+
+    public function updateAutomaticNotifications(Request $request)
+    {
+        $this->adminOnly();
+        $data = $request->validate([
+            'telegram_auto_enabled' => ['required', 'boolean'],
+            'telegram_auto_above_level' => ['required', 'integer', 'min:0', 'max:14'],
+            'telegram_auto_daily_limit' => ['sometimes', 'required', 'integer', 'min:1', 'max:100'],
+        ]);
+        $enabled = $request->boolean('telegram_auto_enabled');
+        if ($enabled && (blank(Configuration::get('telegram_bot_token', config('services.telegram.bot_token')))
+            || ! collect(Configuration::getTelegramDestinations())->contains(fn ($destination) => ! empty($destination['agents'])))) {
+            throw ValidationException::withMessages([
+                'telegram_auto_enabled' => 'Simpan token bot dan minimal satu tujuan dengan pemetaan agent terlebih dahulu.',
+            ]);
+        }
+        DB::transaction(function () use ($request, $data, $enabled): void {
+            Configuration::set('telegram_auto_enabled', $enabled ? '1' : '0');
+            Configuration::set('telegram_auto_above_level', (int) $data['telegram_auto_above_level']);
+            if (array_key_exists('telegram_auto_daily_limit', $data)) {
+                Configuration::set('telegram_auto_daily_limit', (int) $data['telegram_auto_daily_limit']);
+            }
+            // A worker has no browser request. Capture the authenticated admin's application URL automatically.
+            Configuration::set('telegram_auto_base_url', rtrim($request->root(), '/'));
+            if (! $enabled) {
+                NotificationLog::whereNotNull('automatic_key')->where('delivery_state', 'pending')->update(['delivery_state' => 'cancelled']);
+            }
+        });
+
+        if ($enabled) {
+            PrepareAutomaticAlertNotifications::dispatch();
+        }
+
+        return back()->with('settings_section', 'telegram')->with('success', 'Konfigurasi notifikasi otomatis berhasil disimpan.'.($enabled ? ' Notifikasi hanya untuk alert baru yang diimpor sejak fitur aktif.' : ''));
+    }
+
+    private function prepareAiConfiguration(Request $request): string
+    {
+        $saved = app(AiProviderService::class)->settings();
+        $provider = (string) $request->input('ai_provider', $saved['provider']);
+        $request->merge([
+            'ai_provider' => $provider,
+            'ai_api_format' => $request->input('ai_api_format', $provider === $saved['provider']
+                ? $saved['api_format'] : AiProviderService::defaultFormat($provider)),
+        ]);
+
+        return $provider;
     }
 
     public function updateAiInsight(Request $request)
     {
         $this->adminOnly();
-        $data = $request->validate([
-            'ai_api_key' => ['nullable', 'string', 'max:4096'],
-            'ai_base_url' => ['required', 'url', 'starts_with:https://', 'max:2048'],
-            'ai_model' => ['required', 'string', 'max:255'],
+        $provider = $this->prepareAiConfiguration($request);
+        $data = $request->validate(AiProviderService::configurationRules($provider, false) + [
             'ai_snapshot_limit' => ['required', 'integer', 'min:1000', 'max:10000'],
-            'min_alert_level' => ['required', 'integer', Rule::in([3, 5, 7, 10, 12, 13, 14, 15])],
             'ai_refresh_days' => ['required', 'integer', 'min:1', 'max:30'],
         ]);
-
-        // Only update API key if a new value was provided
-        if (filled($data['ai_api_key'] ?? null)) {
-            Configuration::set('ai_api_key', $data['ai_api_key']);
-        } elseif (blank(Configuration::get('ai_api_key', config('services.amanai.api_key', '')))) {
+        $client = app(AiProviderService::class);
+        $settings = $client->settings($data);
+        if (! $client->isConfigured($settings)) {
             throw ValidationException::withMessages([
-                'ai_api_key' => 'Masukkan API key sebelum menyimpan konfigurasi pertama.',
+                'ai_api_key' => 'Masukkan API key untuk provider dan endpoint ini. Token tersimpan hanya dipakai untuk tujuan yang sama.',
             ]);
         }
 
-        Configuration::set('ai_base_url', rtrim(trim($data['ai_base_url']), '/'));
-        Configuration::set('ai_model', trim($data['ai_model']));
+        foreach (['provider', 'api_format', 'base_url', 'model', 'api_key'] as $key) {
+            Configuration::set('ai_'.$key, $settings[$key]);
+        }
         Configuration::set('ai_snapshot_limit', (int) $data['ai_snapshot_limit']);
-        Configuration::set('min_alert_level', (int) $data['min_alert_level']);
         Configuration::set('ai_refresh_days', (int) $data['ai_refresh_days']);
-
         Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
 
-        return back()->with('success', 'Konfigurasi Analisis AI berhasil disimpan.');
+        return back()->with('settings_section', 'ai')->with('success', 'Konfigurasi Analisis AI berhasil disimpan.');
+    }
+
+    public function updateAlerts(Request $request)
+    {
+        $this->adminOnly();
+        $data = $request->validate([
+            'min_alert_level' => ['required', 'integer', Rule::in([3, 5, 7, 10, 12, 13, 14, 15])],
+        ]);
+        Configuration::set('min_alert_level', (int) $data['min_alert_level']);
+        Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
+
+        return back()->with('settings_section', 'opensearch')->with('success', 'Konfigurasi Alert berhasil disimpan.');
     }
 
     public function testAiInsight(Request $request)
     {
         $this->adminOnly();
-        $data = $request->validate([
-            'ai_api_key' => ['nullable', 'string', 'max:4096'],
-            'ai_base_url' => ['required', 'url', 'starts_with:https://', 'max:2048'],
-            'ai_model' => ['nullable', 'string', 'max:255'],
-        ]);
-
-        $apiKey = filled($data['ai_api_key'] ?? null)
-            ? $data['ai_api_key']
-            : Configuration::get('ai_api_key', config('services.amanai.api_key', ''));
-
-        $baseUrl = rtrim(trim($data['ai_base_url']), '/');
-        $model = trim($data['ai_model'] ?? Configuration::get('ai_model', config('services.amanai.model', 'amanai/deepseek-v4.1-flash')));
-
-        if (blank($apiKey)) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Masukkan API key untuk menguji koneksi.',
-            ], 422);
+        $provider = $this->prepareAiConfiguration($request);
+        $data = $request->validate(AiProviderService::configurationRules($provider, false));
+        $client = app(AiProviderService::class);
+        $settings = $client->settings($data);
+        if (! $client->isConfigured($settings)) {
+            return response()->json(['success' => false, 'error' => 'Masukkan API key untuk provider dan endpoint ini. LLM lokal boleh tanpa API key.'], 422);
         }
 
         try {
-            $response = Http::acceptJson()
-                ->withToken((string) $apiKey)
-                ->connectTimeout(10)
-                ->timeout(30)
-                ->post($baseUrl.'/responses', [
-                    'model' => $model,
-                    'input' => 'Jawab tepat satu kata: pong',
-                    'reasoning' => ['effort' => 'none'],
-                    'max_output_tokens' => 256,
-                ]);
-
-            if ($response->successful()) {
-                $reply = data_get($response->json(), 'output_text', '');
-                if (is_array($reply)) {
-                    $reply = implode('', $reply);
-                }
-                if (blank($reply)) {
-                    $reply = collect(data_get($response->json(), 'output', []))
-                        ->flatMap(fn ($item) => is_array($item) ? ($item['content'] ?? []) : [])
-                        ->map(fn ($part) => is_array($part) ? ($part['text'] ?? '') : '')
-                        ->implode('');
-                }
-
-                if (blank(trim((string) $reply))) {
-                    return response()->json([
-                        'success' => false,
-                        'error' => 'Endpoint AI terhubung, tetapi tidak mengembalikan teks jawaban. Periksa dukungan model untuk reasoning none.',
-                    ]);
-                }
-
-                return response()->json([
-                    'success' => true,
-                    'model' => $model,
-                    'reply' => mb_substr(trim((string) $reply), 0, 200),
-                ]);
-            }
+            $reply = $client->generate(
+                'Jawab singkat untuk tes koneksi.', 'Jawab tepat satu kata: pong', 256, 30,
+                reasoningEffort: config('services.ai.reasoning_effort'), settings: $settings,
+            );
 
             return response()->json([
-                'success' => false,
-                'error' => 'Server AI menolak permintaan (HTTP '.$response->status().').',
+                'success' => true, 'provider' => $settings['provider'],
+                'model' => $settings['model'], 'reply' => mb_substr($reply, 0, 200),
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('[AmanAI] Connection test failed', [
-                'exception_class' => $e::class,
-            ]);
+        } catch (AiAnalysisException $exception) {
+            return response()->json(['success' => false, 'error' => $exception->getMessage()]);
+        } catch (\Throwable $exception) {
+            Log::warning('[AI] Connection test failed', ['exception_class' => $exception::class]);
 
-            return response()->json([
-                'success' => false,
-                'error' => 'Tidak dapat terhubung ke endpoint AI. Periksa URL, jaringan, TLS, dan API key.',
-            ]);
+            return response()->json(['success' => false, 'error' => 'Tidak dapat terhubung ke endpoint AI. Periksa konfigurasi dan jaringan server.']);
+        }
+    }
+
+    public function aiModels(Request $request)
+    {
+        $this->adminOnly();
+        $provider = $this->prepareAiConfiguration($request);
+        $data = $request->validate(AiProviderService::modelDiscoveryRules($provider));
+        $client = app(AiProviderService::class);
+
+        try {
+            return response()->json(['success' => true, ...$client->models($client->settings($data))])->header('Cache-Control', 'no-store, private');
+        } catch (AiAnalysisException $exception) {
+            return response()->json(['success' => false, 'error' => $exception->getMessage()]);
+        } catch (\Throwable $exception) {
+            Log::warning('[AI] Model discovery failed', ['exception_class' => $exception::class]);
+
+            return response()->json(['success' => false, 'error' => 'Daftar model belum dapat diambil. Model tetap dapat diisi manual.']);
         }
     }
 
@@ -286,7 +432,8 @@ class SettingController extends Controller
     {
         $this->adminOnly();
         $data = $request->validate([
-            'chat_id' => ['required', 'string', 'max:100'],
+            'test_type' => ['nullable', Rule::in(['bot', 'message'])],
+            'chat_id' => ['required_unless:test_type,bot', 'nullable', 'string', 'max:100'],
             'telegram_bot_token' => ['nullable', 'string', 'max:4096'],
         ]);
 
@@ -302,17 +449,31 @@ class SettingController extends Controller
         }
 
         $service = app(TelegramService::class);
-        $result = $service->sendMessage(
-            trim($data['chat_id']),
-            '✅ Test koneksi dari SIEM Salabim berhasil!',
-            $botToken,
-        );
+        if (($data['test_type'] ?? 'message') === 'bot') {
+            $result = $service->testConfiguration($botToken, []);
+            if ($result['success']) {
+                $result['message'] = 'Bot Telegram berhasil terhubung. Gunakan Kirim pesan tes untuk memeriksa akses ke Chat ID tujuan.';
+            }
+        } else {
+            $result = $service->sendMessage(
+                trim($data['chat_id']),
+                '✅ Test koneksi dari SIEM Salabim berhasil!',
+                $botToken,
+            );
+        }
 
-        $httpStatus = $result['success']
-            ? 200
-            : (in_array((int) ($result['status'] ?? 0), [400, 401, 403, 404], true) ? 422 : 503);
+        $httpStatus = $result['success'] ? 200 : match ((int) ($result['status'] ?? 0)) {
+            400, 401, 403, 404 => 422,
+            429 => 429,
+            default => 503,
+        };
 
-        return response()->json($result, $httpStatus);
+        $response = response()->json($result, $httpStatus);
+        if ($httpStatus === 429 && ($result['retry_after'] ?? 0) > 0) {
+            $response->header('Retry-After', (string) $result['retry_after']);
+        }
+
+        return $response;
     }
 
     // ─── User Management ─────────────────────────────────────────────────────
@@ -332,9 +493,9 @@ class SettingController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => $request->role,
-        ]);
+        ] + $this->userAccessData($request));
 
-        return back()->with('success', "User {$request->name} berhasil dibuat.");
+        return back()->with('settings_section', 'users')->with('success', "User {$request->name} berhasil dibuat.");
     }
 
     public function updateUser(Request $request, User $user)
@@ -346,26 +507,26 @@ class SettingController extends Controller
             'password' => 'nullable|string|min:8|confirmed',
         ]);
 
-        $data = ['name' => $request->name, 'role' => $request->role];
+        $data = ['name' => $request->name, 'role' => $request->role] + $this->userAccessData($request, $user);
         if ($request->filled('password')) {
             $data['password'] = Hash::make($request->password);
         }
 
         $user->update($data);
 
-        return back()->with('success', "User {$user->name} berhasil diupdate.");
+        return back()->with('settings_section', 'users')->with('success', "User {$user->name} berhasil diupdate.");
     }
 
     public function deleteUser(User $user)
     {
         $this->adminOnly();
         if ($user->id === auth()->id()) {
-            return back()->with('error', 'Tidak bisa menghapus akun sendiri.');
+            return back()->with('settings_section', 'users')->with('error', 'Tidak bisa menghapus akun sendiri.');
         }
 
         $user->delete();
 
-        return back()->with('success', 'User berhasil dihapus.');
+        return back()->with('settings_section', 'users')->with('success', 'User berhasil dihapus.');
     }
 
     /**
@@ -374,6 +535,7 @@ class SettingController extends Controller
     public function manualFetch(AlertIngestionCoordinator $ingestion)
     {
         $this->adminOnly();
+        session()->flash('settings_section', 'opensearch');
 
         $status = $ingestion->requestTodayFetch('settings-manual');
 
@@ -486,13 +648,19 @@ class SettingController extends Controller
     }
 
     public function downloadDataExport(
+        Request $request,
         DataExport $dataExport,
         DataExportArchiveService $archives,
     ) {
         $this->adminOnly();
 
+        abort_unless($request->integer('user') === (int) $request->user()->id, 403);
+        abort_unless($dataExport->isVerified(), 409, 'Ekspor belum siap diunduh.');
         try {
             $archives->verifyArchive($dataExport);
+            if (filled($dataExport->archive_password)) {
+                $downloadPath = $archives->prepareStandardZipDownload($dataExport);
+            }
         } catch (\Throwable $exception) {
             Log::warning('[Data Export] Download blocked by integrity verification', [
                 'export_id' => $dataExport->id,
@@ -502,15 +670,20 @@ class SettingController extends Controller
             abort(409, 'Integritas file ekspor tidak dapat diverifikasi. Download dibatalkan.');
         }
 
+        $headers = [
+            'Content-Type' => 'application/zip',
+            'Cache-Control' => 'private, no-store, max-age=0, must-revalidate',
+            'Pragma' => 'no-cache',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+        if (isset($downloadPath)) {
+            return response()->download($downloadPath, $dataExport->filename, $headers)->deleteFileAfterSend(true);
+        }
+
         return Storage::disk($dataExport->storage_disk)->download(
             $dataExport->storage_path,
             $dataExport->filename,
-            [
-                'Content-Type' => $dataExport->format === 'json' ? 'application/json' : 'application/sql',
-                'Cache-Control' => 'private, no-store, max-age=0, must-revalidate',
-                'Pragma' => 'no-cache',
-                'X-Content-Type-Options' => 'nosniff',
-            ],
+            $headers,
         );
     }
 
@@ -519,6 +692,7 @@ class SettingController extends Controller
         QueueExecutionPolicy $queueExecutionPolicy,
     ) {
         $this->adminOnly();
+        session()->flash('settings_section', 'data');
 
         if (app(ApplicationUpdateRuntimeGuard::class)->isActive()) {
             return back()->with(
@@ -595,8 +769,28 @@ class SettingController extends Controller
             'purged_at' => $dataExport->purged_at?->toIso8601String(),
             'record_counts' => $dataExport->record_counts,
             'checksum' => $dataExport->checksum,
+            'file_size' => $dataExport->file_size,
             'error_message' => $dataExport->error_message,
+            'download_available' => $dataExport->isVerified(),
+        ])->header('Cache-Control', 'no-store, private');
+    }
+
+    public function authorizeDataExportDownload(Request $request, DataExport $dataExport)
+    {
+        $this->adminOnly();
+        $request->validate([
+            'current_password' => ['required', 'string', 'current_password:web'],
+        ], [
+            'current_password.current_password' => 'Password akun tidak benar.',
+            'current_password.required' => 'Masukkan password akun Anda.',
         ]);
+        abort_unless($dataExport->isVerified(), 409, 'Ekspor belum siap diunduh.');
+
+        return response()->json([
+            'download_url' => URL::temporarySignedRoute('settings.data.exports.download', now()->addMinutes(2), [
+                'dataExport' => $dataExport->id, 'user' => $request->user()->id,
+            ]),
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────
@@ -607,6 +801,14 @@ class SettingController extends Controller
         QueueExecutionPolicy $queueExecutionPolicy,
         bool $requestedFromLegacyCombinedAction = false,
     ) {
+        $request->session()->flash('settings_section', 'data');
+        if (! Schema::hasTable('data_exports') || ! Schema::hasColumn('data_exports', 'archive_password')) {
+            return redirect()->route('settings.index')->with(
+                'error',
+                'Backup belum tersedia. Jalankan migrasi database terlebih dahulu.',
+            );
+        }
+
         if (app(ApplicationUpdateRuntimeGuard::class)->isActive()) {
             return redirect()->route('settings.index')->with(
                 'error',
@@ -624,6 +826,12 @@ class SettingController extends Controller
         $data = $this->validateDataSelection($request, true);
         $period = $this->resolveDataPeriod($data);
         $diskName = (string) config('data_exports.disk', 'local');
+
+        try {
+            $archives->assertZipAvailable();
+        } catch (\RuntimeException) {
+            return back()->with('error', 'Ekspor memerlukan ekstensi PHP Zip.');
+        }
 
         try {
             $archives->assertPrivateStorageDisk($diskName);
@@ -662,11 +870,10 @@ class SettingController extends Controller
 
             $uuid = (string) Str::uuid();
             $filename = sprintf(
-                'siem_backup_%s_%s_%s.%s',
+                'siem_backup_%s_%s_%s.zip',
                 $data['scope'],
                 now()->format('Ymd_His'),
                 substr($uuid, 0, 8),
-                $data['format'],
             );
 
             $export = DataExport::create([
@@ -710,7 +917,7 @@ class SettingController extends Controller
             ? 'Backup masuk antrean. Data belum dihapus; setelah status Terverifikasi, lakukan Purge secara terpisah.'
             : 'Backup masuk antrean dan akan disimpan di storage privat. Muat ulang halaman untuk melihat statusnya.';
 
-        return redirect()->route('settings.index')->with('success', $message);
+        return redirect()->route('settings.index', ['section' => 'data'])->with('success', $message);
     }
 
     private function validateDataSelection(Request $request, bool $needsFormat = false): array

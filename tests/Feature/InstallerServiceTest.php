@@ -5,12 +5,15 @@ namespace Tests\Feature;
 use App\Exceptions\InstallationException;
 use App\Models\Configuration;
 use App\Models\User;
+use App\Services\AiInsightService;
+use App\Services\AlertIngestionCoordinator;
 use App\Services\Installation\EnvironmentFileWriter;
 use App\Services\Installation\InstallationConnectionTester;
 use App\Services\Installation\InstallationState;
 use App\Services\Installation\Installer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Mockery;
 use RuntimeException;
@@ -103,6 +106,72 @@ class InstallerServiceTest extends TestCase
         $this->assertNull($this->environment->value('DB_HOST'));
         $this->assertSame('false', $this->environment->value('APP_INSTALLED'));
         $this->assertFileDoesNotExist($this->directory.'/private/installed.json');
+    }
+
+    public function test_installation_without_integrations_creates_an_admin_and_opens_the_dashboard(): void
+    {
+        $connections = Mockery::mock(InstallationConnectionTester::class);
+        $connections->shouldReceive('testDatabase')->once()->andReturn(config('database.connections.sqlite'));
+        $connections->shouldNotReceive('testOpenSearch', 'testTelegram');
+        $connections->shouldReceive('activateDatabase')->once()->andReturn(DB::connection());
+        $input = $this->validInput();
+        foreach (array_keys($input) as $key) {
+            if (str_starts_with($key, 'opensearch_') || str_starts_with($key, 'telegram_') || str_starts_with($key, 'ai_')) {
+                unset($input[$key]);
+            }
+        }
+
+        $this->manager($connections)->install($input);
+
+        $this->assertTrue($this->state->isInstalled());
+        $this->assertSame('', Configuration::get('opensearch_host'));
+        $this->assertSame('', Configuration::get('telegram_bot_token'));
+        $this->assertSame([], Configuration::getTelegramChatIds());
+        $this->assertSame('', Configuration::get('ai_api_key'));
+        $this->assertSame('', $this->environment->value('OPENSEARCH_HOST'));
+        $this->app->instance(InstallationState::class, $this->state);
+        $this->actingAs(User::sole())->get(route('dashboard.index'))->assertOk();
+        Queue::fake();
+        $status = app(AlertIngestionCoordinator::class)->requestLatestFetch('test');
+        $this->assertSame('not_configured', $status['state']);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_skipped_integrations_ignore_stale_invalid_fields(): void
+    {
+        $connections = Mockery::mock(InstallationConnectionTester::class);
+        $connections->shouldReceive('testDatabase')->once()->andReturn(config('database.connections.sqlite'));
+        $connections->shouldNotReceive('testOpenSearch', 'testTelegram');
+        $connections->shouldReceive('activateDatabase')->once()->andReturn(DB::connection());
+
+        $this->manager($connections)->install($this->validInput([
+            'opensearch_enabled' => false, 'opensearch_host' => 'not a URL',
+            'telegram_enabled' => false, 'telegram_bot_token' => 'invalid',
+            'ai_enabled' => false, 'ai_base_url' => 'not a URL',
+        ]));
+
+        $this->assertTrue($this->state->isInstalled());
+        $this->assertSame('', Configuration::get('opensearch_host'));
+        $this->assertSame('', Configuration::get('telegram_bot_token'));
+    }
+
+    public function test_installer_persists_local_ai_without_requiring_a_remote_api_key(): void
+    {
+        $connections = Mockery::mock(InstallationConnectionTester::class);
+        $connections->shouldReceive('testDatabase')->once()->andReturn(config('database.connections.sqlite'));
+        $connections->shouldNotReceive('testOpenSearch', 'testTelegram');
+        $connections->shouldReceive('activateDatabase')->once()->andReturn(DB::connection());
+        $this->manager($connections)->install($this->validInput([
+            'opensearch_enabled' => false, 'telegram_enabled' => false,
+            'ai_enabled' => true, 'ai_provider' => 'ollama', 'ai_api_format' => 'chat_completions',
+            'ai_base_url' => 'http://127.0.0.1:11434/v1', 'ai_model' => 'local-model',
+        ]));
+
+        $this->assertTrue($this->state->isInstalled());
+        $this->assertSame('ollama', Configuration::get('ai_provider'));
+        $this->assertSame('chat_completions', Configuration::get('ai_api_format'));
+        $this->assertSame('', Configuration::get('ai_api_key'));
+        $this->assertTrue(app(AiInsightService::class)->isConfigured());
     }
 
     public function test_local_http_install_keeps_session_encrypted_without_forcing_a_secure_cookie(): void

@@ -16,6 +16,8 @@ class NotificationLog extends Model
         'message',
         'response_status',
         'sent_at',
+        'automatic_key',
+        'delivery_state',
     ];
 
     protected $casts = [

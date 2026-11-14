@@ -31,7 +31,7 @@ class DataExportSafetyTest extends TestCase
         $alert = $this->makeAlert('manifest-alert');
 
         $this->actingAs($admin)->post(route('settings.data.backup'), $this->payload())
-            ->assertRedirect(route('settings.index'));
+            ->assertRedirect(route('settings.index', ['section' => 'data']));
 
         $export = DataExport::query()->sole();
         $this->assertSame('verified', $export->status);
@@ -50,7 +50,7 @@ class DataExportSafetyTest extends TestCase
         $this->assertSame($alert->id, $export->snapshot_boundaries['alerts']);
 
         $download = $this->actingAs($admin)
-            ->get(route('settings.data.exports.download', $export))
+            ->get($this->authorizedDownloadUrl($export))
             ->assertOk()
             ->assertHeader('Pragma', 'no-cache')
             ->assertHeader('X-Content-Type-Options', 'nosniff');
@@ -97,7 +97,7 @@ class DataExportSafetyTest extends TestCase
         ])->save();
 
         $this->actingAs($admin)
-            ->get(route('settings.data.exports.download', $export))
+            ->get($this->authorizedDownloadUrl($export))
             ->assertOk();
 
         $this->actingAs($admin)
@@ -107,6 +107,114 @@ class DataExportSafetyTest extends TestCase
 
         $this->assertDatabaseMissing('alerts', ['id' => $alert->id]);
         $this->assertSame('completed', $export->fresh()->purge_status);
+    }
+
+    public function test_json_and_sql_exports_are_standard_zip_files_readable_without_a_password(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $this->makeAlert('standard-export');
+        foreach (['json', 'sql'] as $format) {
+            $this->post(route('settings.data.backup'), [...$this->payload(), 'format' => $format])->assertSessionHasNoErrors();
+            $export = DataExport::latest('id')->firstOrFail();
+            $this->assertTrue($export->isVerified());
+            $this->assertNull($export->archive_password);
+            $manifest = json_decode(Storage::disk('local')->get($export->manifest_path), true);
+            $this->assertSame('none', $manifest['archive']['encryption']);
+            $zip = new \ZipArchive;
+            $this->assertTrue($zip->open(Storage::disk('local')->path($export->storage_path)));
+            $this->assertSame(\ZipArchive::EM_NONE, $zip->statIndex(0)['encryption_method']);
+            $this->assertSame(\ZipArchive::CM_DEFLATE, $zip->statIndex(0)['comp_method']);
+            $this->assertIsString($zip->getFromName('data.'.$format));
+            $zip->close();
+            $this->get($this->authorizedDownloadUrl($export))->assertOk()->assertHeader('Content-Type', 'application/zip');
+        }
+    }
+
+    public function test_download_requires_account_password_and_a_short_lived_user_bound_signature(): void
+    {
+        Storage::fake('local');
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin);
+        $this->makeAlert('download-auth');
+        $this->post(route('settings.data.backup'), $this->payload());
+        $export = DataExport::sole();
+        $this->getJson(route('settings.data.exports.status', $export))->assertOk()
+            ->assertJsonMissingPath('archive_password')->assertJsonMissingPath('download_url')->assertJsonPath('download_available', true);
+        $this->get(route('settings.data.exports.download', $export))->assertForbidden();
+        $authorizeUrl = route('settings.data.exports.authorize-download', $export);
+        $this->postJson($authorizeUrl, [])->assertUnprocessable()->assertJsonValidationErrors('current_password');
+        $this->postJson($authorizeUrl, ['current_password' => 'wrong-password'])->assertUnprocessable()
+            ->assertJsonValidationErrors('current_password')->assertJsonMissingPath('download_url');
+        $authorization = $this->postJson($authorizeUrl, ['current_password' => 'password'])->assertOk()
+            ->assertJsonMissingPath('archive_password')->assertHeader('Cache-Control', 'no-store, private');
+        $downloadUrl = $authorization->json('download_url');
+        $this->get($downloadUrl)->assertOk();
+        $otherAdmin = User::factory()->create(['role' => 'admin', 'password' => 'another-account-password']);
+        $this->actingAs($otherAdmin)->get($downloadUrl)->assertForbidden();
+        $this->postJson($authorizeUrl, ['current_password' => 'password'])->assertUnprocessable();
+        $this->actingAs($admin);
+        $this->travel(3)->minutes();
+        $this->get($downloadUrl)->assertForbidden();
+        $export->forceFill(['status' => 'failed'])->save();
+        $this->getJson(route('settings.data.exports.status', $export))->assertJsonPath('download_available', false);
+        $this->postJson($authorizeUrl, ['current_password' => 'password'])->assertStatus(409);
+        $this->actingAs(User::factory()->create(['role' => 'analyst']))
+            ->postJson($authorizeUrl, ['current_password' => 'password'])->assertForbidden();
+    }
+
+    public function test_download_verification_is_rate_limited(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $this->makeAlert('download-rate-limit');
+        $this->post(route('settings.data.backup'), $this->payload());
+        $authorizeUrl = route('settings.data.exports.authorize-download', DataExport::sole());
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->postJson($authorizeUrl, ['current_password' => 'incorrect'])->assertUnprocessable();
+        }
+        $this->postJson($authorizeUrl, ['current_password' => 'password'])->assertTooManyRequests()->assertJsonMissingPath('download_url');
+    }
+
+    public function test_older_encrypted_exports_download_as_standard_zip_without_changing_the_backup(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $this->makeAlert('legacy-zip');
+        $this->post(route('settings.data.backup'), $this->payload());
+        $export = DataExport::sole();
+        $payload = $this->readExportPayload($export);
+        $disk = Storage::disk('local');
+        foreach ([\ZipArchive::EM_AES_256, \ZipArchive::EM_TRAD_PKWARE] as $encryption) {
+            $zip = new \ZipArchive;
+            $this->assertTrue($zip->open($disk->path($export->storage_path), \ZipArchive::OVERWRITE));
+            $zip->addFromString('data.json', $payload);
+            $zip->setEncryptionName('data.json', $encryption, 'legacy-secret');
+            $this->assertTrue($zip->close());
+            clearstatcache();
+            $manifest = json_decode($disk->get($export->manifest_path), true);
+            $manifest['archive']['sha256'] = hash_file('sha256', $disk->path($export->storage_path));
+            $manifest['archive']['bytes'] = $disk->size($export->storage_path);
+            $manifest['archive']['encryption'] = $encryption === \ZipArchive::EM_AES_256 ? 'AES-256' : 'ZipCrypto';
+            $manifestJson = json_encode($manifest, JSON_THROW_ON_ERROR);
+            $disk->put($export->manifest_path, $manifestJson);
+            $export->forceFill(['archive_password' => 'legacy-secret', 'checksum' => $manifest['archive']['sha256'],
+                'file_size' => $manifest['archive']['bytes'], 'manifest_checksum' => hash('sha256', $manifestJson)])->save();
+            $response = $this->get($this->authorizedDownloadUrl($export))->assertOk();
+            $downloadPath = $response->baseResponse->getFile()->getPathname();
+            $this->assertTrue($zip->open($downloadPath));
+            $this->assertSame(\ZipArchive::EM_NONE, $zip->statIndex(0)['encryption_method']);
+            $this->assertSame($payload, $zip->getFromName('data.json'));
+            $zip->close();
+            $this->assertSame($export->checksum, hash_file('sha256', $disk->path($export->storage_path)));
+            ob_start();
+            try {
+                $response->baseResponse->sendContent();
+            } finally {
+                ob_end_clean();
+            }
+            $this->assertFileDoesNotExist($downloadPath);
+        }
     }
 
     public function test_range_uses_jakarta_day_as_a_half_open_utc_interval(): void
@@ -124,14 +232,14 @@ class DataExportSafetyTest extends TestCase
             'period_mode' => 'range',
             'date_from' => '2026-10-16',
             'date_to' => '2026-10-16',
-        ])->assertRedirect(route('settings.index'));
+        ])->assertRedirect(route('settings.index', ['section' => 'data']));
 
         $export = DataExport::query()->sole();
         $this->assertSame('2026-10-15 17:00:00', $export->period_start?->toDateTimeString());
         $this->assertSame('2026-10-16 17:00:00', $export->period_end?->toDateTimeString());
 
         $archive = json_decode(
-            Storage::disk('local')->get($export->storage_path),
+            $this->readExportPayload($export),
             true,
             512,
             JSON_THROW_ON_ERROR,
@@ -173,7 +281,7 @@ class DataExportSafetyTest extends TestCase
         Storage::disk('local')->put($export->storage_path, 'tampered');
 
         $this->actingAs($admin)
-            ->get(route('settings.data.exports.download', $export))
+            ->get($this->authorizedDownloadUrl($export))
             ->assertConflict();
     }
 
@@ -515,5 +623,22 @@ class DataExportSafetyTest extends TestCase
             'storage_disk' => 'local',
             'filename' => 'update-guard.json',
         ], $overrides));
+    }
+
+    private function authorizedDownloadUrl(DataExport $export): string
+    {
+        return $this->postJson(route('settings.data.exports.authorize-download', $export), ['current_password' => 'password'])
+            ->assertOk()->json('download_url');
+    }
+
+    private function readExportPayload(DataExport $export): string
+    {
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open(Storage::disk('local')->path($export->storage_path)));
+        $payload = $zip->getFromName('data.'.$export->format);
+        $zip->close();
+        $this->assertIsString($payload);
+
+        return $payload;
     }
 }

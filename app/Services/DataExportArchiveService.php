@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use ZipArchive;
 
 class DataExportArchiveService
 {
@@ -43,11 +44,14 @@ class DataExportArchiveService
      */
     public function generate(DataExport $export): array
     {
+        $this->assertZipAvailable();
         $this->assertPrivateStorageDisk($export->storage_disk);
+        $export->filename = pathinfo($export->filename, PATHINFO_FILENAME).'.zip';
         $storagePath = $this->archivePath($export);
         $manifestPath = $this->manifestPath($export);
         $disk = Storage::disk($export->storage_disk);
         $temporaryPath = $this->createTemporaryFile();
+        $compressedPath = null;
 
         try {
             $snapshot = $this->withConsistentSnapshot(function () use ($export, $temporaryPath): array {
@@ -78,13 +82,15 @@ class DataExportArchiveService
                 'snapshot_boundaries' => $snapshot['snapshot_boundaries'],
             ])->save();
 
-            $localChecksum = hash_file('sha256', $temporaryPath);
-            $localSize = filesize($temporaryPath);
+            $compressedPath = $this->createTemporaryFile();
+            $this->compressZip($temporaryPath, $compressedPath, 'data.'.$export->format);
+            $localChecksum = hash_file('sha256', $compressedPath);
+            $localSize = filesize($compressedPath);
             if ($localChecksum === false || $localSize === false) {
                 throw new RuntimeException('Checksum file ekspor tidak dapat dihitung.');
             }
 
-            $archiveStream = fopen($temporaryPath, 'rb');
+            $archiveStream = fopen($compressedPath, 'rb');
             if ($archiveStream === false) {
                 throw new RuntimeException('File ekspor sementara tidak dapat dibaca.');
             }
@@ -138,6 +144,7 @@ class DataExportArchiveService
                 'source_fingerprint' => $snapshot['source_fingerprint'],
                 'verified_at' => now(),
                 'error_message' => null,
+                'archive_password' => null,
             ])->save();
 
             return $manifest;
@@ -146,6 +153,114 @@ class DataExportArchiveService
             throw $exception;
         } finally {
             $this->deleteTemporaryFile($temporaryPath);
+            if ($compressedPath !== null) {
+                $this->deleteTemporaryFile($compressedPath);
+            }
+        }
+    }
+
+    public function assertZipAvailable(): void
+    {
+        if (! class_exists(ZipArchive::class)) {
+            throw new RuntimeException('Ekstensi PHP Zip tidak tersedia pada server.');
+        }
+    }
+
+    private function compressZip(string $source, string $destination, string $entry): void
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($destination, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Arsip ZIP tidak dapat dibuat.');
+        }
+        try {
+            if (! $zip->addFile($source, $entry)
+                || ! $zip->setCompressionName($entry, ZipArchive::CM_DEFLATE)) {
+                throw new RuntimeException('Kompresi ZIP gagal.');
+            }
+        } finally {
+            $closed = $zip->close();
+        }
+        if (! $closed) {
+            throw new RuntimeException('Arsip ZIP gagal disimpan.');
+        }
+
+        // Read back the payload with bounded memory before accepting
+        // the archive as a backup which can authorize a later purge.
+        if ($zip->open($destination, ZipArchive::RDONLY) !== true) {
+            throw new RuntimeException('Arsip ZIP tidak dapat diverifikasi.');
+        }
+        try {
+            $stream = $zip->getStream($entry);
+            if ($stream === false) {
+                throw new RuntimeException('Isi arsip ZIP tidak dapat dibaca.');
+            }
+            try {
+                $hash = hash_init('sha256');
+                $bytes = hash_update_stream($hash, $stream);
+                $checksum = hash_final($hash);
+            } finally {
+                fclose($stream);
+            }
+            if ($bytes !== filesize($source) || ! hash_equals((string) hash_file('sha256', $source), $checksum)) {
+                throw new RuntimeException('Isi arsip ZIP tidak cocok dengan data sumber.');
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
+    /** Repackage an older encrypted backup without changing its stored snapshot. */
+    public function prepareStandardZipDownload(DataExport $export): string
+    {
+        $sourcePath = $this->createTemporaryFile();
+        $payloadPath = $this->createTemporaryFile();
+        $downloadPath = $this->createTemporaryFile();
+        $zip = new ZipArchive;
+        try {
+            $source = Storage::disk($export->storage_disk)->readStream($export->storage_path);
+            $destination = fopen($sourcePath, 'wb');
+            try {
+                if ($source === false || $destination === false || stream_copy_to_stream($source, $destination) === false) {
+                    throw new RuntimeException('Arsip lama tidak dapat dibaca.');
+                }
+            } finally {
+                if (is_resource($source)) fclose($source);
+                if (is_resource($destination)) fclose($destination);
+            }
+            if (! hash_equals($export->checksum, (string) hash_file('sha256', $sourcePath))
+                || $zip->open($sourcePath, ZipArchive::RDONLY) !== true) {
+                throw new RuntimeException('Integritas arsip lama tidak valid.');
+            }
+            try {
+                $entry = 'data.'.$export->format;
+                $stat = $zip->statName($entry);
+                $zip->setPassword($export->archive_password);
+                $payload = $zip->getStream($entry);
+                $destination = fopen($payloadPath, 'wb');
+                try {
+                    if ($stat === false || $payload === false || $destination === false
+                        || stream_copy_to_stream($payload, $destination) !== $stat['size']) {
+                        throw new RuntimeException('Isi arsip lama tidak dapat dibaca.');
+                    }
+                } finally {
+                    if (is_resource($payload)) fclose($payload);
+                    if (is_resource($destination)) fclose($destination);
+                }
+                if (hash_file('crc32b', $payloadPath) !== sprintf('%08x', $stat['crc'])) {
+                    throw new RuntimeException('Checksum isi arsip lama tidak cocok.');
+                }
+            } finally {
+                $zip->close();
+            }
+            $this->compressZip($payloadPath, $downloadPath, $entry);
+
+            return $downloadPath;
+        } catch (\Throwable $exception) {
+            $this->deleteTemporaryFile($downloadPath);
+            throw $exception;
+        } finally {
+            $this->deleteTemporaryFile($sourcePath);
+            $this->deleteTemporaryFile($payloadPath);
         }
     }
 
@@ -762,6 +877,8 @@ class DataExportArchiveService
                 'path' => $storagePath,
                 'filename' => $export->filename,
                 'format' => $export->format,
+                'container' => 'zip',
+                'encryption' => 'none',
                 'bytes' => $size,
                 'sha256' => $checksum,
             ],

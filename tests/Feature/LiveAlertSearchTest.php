@@ -15,7 +15,7 @@ class LiveAlertSearchTest extends TestCase
     public function test_search_finds_rule_description_when_other_filters_are_blank(): void
     {
         Cache::put('siem_fetch_ran:latest', true, now()->addMinute());
-        $user = User::factory()->create(['role' => 'analyst']);
+        $user = User::factory()->forAgent('007')->create();
         $target = Alert::create([
             'wazuh_alert_id' => 'file-event-unique',
             'rule_description' => '[File creation on web directory]: New file detected',
@@ -24,7 +24,7 @@ class LiveAlertSearchTest extends TestCase
             'rule_level' => 12,
             'status' => 'new',
             'first_seen_at' => now(),
-            'raw_data' => ['data' => ['message' => 'created object']],
+            'raw_data' => ['agent' => ['id' => '007'], 'data' => ['message' => 'created object']],
         ]);
 
         $response = $this->actingAs($user)
@@ -49,7 +49,7 @@ class LiveAlertSearchTest extends TestCase
     public function test_search_finds_wazuh_id_raw_event_content_and_local_alert_id(): void
     {
         Cache::put('siem_fetch_ran:latest', true, now()->addMinute());
-        $user = User::factory()->create(['role' => 'analyst']);
+        $user = User::factory()->forAgent('007')->create();
         $target = Alert::create([
             'wazuh_alert_id' => 'wazuh-event-unique-4f91',
             'rule_description' => 'Generic process event',
@@ -59,6 +59,7 @@ class LiveAlertSearchTest extends TestCase
             'status' => 'new',
             'first_seen_at' => now(),
             'raw_data' => [
+                'agent' => ['id' => '007'],
                 'data' => [
                     'commandLine' => 'powershell.exe -EncodedCommand unique-payload-marker',
                 ],
@@ -72,7 +73,7 @@ class LiveAlertSearchTest extends TestCase
             'rule_level' => 12,
             'status' => 'new',
             'first_seen_at' => now()->subMinute(),
-            'raw_data' => ['data' => ['message' => 'ordinary event']],
+            'raw_data' => ['agent' => ['id' => '007'], 'data' => ['message' => 'ordinary event']],
         ]);
 
         foreach (['wazuh-event-unique-4f91', 'EncodedCommand unique-payload-marker', (string) $target->id] as $search) {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\Alert;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,7 +55,8 @@ class LeaderboardController extends Controller
         $startDay = $start->copy()->startOfDay();
         $endDay   = $end->copy()->endOfDay();
 
-        $users   = User::orderBy('name')->get()->keyBy('id');
+        $viewer = auth()->user();
+        $users   = User::query()->when(! $viewer->isAdmin(), fn ($query) => $query->whereKey($viewer->id))->orderBy('name')->get()->keyBy('id');
         $userIds = $users->keys()->all();
 
         /* ── Q1: notification_logs — daily per user ─────────────────────────
@@ -62,6 +64,7 @@ class LeaderboardController extends Controller
          *   Collection{ userId => Collection{'2026-04-11' => 5, ...} }
          */
         $notifByUserDay = DB::table('notification_logs')
+            ->when(! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
             ->selectRaw('user_id, DATE(sent_at) as day, COUNT(*) as cnt')
             ->whereBetween('sent_at', [$startDay, $endDay])
             ->groupBy('user_id', DB::raw('DATE(sent_at)'))
@@ -74,6 +77,7 @@ class LeaderboardController extends Controller
          *   Collection{ userId => Collection[{action, day, cnt}, ...] }
          */
         $triageByUserDay = DB::table('alert_triages')
+            ->when(! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
             ->selectRaw('user_id, action, DATE(created_at) as day, COUNT(*) as cnt')
             ->whereIn('action', ['ignore', 'acknowledge'])
             ->whereBetween('created_at', [$startDay, $endDay])

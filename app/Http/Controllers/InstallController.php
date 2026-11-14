@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\AiAnalysisException;
 use App\Http\Requests\Installation\InstallApplicationRequest;
 use App\Http\Requests\Installation\UnlockInstallerRequest;
+use App\Services\AiProviderService;
 use App\Services\Installation\InstallationState;
 use App\Services\Installation\Installer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -37,8 +40,8 @@ class InstallController extends Controller
                 'opensearch_host' => 'https://127.0.0.1:9200',
                 'opensearch_index' => 'wazuh-alerts-*',
                 'opensearch_source_cluster' => 'wazuh-primary',
-                'ai_base_url' => 'https://api.amanai.dev/v1',
-                'ai_model' => 'amanai/deepseek-v4.1-flash',
+                'ai_base_url' => '',
+                'ai_model' => '',
                 'mail_port' => '587',
             ],
         ]));
@@ -125,6 +128,34 @@ class InstallController extends Controller
     public function complete(): Response
     {
         return $this->noStore(response()->view('install.complete'));
+    }
+
+    public function aiModels(Request $request)
+    {
+        if (! $this->isUnlocked($request)) {
+            return $this->noStore(response()->json(['success' => false, 'error' => 'Sesi installer terkunci atau berakhir. Buka kembali sesi instalasi.'], 403));
+        }
+
+        $provider = (string) $request->input('ai_provider', 'custom');
+        $validator = Validator::make($request->all(), AiProviderService::modelDiscoveryRules($provider, true));
+        if ($validator->fails()) {
+            return $this->noStore(response()->json(['success' => false, 'error' => 'Lengkapi provider, endpoint, dan autentikasi yang diperlukan.', 'errors' => $validator->errors()], 422));
+        }
+        $data = $validator->validated();
+        $settings = [
+            'provider' => $data['ai_provider'], 'api_format' => $data['ai_api_format'],
+            'base_url' => trim($data['ai_base_url']), 'api_key' => trim($data['ai_api_key'] ?? ''),
+        ];
+
+        try {
+            return $this->noStore(response()->json(['success' => true, ...app(AiProviderService::class)->models($settings)]));
+        } catch (AiAnalysisException $exception) {
+            return $this->noStore(response()->json(['success' => false, 'error' => $exception->getMessage()]));
+        } catch (Throwable $exception) {
+            Log::warning('[AI] Installer model discovery failed', ['exception_class' => $exception::class]);
+
+            return $this->noStore(response()->json(['success' => false, 'error' => 'Daftar model belum dapat diambil. Model tetap dapat diisi manual.']));
+        }
     }
 
     private function isUnlocked(Request $request): bool

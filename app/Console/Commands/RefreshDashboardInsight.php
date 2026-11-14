@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\GenerateDashboardInsight;
 use App\Models\DashboardInsight;
-use App\Services\AmanaiInsightService;
+use App\Services\AiInsightService;
 use App\Services\SecurityInsightSnapshotService;
 use Illuminate\Console\Command;
 
@@ -18,10 +18,11 @@ class RefreshDashboardInsight extends Command
 
     public function handle(
         SecurityInsightSnapshotService $snapshots,
-        AmanaiInsightService $amanai,
+        AiInsightService $ai,
     ): int {
-        if (!$amanai->isConfigured()) {
-            $this->warn('AmanAI belum dikonfigurasi. Tidak ada job yang dibuat.');
+        if (! $ai->isConfigured()) {
+            $this->warn('AI belum dikonfigurasi. Tidak ada job yang dibuat.');
+
             return self::SUCCESS;
         }
 
@@ -31,18 +32,21 @@ class RefreshDashboardInsight extends Command
                 : $snapshots->currentPeriod();
         } catch (\Throwable $exception) {
             $this->error('Periode tidak valid. Gunakan format YYYY-MM.');
+
             return self::FAILURE;
         }
 
         $latest = DashboardInsight::query()
+            ->where('access_scope', 'all')
             ->completed()
             ->where('period_key', $period['key'])
             ->latest('generated_at')
             ->first();
 
-        $refreshDays = $amanai->refreshDays();
-        if (!$this->option('force') && $latest?->generated_at?->greaterThan(now()->subDays($refreshDays))) {
+        $refreshDays = $ai->refreshDays();
+        if (! $this->option('force') && $latest?->generated_at?->greaterThan(now()->subDays($refreshDays))) {
             $this->line("Insight {$period['key']} masih segar; tidak dijadwalkan ulang.");
+
             return self::SUCCESS;
         }
 

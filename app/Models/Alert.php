@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -18,6 +19,7 @@ class Alert extends Model
         'src_ip',
         'dst_ip',
         'agent_name',
+        'agent_scope_key',
         'rule_id',
         'rule_level',
         'raw_data',
@@ -37,6 +39,7 @@ class Alert extends Model
             // Keep legacy factories, seeders and integrations compatible while
             // every OpenSearch import supplies the concrete source identity.
             $alert->source_cluster ??= (string) config('services.opensearch.source_cluster', 'wazuh-primary');
+            $alert->agent_scope_key = self::agentScopeKey($alert->source_cluster, data_get($alert->raw_data, 'agent.id'));
             $alert->source_index ??= 'legacy';
             $alert->source_id ??= $alert->wazuh_alert_id;
             $alert->source_identity_hash = self::sourceIdentityHash(
@@ -54,6 +57,30 @@ class Alert extends Model
             .pack('N', strlen($sourceId)).$sourceId;
 
         return hash('sha256', $payload);
+    }
+
+    public static function agentScopeKey(string $cluster, mixed $agentId): ?string
+    {
+        if ((! is_string($agentId) && ! is_int($agentId)) || (string) $agentId === '') {
+            return null;
+        }
+
+        return self::sourceIdentityHash($cluster, 'agent', (string) $agentId);
+    }
+
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        return $user->isAdmin() ? $query : $query->whereIn(
+            $query->getModel()->qualifyColumn('agent_scope_key'),
+            $user->hasPrivilege('alerts.view') ? $user->agentAccessKeys() : [],
+        );
+    }
+
+    public function resolveRouteBindingQuery($query, $value, $field = null)
+    {
+        $query = parent::resolveRouteBindingQuery($query, $value, $field);
+
+        return auth()->user() ? $query->visibleTo(auth()->user()) : $query;
     }
 
     // ─── Relationships ───────────────────────────────────────────────────────

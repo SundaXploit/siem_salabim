@@ -3,71 +3,63 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Tests\TestCase;
 
 class PasswordResetTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_reset_password_link_screen_can_be_rendered(): void
+    public function test_login_has_no_forgot_password_link(): void
     {
-        $response = $this->get('/forgot-password');
-
-        $response->assertStatus(200);
+        $this->get('/login')->assertOk()->assertDontSee('/forgot-password')->assertDontSee('Lupa kata sandi?');
     }
 
-    public function test_reset_password_link_can_be_requested(): void
+    public function test_guests_cannot_open_or_submit_forgot_and_reset_password_endpoints(): void
     {
         Notification::fake();
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
-
-        Notification::assertSentTo($user, ResetPassword::class);
+        $this->get('/forgot-password')->assertNotFound();
+        $this->post('/forgot-password', ['email' => $user->email])->assertNotFound();
+        $this->get('/reset-password/old-token')->assertNotFound();
+        $this->post('/reset-password', ['email' => $user->email, 'token' => 'old-token'])->assertNotFound();
+        Notification::assertNothingSent();
+        $this->assertDatabaseCount('password_reset_tokens', 0);
     }
 
-    public function test_reset_password_screen_can_be_rendered(): void
+    public function test_authenticated_users_cannot_use_the_removed_reset_endpoints(): void
     {
         Notification::fake();
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
-
-        Notification::assertSentTo($user, ResetPassword::class, function ($notification) {
-            $response = $this->get('/reset-password/'.$notification->token);
-
-            $response->assertStatus(200);
-
-            return true;
-        });
+        $this->actingAs($user)->get('/forgot-password')->assertNotFound();
+        $this->post('/forgot-password', ['email' => $user->email])->assertNotFound();
+        $this->get('/reset-password/old-token')->assertNotFound();
+        $this->post('/reset-password', ['email' => $user->email, 'token' => 'old-token'])->assertNotFound();
+        $this->get('/profile')->assertOk()->assertSee(route('password.update'), false);
+        Notification::assertNothingSent();
     }
 
-    public function test_password_can_be_reset_with_valid_token(): void
+    public function test_previously_issued_valid_token_cannot_reset_a_password(): void
     {
         Notification::fake();
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
-
-        Notification::assertSentTo($user, ResetPassword::class, function ($notification) use ($user) {
-            $response = $this->post('/reset-password', [
-                'token' => $notification->token,
-                'email' => $user->email,
-                'password' => 'password',
-                'password_confirmation' => 'password',
-            ]);
-
-            $response
-                ->assertSessionHasNoErrors()
-                ->assertRedirect(route('login'));
-
-            return true;
-        });
+        $token = Password::createToken($user);
+        $this->post('/reset-password', [
+            'token' => $token, 'email' => $user->email,
+            'password' => 'forged-new-password', 'password_confirmation' => 'forged-new-password',
+        ])->assertNotFound();
+        $this->assertTrue(Hash::check('password', $user->fresh()->password));
+        $this->assertFalse(Hash::check('forged-new-password', $user->fresh()->password));
+        Notification::assertNothingSent();
+        $this->assertDatabaseMissing('activity_logs', ['action' => 'password_reset']);
     }
 }

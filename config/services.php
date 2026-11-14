@@ -81,31 +81,37 @@ return [
         'timeout' => (float) env('TELEGRAM_TIMEOUT', 20),
         'max_attempts' => (int) env('TELEGRAM_MAX_ATTEMPTS', 3),
         'force_ipv4' => filter_var(env('TELEGRAM_FORCE_IPV4', true), FILTER_VALIDATE_BOOL),
+        'dns_fallback' => filter_var(env('TELEGRAM_DNS_FALLBACK', true), FILTER_VALIDATE_BOOL),
+        'doh_resolvers' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'TELEGRAM_DOH_RESOLVERS', 'https://1.1.1.1/dns-query,https://1.0.0.1/dns-query'
+        ))))),
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | AmanAI
+    | AI
     |--------------------------------------------------------------------------
     |
     | This configuration is intentionally server-side only. Never prefix the
     | key with VITE_ or expose it in Blade/JavaScript.
     |
     */
-    'amanai' => [
-        'base_url' => rtrim((string) env('AMANAI_BASE_URL', 'https://api.amanai.dev/v1'), '/'),
-        'api_key' => env('AMANAI_API_KEY'),
-        'model' => env('AMANAI_MODEL', 'amanai/deepseek-v4.1-flash'),
-        'timeout' => (int) env('AMANAI_TIMEOUT', 90),
-        'refresh_days' => (int) env('AMANAI_REFRESH_DAYS', 10),
-        'snapshot_limit' => (int) env('AMANAI_SNAPSHOT_LIMIT', 10000),
-        'reasoning_effort' => env('AMANAI_REASONING_EFFORT', 'none'),
-        'max_output_tokens' => (int) env('AMANAI_MAX_OUTPUT_TOKENS', 4096),
-        'alert_timeout' => (int) env('AMANAI_ALERT_TIMEOUT', 60),
-        // Optional override; choose a model that supports "none" to disable thinking.
-        'alert_model' => env('AMANAI_ALERT_MODEL'),
-        'alert_reasoning_effort' => env('AMANAI_ALERT_REASONING_EFFORT', 'none'),
-        'alert_max_output_tokens' => (int) env('AMANAI_ALERT_MAX_OUTPUT_TOKENS', 2800),
+    'ai' => [
+        // Legacy environment names are read only for existing installations.
+        'provider' => env('AI_PROVIDER', 'custom'),
+        'api_format' => env('AI_API_FORMAT', env('AMANAI_BASE_URL') ? 'responses' : 'chat_completions'),
+        'base_url' => rtrim((string) env('AI_BASE_URL', env('AMANAI_BASE_URL', '')), '/'),
+        'api_key' => env('AI_API_KEY', env('AMANAI_API_KEY')),
+        'model' => env('AI_MODEL', env('AMANAI_MODEL', '')),
+        'timeout' => (int) env('AI_TIMEOUT', env('AMANAI_TIMEOUT', 90)),
+        'refresh_days' => (int) env('AI_REFRESH_DAYS', env('AMANAI_REFRESH_DAYS', 10)),
+        'snapshot_limit' => (int) env('AI_SNAPSHOT_LIMIT', env('AMANAI_SNAPSHOT_LIMIT', 10000)),
+        'reasoning_effort' => env('AI_REASONING_EFFORT', env('AMANAI_REASONING_EFFORT')),
+        'max_output_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', env('AMANAI_MAX_OUTPUT_TOKENS', 4096)),
+        'alert_timeout' => (int) env('AI_ALERT_TIMEOUT', env('AMANAI_ALERT_TIMEOUT', 60)),
+        'alert_model' => env('AI_ALERT_MODEL', env('AMANAI_ALERT_MODEL')),
+        'alert_reasoning_effort' => env('AI_ALERT_REASONING_EFFORT', env('AMANAI_ALERT_REASONING_EFFORT')),
+        'alert_max_output_tokens' => (int) env('AI_ALERT_MAX_OUTPUT_TOKENS', env('AMANAI_ALERT_MAX_OUTPUT_TOKENS', 2800)),
     ],
 
 ];

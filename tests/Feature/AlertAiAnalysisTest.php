@@ -20,15 +20,15 @@ class AlertAiAnalysisTest extends TestCase
         parent::setUp();
 
         config([
-            'services.amanai.alert_model' => null,
-            'services.amanai.alert_reasoning_effort' => 'none',
+            'services.ai.alert_model' => null,
+            'services.ai.alert_reasoning_effort' => 'none',
         ]);
     }
 
     public function test_opening_alert_detail_does_not_call_ai(): void
     {
         Http::fake();
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
@@ -42,11 +42,11 @@ class AlertAiAnalysisTest extends TestCase
     public function test_analyst_can_request_a_sanitised_on_demand_ai_hint(): void
     {
         Configuration::set('ai_api_key', 'test-api-key');
-        Configuration::set('ai_base_url', 'https://api.amanai.dev/v1');
-        Configuration::set('ai_model', 'amanai/glm-5.3');
+        Configuration::set('ai_base_url', 'https://ai.example.test/v1');
+        Configuration::set('ai_model', 'test/glm-5.3');
 
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::response([
+            'https://ai.example.test/v1/responses' => Http::response([
                 'output' => [[
                     'content' => [[
                         'type' => 'output_text',
@@ -64,7 +64,7 @@ class AlertAiAnalysisTest extends TestCase
             ], 200),
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
@@ -73,7 +73,7 @@ class AlertAiAnalysisTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('analysis.verdict', 'likely_malicious')
             ->assertJsonPath('analysis.confidence', 82)
-            ->assertJsonPath('analysis.model', 'amanai/glm-5.3')
+            ->assertJsonPath('analysis.model', 'test/glm-5.3')
             ->assertJsonPath('cached', false);
 
         $this->assertDatabaseHas('alert_ai_analyses', [
@@ -81,17 +81,17 @@ class AlertAiAnalysisTest extends TestCase
             'requested_by_user_id' => $analyst->id,
             'verdict' => 'likely_malicious',
             'confidence' => 82,
-            'model' => 'amanai/glm-5.3',
+            'model' => 'test/glm-5.3',
         ]);
 
         Http::assertSent(function (Request $request): bool {
             $payload = json_encode($request->data(), JSON_THROW_ON_ERROR);
 
-            return $request->url() === 'https://api.amanai.dev/v1/responses'
+            return $request->url() === 'https://ai.example.test/v1/responses'
                 && data_get($request->data(), 'reasoning.effort') === 'none'
                 && data_get($request->data(), 'max_output_tokens') <= 3072
-                && !str_contains($payload, 'super-secret')
-                && !str_contains($payload, 'analyst@example.test')
+                && ! str_contains($payload, 'super-secret')
+                && ! str_contains($payload, 'analyst@example.test')
                 && str_contains($payload, '[REDACTED]')
                 && str_contains($payload, '[EMAIL_REDACTED]');
         });
@@ -100,84 +100,81 @@ class AlertAiAnalysisTest extends TestCase
     public function test_alert_model_override_is_used_and_saved_without_changing_the_shared_model(): void
     {
         $this->configureAi();
-        config(['services.amanai.alert_model' => 'amanai/qwen3.7-plus']);
+        config(['services.ai.alert_model' => 'test/qwen3.7-plus']);
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::response($this->successfulProviderPayload()),
+            'https://ai.example.test/v1/responses' => Http::response($this->successfulProviderPayload()),
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
             ->postJson(route('alerts.ai-analysis', $alert))
             ->assertOk()
-            ->assertJsonPath('analysis.model', 'amanai/qwen3.7-plus');
+            ->assertJsonPath('analysis.model', 'test/qwen3.7-plus');
 
-        Http::assertSent(fn (Request $request): bool =>
-            $request['model'] === 'amanai/qwen3.7-plus'
+        Http::assertSent(fn (Request $request): bool => $request['model'] === 'test/qwen3.7-plus'
             && data_get($request->data(), 'reasoning.effort') === 'none'
         );
         $this->assertDatabaseHas('alert_ai_analyses', [
             'alert_id' => $alert->id,
-            'model' => 'amanai/qwen3.7-plus',
+            'model' => 'test/qwen3.7-plus',
         ]);
-        $this->assertSame('amanai/glm-5.3', Configuration::get('ai_model'));
+        $this->assertSame('test/glm-5.3', Configuration::get('ai_model'));
     }
 
     #[DataProvider('reasoningEffortSettings')]
-    public function test_reasoning_setting_defaults_to_none_and_normalises_explicit_choices(
+    public function test_reasoning_is_optional_and_normalises_supported_explicit_choices(
         ?string $configured,
-        string $expected,
+        ?string $expected,
     ): void {
         $this->configureAi();
-        config(['services.amanai.alert_reasoning_effort' => $configured]);
+        config(['services.ai.alert_reasoning_effort' => $configured]);
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::response($this->successfulProviderPayload()),
+            'https://ai.example.test/v1/responses' => Http::response($this->successfulProviderPayload()),
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
             ->postJson(route('alerts.ai-analysis', $alert))
             ->assertOk();
 
-        Http::assertSent(fn (Request $request): bool =>
-            data_get($request->data(), 'reasoning.effort') === $expected
+        Http::assertSent(fn (Request $request): bool => data_get($request->data(), 'reasoning.effort') === $expected
         );
     }
 
     public static function reasoningEffortSettings(): array
     {
         return [
-            'null falls back to none' => [null, 'none'],
-            'empty falls back to none' => ['', 'none'],
-            'blank falls back to none' => ['   ', 'none'],
-            'invalid falls back to none' => ['invalid-effort', 'none'],
+            'null omits reasoning' => [null, null],
+            'empty omits reasoning' => ['', null],
+            'blank omits reasoning' => ['   ', null],
+            'invalid omits reasoning' => ['invalid-effort', null],
             'none is trimmed and case insensitive' => [' NONE ', 'none'],
             'explicit low is still supported' => [' LOW ', 'low'],
         ];
     }
 
-    public function test_missing_reasoning_setting_disables_thinking(): void
+    public function test_missing_reasoning_setting_omits_provider_specific_parameters(): void
     {
         $this->configureAi();
-        $settings = config('services.amanai');
+        $settings = config('services.ai');
         unset($settings['alert_reasoning_effort']);
-        config(['services.amanai' => $settings]);
+        config(['services.ai' => $settings]);
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::response($this->successfulProviderPayload()),
+            'https://ai.example.test/v1/responses' => Http::response($this->successfulProviderPayload()),
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
             ->postJson(route('alerts.ai-analysis', $alert))
             ->assertOk();
 
-        Http::assertSent(fn (Request $request): bool =>
-            data_get($request->data(), 'reasoning.effort') === 'none'
+        Http::assertSent(fn (Request $request): bool => ! array_key_exists('reasoning', $request->data())
         );
     }
 
@@ -185,12 +182,12 @@ class AlertAiAnalysisTest extends TestCase
     {
         $this->configureAi();
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::sequence()
+            'https://ai.example.test/v1/responses' => Http::sequence()
                 ->push(['error' => ['message' => 'provider-internal-detail']], 429)
                 ->push($this->successfulProviderPayload()),
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
@@ -216,7 +213,7 @@ class AlertAiAnalysisTest extends TestCase
     {
         $this->configureAi();
         Http::fake([
-            'https://api.amanai.dev/v1/responses' => Http::response([
+            'https://ai.example.test/v1/responses' => Http::response([
                 'status' => 'incomplete',
                 'incomplete_details' => ['reason' => 'max_output_tokens'],
                 'output' => [[
@@ -233,7 +230,7 @@ class AlertAiAnalysisTest extends TestCase
             ]),
         ]);
 
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $this->actingAs($analyst)
@@ -249,7 +246,7 @@ class AlertAiAnalysisTest extends TestCase
     public function test_saved_analysis_is_returned_without_calling_provider_again(): void
     {
         Http::fake();
-        $analyst = User::factory()->create(['role' => 'analyst']);
+        $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $alert = $this->makeAlert();
 
         $alert->aiAnalyses()->create([
@@ -261,7 +258,7 @@ class AlertAiAnalysisTest extends TestCase
             'legitimate_indicators' => [],
             'recommended_checks' => ['Periksa sumber aktivitas.'],
             'limitations' => [],
-            'model' => 'amanai/glm-5.3',
+            'model' => 'test/glm-5.3',
             'duration_ms' => 1250,
             'generated_at' => now(),
         ]);
@@ -280,8 +277,8 @@ class AlertAiAnalysisTest extends TestCase
     private function configureAi(): void
     {
         Configuration::set('ai_api_key', 'test-api-key');
-        Configuration::set('ai_base_url', 'https://api.amanai.dev/v1');
-        Configuration::set('ai_model', 'amanai/glm-5.3');
+        Configuration::set('ai_base_url', 'https://ai.example.test/v1');
+        Configuration::set('ai_model', 'test/glm-5.3');
     }
 
     private function successfulProviderPayload(): array
@@ -312,6 +309,7 @@ class AlertAiAnalysisTest extends TestCase
             'status' => 'new',
             'first_seen_at' => now(),
             'raw_data' => [
+                'agent' => ['id' => '001'],
                 'data' => [
                     'password' => 'super-secret',
                     'message' => 'Contact analyst@example.test for context',

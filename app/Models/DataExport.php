@@ -40,6 +40,7 @@ class DataExport extends Model
     ];
 
     protected $casts = [
+        'archive_password' => 'encrypted',
         'period_start' => 'datetime',
         'period_end' => 'datetime',
         'source_snapshot_at' => 'datetime',
@@ -52,6 +53,8 @@ class DataExport extends Model
         'purged_at' => 'datetime',
         'purged_counts' => 'array',
     ];
+
+    protected $hidden = ['archive_password'];
 
     public function requestedBy(): BelongsTo
     {

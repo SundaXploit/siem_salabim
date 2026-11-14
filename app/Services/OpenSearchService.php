@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Alert;
 use App\Models\Configuration;
+use App\Models\PermanentAlertIgnore;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Client;
@@ -32,6 +33,8 @@ class OpenSearchService
 
     protected bool $verifySsl;
 
+    protected array $ignoredRuleIds = [];
+
     public function __construct()
     {
         $this->host = (string) Configuration::get('opensearch_host', config('services.opensearch.host', 'https://localhost:9200'));
@@ -43,10 +46,83 @@ class OpenSearchService
     }
 
     /**
+     * Read the latest monitoring snapshot, independently of alerts.
+     * Historical snapshots must not bring back agents that have been removed.
+     */
+    public function fetchAgents(): array
+    {
+        $path = '/wazuh-monitoring-*/_search';
+        $filter = ['bool' => ['must_not' => [['term' => ['id' => '000']]]]];
+        $latest = $this->searchRequest($path, ['json' => [
+            'size' => 1,
+            'track_total_hits' => false,
+            '_source' => ['timestamp'],
+            'query' => $filter,
+            'sort' => [['timestamp' => ['order' => 'desc', 'unmapped_type' => 'date']]],
+        ]]);
+        $this->validateSearchResponse($latest);
+        if ($latest['hits']['hits'] === []) {
+            return ['agents' => [], 'total' => 0, 'updated_at' => null];
+        }
+
+        $timestamp = $latest['hits']['hits'][0]['_source']['timestamp'] ?? null;
+        if (! is_string($timestamp) || $timestamp === '') {
+            throw new \RuntimeException('Snapshot monitoring agent tidak memiliki waktu pembaruan yang valid.');
+        }
+        $filter['bool']['filter'] = [['term' => ['timestamp' => $timestamp]]];
+        $agents = [];
+        $after = null;
+        do {
+            $composite = ['size' => 500, 'sources' => [['id' => ['terms' => ['field' => 'id']]]]];
+            if ($after !== null) {
+                $composite['after'] = $after;
+            }
+            $body = $this->searchRequest($path, ['json' => [
+                'size' => 0,
+                'track_total_hits' => false,
+                'query' => $filter,
+                'aggs' => ['agents' => [
+                    'composite' => $composite,
+                    'aggs' => ['record' => ['top_hits' => [
+                        'size' => 1, '_source' => ['id', 'name', 'status'],
+                    ]]],
+                ]],
+            ]]);
+            $this->validateSearchResponse($body);
+            $aggregation = $body['aggregations']['agents'] ?? [];
+            $buckets = $aggregation['buckets'] ?? null;
+            if (! is_array($buckets) || ! array_is_list($buckets)) {
+                throw new \RuntimeException('OpenSearch tidak mengembalikan daftar monitoring agent yang valid.');
+            }
+            foreach ($buckets as $bucket) {
+                $agent = $bucket['record']['hits']['hits'][0]['_source'] ?? [];
+                if (! is_string($agent['id'] ?? null) || ! is_string($agent['name'] ?? null) || $agent['id'] === '' || $agent['name'] === '') {
+                    throw new \RuntimeException('Data monitoring agent tidak lengkap. Muat ulang setelah monitoring Wazuh diperbarui.');
+                }
+                $agents[$agent['id']] = [
+                    'id' => $agent['id'], 'name' => $agent['name'],
+                    'status' => is_string($agent['status'] ?? null) ? $agent['status'] : 'unknown',
+                ];
+            }
+            $next = $aggregation['after_key'] ?? null;
+            if ($next !== null && (! is_array($next) || ! is_string($next['id'] ?? null) || $next === $after)) {
+                throw new \RuntimeException('Cursor daftar monitoring agent tidak valid.');
+            }
+            $after = $next;
+        } while ($buckets !== [] && $after !== null);
+
+        $agents = array_values($agents);
+        usort($agents, fn (array $a, array $b) => strnatcasecmp($a['name'], $b['name']) ?: strcmp($a['id'], $b['id']));
+
+        return ['agents' => $agents, 'total' => count($agents), 'updated_at' => $timestamp];
+    }
+
+    /**
      * Fetch alerts from OpenSearch with rule.level >= $minLevel
      */
     public function fetchAlerts(int $minLevel = 12, int $size = 100, ?array $timeRange = null): array
     {
+        $this->refreshAlertFilters();
         $indices = implode(',', $this->scopedIndexPatterns($timeRange));
         $query = $this->alertQuery($minLevel, $size, $timeRange);
         $query['track_total_hits'] = false;
@@ -68,6 +144,7 @@ class OpenSearchService
      */
     public function fetchAlertBatches(int $minLevel = 12, int $size = 100, ?array $timeRange = null): iterable
     {
+        $this->refreshAlertFilters();
         if ($timeRange !== null) {
             // A Wazuh day spans at most two UTC daily index suffixes. Do not
             // discover it by aggregating over every historical shard twice.
@@ -99,6 +176,7 @@ class OpenSearchService
         int $size = 100,
         array $timeRange = [],
     ): iterable {
+        $this->refreshAlertFilters();
         if (! isset($timeRange['gte'], $timeRange['lt'])) {
             throw new \InvalidArgumentException('Incremental fetch memerlukan batas waktu gte dan lt.');
         }
@@ -411,16 +489,32 @@ class OpenSearchService
     private function alertQuery(int $minLevel, int $size, ?array $timeRange = null): array
     {
         $levelFilter = ['range' => ['rule.level' => ['gte' => $minLevel]]];
+        $query = $timeRange === null ? $levelFilter : [
+            'bool' => ['filter' => [$levelFilter, ['range' => ['@timestamp' => $timeRange]]]],
+        ];
+        if ($this->ignoredRuleIds !== []) {
+            // Match the full source Rule ID, independently of its description.
+            $query = ['bool' => [
+                'filter' => $timeRange === null ? [$levelFilter] : $query['bool']['filter'],
+                'must_not' => [['terms' => ['rule.id' => $this->ignoredRuleIds]]],
+            ]];
+        }
 
         return [
-            'query' => $timeRange === null ? $levelFilter : [
-                'bool' => ['filter' => [$levelFilter, ['range' => ['@timestamp' => $timeRange]]]],
-            ],
+            'query' => $query,
             'sort' => [
                 ['@timestamp' => 'desc'],
             ],
             'size' => max(1, min($size, 10000)),
         ];
+    }
+
+    protected function refreshAlertFilters(): void
+    {
+        // This service lives across jobs in a queue worker. Refresh once per
+        // fetch, then keep the source query stable for all pages in that scan.
+        $this->ignoredRuleIds = PermanentAlertIgnore::ruleIds();
+        sort($this->ignoredRuleIds, SORT_STRING);
     }
 
     private function searchRequest(string $path, array $options): array
@@ -726,6 +820,7 @@ class OpenSearchService
             'src_ip' => $data['srcip'] ?? $src['data']['src_ip'] ?? null,
             'dst_ip' => $data['dstip'] ?? $src['data']['dst_ip'] ?? null,
             'agent_name' => $src['agent']['name'] ?? null,
+            'agent_scope_key' => Alert::agentScopeKey($sourceCluster, $src['agent']['id'] ?? null),
             'rule_id' => (string) ($src['rule']['id'] ?? null),
             'rule_level' => (int) ($src['rule']['level'] ?? 0),
             'raw_data' => $src,

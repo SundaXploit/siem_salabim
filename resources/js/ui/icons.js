@@ -14,6 +14,7 @@ import {
     Copy,
     Database,
     Download,
+    EllipsisVertical,
     Eye,
     FileCode2,
     FileText,
@@ -32,6 +33,7 @@ import {
     Play,
     PanelLeftClose,
     PanelLeftOpen,
+    Pencil,
     Plus,
     RefreshCw,
     Search,
@@ -53,9 +55,9 @@ import {
 
 const icons = {
     Activity, Archive, ArrowLeft, Bell, BellRing, CalendarDays, Check, ChevronRight,
-    CircleAlert, CircleCheck, ClipboardList, Clock3, Copy, Database, Download, Eye,
+    CircleAlert, CircleCheck, ClipboardList, Clock3, Copy, Database, Download, EllipsisVertical, Eye,
     FileCode2, FileText, Filter, Gauge, History, Inbox, KeyRound, LayoutDashboard, Lightbulb,
-    LogOut, Mail, Menu, MessageSquareText, Moon, Play, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Send,
+    LogOut, Mail, Menu, MessageSquareText, Moon, Play, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Search, Send,
     Settings, Shield, ShieldAlert, SlidersHorizontal, Sparkles, Sun, Trash2, Trophy, Upload,
     UserCog, Users, X,
 };

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\AiAnalysisException;
 use App\Models\Alert;
+use App\Models\Configuration;
 use App\Services\AlertAiAnalysisService;
 use App\Services\AlertIngestionCoordinator;
 use Illuminate\Http\JsonResponse;
@@ -49,7 +50,7 @@ class AlertController extends Controller
         $ingestionStatus = $this->maybeDispatchFetch('live-alerts');
 
         // ── Single-query stats (was 4 separate queries in the view) ──────
-        $rawStats = DB::table('alerts')
+        $rawStats = Alert::visibleTo($request->user())
             ->selectRaw("
                 SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END)          AS new_count,
                 SUM(CASE WHEN status = 'acknowledged' THEN 1 ELSE 0 END) AS ack_count,
@@ -66,7 +67,7 @@ class AlertController extends Controller
         ];
 
         // ── Alert list with eager-loaded triage users ─────────────────────
-        $query = Alert::query()->with(['triages.user']);
+        $query = Alert::visibleTo($request->user())->with(['triages.user']);
 
         // Default: only show active (non-ignored)
         if (! $request->has('status') || $request->status === '') {
@@ -132,8 +133,15 @@ class AlertController extends Controller
     public function show(Alert $alert)
     {
         $alert->load(['triages.user', 'notificationLogs.user', 'latestAiAnalysis']);
+        $telegramLabels = collect(Configuration::getTelegramDestinations())
+            ->filter(fn ($destination) => is_array($destination)
+                && is_string($destination['chat_id'] ?? null)
+                && is_string($destination['label'] ?? null)
+                && trim($destination['label']) !== '')
+            ->mapWithKeys(fn ($destination) => [$destination['chat_id'] => $destination['label']])
+            ->all();
 
-        return view('alerts.show', compact('alert'));
+        return view('alerts.show', compact('alert', 'telegramLabels'));
     }
 
     public function analyseWithAi(
@@ -257,7 +265,7 @@ class AlertController extends Controller
         $ingestionStatus = $this->maybeDispatchFetch('new-count');
 
         return response()->json([
-            'count' => Alert::where('status', 'new')->count(),
+            'count' => Alert::visibleTo(auth()->user())->where('status', 'new')->count(),
             'ingestion' => $ingestionStatus,
         ]);
     }
@@ -268,7 +276,7 @@ class AlertController extends Controller
 
     public function latest()
     {
-        $alerts = Alert::where('status', '!=', 'ignored')
+        $alerts = Alert::visibleTo(auth()->user())->where('status', '!=', 'ignored')
             ->orderBy('first_seen_at', 'desc')
             ->limit(100)
             ->get(['id', 'rule_description', 'src_ip', 'dst_ip', 'agent_name',

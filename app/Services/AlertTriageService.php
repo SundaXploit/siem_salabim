@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Alert;
 use App\Models\AlertTriage;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -14,9 +16,11 @@ class AlertTriageService
 
     public function apply(array $ids, string $action, int $userId, ?string $reason = null): array
     {
-        $changed = DB::transaction(function () use ($ids, $action, $userId, $reason) {
+        $actor = User::findOrFail($userId);
+        Gate::forUser($actor)->authorize('alerts.'.$action);
+        $changed = DB::transaction(function () use ($ids, $action, $userId, $reason, $actor) {
             // Lock in a consistent order so concurrent triage cannot duplicate the history.
-            $alerts = Alert::query()->whereIn('id', $ids)->orderBy('id')
+            $alerts = Alert::visibleTo($actor)->whereIn('id', $ids)->orderBy('id')
                 ->lockForUpdate()->get(['id', 'status', 'first_seen_at']);
 
             if ($alerts->count() !== count($ids)) {
@@ -54,6 +58,7 @@ class AlertTriageService
             )->push(now('Asia/Jakarta')->format('Y-m'))->filter()->unique();
             foreach ($periods as $period) {
                 Cache::forget('security-insight-snapshot:v2:' . $period);
+                Cache::forget('security-insight-snapshot:v2:'.$period.':'.$actor->alertAccessFingerprint());
             }
         }
 

@@ -10,7 +10,6 @@ use App\Models\NotificationTemplate;
 use App\Services\TelegramService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class NotificationController extends Controller
 {
@@ -24,105 +23,86 @@ class NotificationController extends Controller
     public function send(Request $request, Alert $alert, TelegramService $telegram)
     {
         $request->validate([
-            'chat_id'    => 'required|string',
-            'message'    => 'required|string|min:5',
-            'evidence'   => 'nullable|array',
-            'evidence.*' => 'image|max:10240', // max 10MB
+            'message' => 'required|string|min:5',
+            'evidence' => 'nullable|array',
+            'evidence.*' => 'image|max:10240',
         ], [
-            'chat_id.required'   => 'Chat ID harus dipilih.',
-            'message.required'   => 'Pesan tidak boleh kosong.',
-            'evidence.array'     => 'Format evidence tidak valid.',
-            'evidence.*.image'   => 'File evidence harus berupa gambar (jpg, png, gif, webp).',
-            'evidence.*.max'     => 'Ukuran gambar maksimal 10MB.',
+            'message.required' => 'Pesan tidak boleh kosong.',
+            'evidence.array' => 'Format evidence tidak valid.',
+            'evidence.*.image' => 'File evidence harus berupa gambar (jpg, png, gif, webp).',
+            'evidence.*.max' => 'Ukuran gambar maksimal 10MB.',
         ]);
 
-        $chatId  = trim((string) $request->chat_id);
-        $message = $request->message;
+        // Resolve from the stored alert and admin configuration, never request-supplied recipients or agents.
+        $destinations = Configuration::telegramDestinationsForAgent($alert->agent_name);
+        if ($destinations === []) {
+            return back()->with('error', 'Notifikasi tidak dikirim: belum ada tujuan Telegram untuk agent '.($alert->agent_name ?: 'tanpa nama').'. Atur pemetaan agent di Settings → Telegram.');
+        }
 
-        // ── Step 1: Send text notification ──────────────────────────────────
-        $result = $telegram->sendMessage($chatId, $message);
-
-        // ── Step 2: If evidence images attached, send them as separate messages
-        $photoSuccessCount = 0;
-        $photoFailCount    = 0;
-        $photoErrors       = [];
-
-        // Send evidence only after the primary message is confirmed so a
-        // failed notification cannot leave orphaned screenshots in the chat.
-        if ($result['success'] && $request->hasFile('evidence')) {
-            $files = $request->file('evidence');
-            foreach ($files as $file) {
-                if ($file->isValid()) {
-                    // Send directly from PHP temp directory (no need to store securely on web server)
-                    $tmpPhotoPath = $file->getRealPath();
-                    $filename     = $file->getClientOriginalName();
-
-                    Log::info("[Telegram] Preparing to send evidence (from memory/temp): {$tmpPhotoPath} to Chat ID: {$chatId}");
-
-                    // Send photo
-                    $photoResult = $telegram->sendPhoto($chatId, $tmpPhotoPath, $filename);
-
+        $delivered = [];
+        $failures = [];
+        $photoFailures = [];
+        $formatFallback = false;
+        foreach ($destinations as $destination) {
+            $chatId = $destination['chat_id'];
+            $label = $destination['label'];
+            $result = $telegram->sendMessage($chatId, $request->message);
+            $photoSuccessCount = 0;
+            if ($result['success'] && $request->hasFile('evidence')) {
+                foreach ($request->file('evidence') as $file) {
+                    $photoResult = $telegram->sendPhoto($chatId, $file->getRealPath(), $file->getClientOriginalName());
                     if ($photoResult['success']) {
                         $photoSuccessCount++;
-                        Log::info("[Telegram] Successfully sent evidence: {$filename}");
                     } else {
-                        $photoFailCount++;
-                        $error = $photoResult['error'] ?? 'unknown';
-                        $photoErrors[] = "{$filename} ({$error})";
-                        Log::error("[Telegram] Failed from Controller side: " . json_encode($photoResult));
+                        $photoFailures[] = $label.': '.$file->getClientOriginalName().' ('.($photoResult['error'] ?? 'gagal dikirim').')';
                     }
-
-                    // Workaround for Windows file locking: Collect garbage to free resources
                     gc_collect_cycles();
                 }
             }
-        }
 
-        // ── Log notification ─────────────────────────────────────────────────
-        NotificationLog::create([
-            'alert_id'        => $alert->id,
-            'user_id'         => Auth::id(),
-            'chat_id'         => $chatId,
-            'message'         => $message . ($photoSuccessCount > 0 ? "\n\n📎 [{$photoSuccessCount} Evidence gambar dikirim terpisah]" : ''),
-            'response_status' => $result['status'],
-            'sent_at'         => now(),
-        ]);
-
-        // ── Log triage action ─────────────────────────────────────────────────
-        if ($result['success']) {
-            AlertTriage::create([
-                'alert_id'   => $alert->id,
-                'user_id'    => Auth::id(),
-                'action'     => 'notify',
-                'reason'     => "Notifikasi dikirim ke {$chatId}" . ($photoSuccessCount > 0 ? " + {$photoSuccessCount} bukti gambar" : ''),
-                'created_at' => now(),
+            NotificationLog::create([
+                'alert_id' => $alert->id,
+                'user_id' => Auth::id(),
+                'chat_id' => $chatId,
+                'message' => $request->message.($photoSuccessCount > 0 ? "\n\n📎 [{$photoSuccessCount} Evidence gambar dikirim terpisah]" : ''),
+                'response_status' => $result['status'] ?? 0,
+                'sent_at' => now(),
             ]);
+
+            if ($result['success']) {
+                $delivered[] = $label;
+                $formatFallback = $formatFallback || ($result['format_fallback'] ?? false);
+                AlertTriage::create([
+                    'alert_id' => $alert->id,
+                    'user_id' => Auth::id(),
+                    'action' => 'notify',
+                    'reason' => "Notifikasi dikirim ke {$label} ({$chatId})".($photoSuccessCount > 0 ? " + {$photoSuccessCount} bukti gambar" : ''),
+                    'created_at' => now(),
+                ]);
+            } else {
+                $failures[] = $label.': '.($result['error'] ?? 'pengiriman belum dikonfirmasi');
+            }
         }
 
-        // ── Auto-acknowledge ──────────────────────────────────────────────────
-        if ($result['success'] && $alert->status === 'new') {
+        if ($failures === [] && $alert->status === 'new' && $request->user()->hasPrivilege('alerts.acknowledge')) {
             $alert->update(['status' => 'acknowledged']);
         }
-
-        // ── Response ──────────────────────────────────────────────────────────
-        if ($result['success']) {
-            $msg = '✅ Notifikasi berhasil dikirim ke Telegram!';
-            if ($request->hasFile('evidence')) {
-                if ($photoSuccessCount > 0) {
-                    $msg .= " 📎 {$photoSuccessCount} Gambar evidence terkirim.";
-                }
-                if ($photoFailCount > 0) {
-                    $msg .= " ⚠️ {$photoFailCount} gambar gagal dikirim: " . implode(', ', $photoErrors);
-                }
-            }
-            return back()->with('success', $msg);
-        } else {
-            return back()->with('error', '❌ Gagal mengirim notifikasi: ' . ($result['error'] ?? 'Unknown error'));
+        $message = $delivered === [] ? '' : 'Notifikasi terkirim ke '.count($delivered).' tujuan: '.implode(', ', $delivered).'.';
+        if ($failures !== []) {
+            $message .= ' Gagal: '.implode('; ', $failures).'.';
         }
+        if ($photoFailures !== []) {
+            $message .= ' Evidence gagal: '.implode('; ', $photoFailures).'.';
+        }
+        if ($formatFallback) {
+            $message .= ' Format HTML ditolak Telegram; pesan terkirim sebagai teks biasa.';
+        }
+
+        return back()->with($failures === [] && $photoFailures === [] ? 'success' : 'error', trim($message));
     }
 
     /**
-     * Get all templates + chat IDs for an alert (AJAX)
+     * Get templates and routed destination labels for an alert (AJAX)
      */
     public function template(Alert $alert)
     {
@@ -138,7 +118,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'templates'       => $templates,
-            'chat_ids'        => Configuration::getTelegramChatIds(),
+            'destinations'    => array_column(Configuration::telegramDestinationsForAgent($alert->agent_name), 'label'),
             'default_message' => $defaultBody,
         ]);
     }

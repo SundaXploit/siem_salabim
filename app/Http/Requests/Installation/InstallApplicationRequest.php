@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Installation;
 
+use App\Services\AiProviderService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -58,7 +59,11 @@ class InstallApplicationRequest extends SecureInstallerRequest
             ? rtrim($trimmed['opensearch_host'], '/')
             : $this->input('opensearch_host');
         $trimmed['opensearch_verify_ssl'] = $this->boolean('opensearch_verify_ssl');
+        $trimmed['opensearch_enabled'] = $this->boolean('opensearch_enabled', $this->filled('opensearch_host'));
+        $trimmed['telegram_enabled'] = $this->boolean('telegram_enabled', $this->filled('telegram_bot_token'));
         $trimmed['ai_enabled'] = $this->boolean('ai_enabled');
+        $trimmed['ai_provider'] = $this->input('ai_provider', 'custom');
+        $trimmed['ai_api_format'] = $this->input('ai_api_format', AiProviderService::defaultFormat((string) $trimmed['ai_provider']));
         $trimmed['smtp_enabled'] = $this->boolean('smtp_enabled');
         $trimmed['mail_encryption'] = $this->input('mail_encryption') === 'none'
             ? null
@@ -77,7 +82,7 @@ class InstallApplicationRequest extends SecureInstallerRequest
      */
     public function rules(): array
     {
-        return [
+        $rules = [
             'app_name' => ['required', 'string', 'max:100'],
             'app_url' => ['required', 'url', 'starts_with:http://,https://', 'max:2048'],
             'app_timezone' => ['required', 'timezone:all'],
@@ -90,6 +95,8 @@ class InstallApplicationRequest extends SecureInstallerRequest
             'db_password' => ['nullable', 'string', 'max:4096'],
             'db_sslmode' => ['nullable', Rule::in(['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'])],
 
+            'opensearch_enabled' => ['required', 'boolean'],
+            'telegram_enabled' => ['required', 'boolean'],
             'opensearch_host' => ['required', 'url', 'starts_with:http://,https://', 'max:2048'],
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['required', 'string', 'max:4096'],
@@ -113,9 +120,7 @@ class InstallApplicationRequest extends SecureInstallerRequest
             ],
 
             'ai_enabled' => ['required', 'boolean'],
-            'ai_api_key' => ['nullable', 'required_if:ai_enabled,true', 'string', 'max:4096'],
-            'ai_base_url' => ['nullable', 'required_if:ai_enabled,true', 'url', 'starts_with:https://', 'max:2048'],
-            'ai_model' => ['nullable', 'required_if:ai_enabled,true', 'string', 'max:255'],
+            ...AiProviderService::configurationRules((string) $this->input('ai_provider')),
 
             'smtp_enabled' => ['required', 'boolean'],
             'mail_host' => ['nullable', 'required_if:smtp_enabled,true', 'string', 'max:255'],
@@ -136,6 +141,16 @@ class InstallApplicationRequest extends SecureInstallerRequest
             ],
             'admin_password_confirmation' => ['required', 'string', 'same:admin_password'],
         ];
+
+        foreach ($rules as $key => &$fieldRules) {
+            foreach (['opensearch', 'telegram', 'ai'] as $integration) {
+                if (str_starts_with($key, $integration.'_') && $key !== $integration.'_enabled') {
+                    array_unshift($fieldRules, 'exclude_unless:'.$integration.'_enabled,true');
+                }
+            }
+        }
+
+        return $rules;
     }
 
     public function messages(): array

@@ -2,11 +2,13 @@
 
 use App\Http\Middleware\EnsureApplicationInstalled;
 use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\RecordSettingsActivity;
 use App\Http\Middleware\RedirectIfInstalled;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -19,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [RecordSettingsActivity::class]);
         $middleware->alias([
             'install.pending' => RedirectIfInstalled::class,
             'installed.only' => EnsureApplicationInstalled::class,
@@ -28,6 +31,8 @@ return Application::configure(basePath: dirname(__DIR__))
             AuthenticatesRequests::class,
             EnsureApplicationInstalled::class,
         );
+        $middleware->prependToPriorityList(SubstituteBindings::class, EnsureUserIsAdmin::class);
+        $middleware->prependToPriorityList(EnsureUserIsAdmin::class, RecordSettingsActivity::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontFlash([

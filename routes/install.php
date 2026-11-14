@@ -12,6 +12,9 @@ Route::prefix('install')->name('install.')->group(function (): void {
         Route::post('/', [InstallController::class, 'store'])
             ->middleware('throttle:10,1')
             ->name('store');
+        Route::post('/ai/models', [InstallController::class, 'aiModels'])
+            ->middleware('throttle:10,1')
+            ->name('ai.models');
     });
 
     Route::get('/complete', [InstallController::class, 'complete'])

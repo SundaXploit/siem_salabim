@@ -169,7 +169,7 @@ class IntegrationConfigurationTest extends TestCase
             'services.opensearch.index' => 'configured-alerts-*',
             'services.opensearch.min_level' => 5,
             'services.telegram.bot_token' => 'private-configured-telegram-token',
-            'services.amanai.api_key' => 'private-configured-ai-key',
+            'services.ai.api_key' => 'private-configured-ai-key',
         ]);
 
         $this->actingAs(User::factory()->create(['role' => 'admin']))

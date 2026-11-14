@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\AlertIngestionCoordinator;
+use App\Jobs\PrepareAutomaticAlertNotifications;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -29,8 +30,13 @@ Schedule::call(function (AlertIngestionCoordinator $ingestion): void {
     ->name('siem:dispatch-alert-reconciliation')
     ->withoutOverlapping(30);
 
+Schedule::call(fn () => PrepareAutomaticAlertNotifications::dispatch())
+    ->everyMinute()
+    ->name('siem:dispatch-automatic-notifications')
+    ->withoutOverlapping(5);
+
 // Check daily. The command reads the admin-defined refresh interval from
-// Settings (with AMANAI_REFRESH_DAYS only as a server-side fallback).
+// Settings (with AI_REFRESH_DAYS only as a server-side fallback).
 Schedule::command('siem:refresh-dashboard-insight')
     ->dailyAt('02:10')
     ->timezone('Asia/Jakarta')

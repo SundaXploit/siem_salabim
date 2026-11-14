@@ -1,151 +1,153 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="dark" data-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow, noarchive">
     <title>Instalasi &mdash; SIEM Salabim</title>
+    @include('partials.brand-head')
     <style>
         :root {
-            color-scheme: dark;
-            --bg: #07111f;
-            --panel: #0d1b2d;
-            --panel-2: #11233a;
-            --line: #263b55;
-            --text: #e7eef8;
-            --muted: #9eb0c6;
-            --primary: #38bdf8;
-            --primary-strong: #0ea5e9;
-            --success: #34d399;
-            --danger: #fb7185;
-            --warning: #fbbf24;
+            --bg: var(--color-canvas);
+            --panel: var(--color-surface-1);
+            --panel-2: var(--color-surface-3);
+            --line: var(--color-border-default);
+            --text: var(--color-text-primary);
+            --muted: var(--color-text-secondary);
+            --primary: var(--color-accent);
+            --primary-strong: var(--color-accent-hover);
+            --success: var(--color-success);
+            --danger: var(--color-danger);
+            --warning: var(--color-warning);
         }
         * { box-sizing: border-box; }
         body {
-            margin: 0;
+            margin: var(--spacing-0);
             min-height: 100vh;
-            background:
-                radial-gradient(circle at 10% 0%, rgba(14, 165, 233, .16), transparent 34rem),
-                radial-gradient(circle at 100% 100%, rgba(52, 211, 153, .08), transparent 32rem),
-                var(--bg);
+            background: var(--bg);
             color: var(--text);
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            line-height: 1.55;
+            font-family: var(--font-sans);
+            font-size: var(--ina-font-size-body);
+            line-height: var(--ina-line-height-body);
         }
         button, input, select { font: inherit; }
         button { cursor: pointer; }
-        .shell { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 40px 0 64px; }
-        .masthead { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+        .shell { width: min(1120px, calc(100% - 2 * var(--spacing-16))); margin: var(--spacing-0) auto; padding: var(--spacing-40) var(--spacing-0) var(--spacing-64); }
+        .masthead { display: flex; align-items: center; gap: var(--spacing-16); margin-bottom: var(--spacing-24); }
         .mark {
-            display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px;
-            background: linear-gradient(145deg, var(--primary), #2563eb); color: #03111e; font-weight: 900;
-            box-shadow: 0 12px 30px rgba(14, 165, 233, .25);
+            display: grid; place-items: center; width: 46px; height: 46px; border-radius: 3px;
+            background: var(--primary); color: var(--color-canvas); font-weight: var(--font-weight-bold);
+            box-shadow: none;
         }
-        .masthead h1 { margin: 0; font-size: 1.08rem; letter-spacing: .01em; }
-        .masthead p { margin: 2px 0 0; color: var(--muted); font-size: .88rem; }
+        .masthead h1 { margin: var(--spacing-0); font-size: var(--ina-font-size-body); letter-spacing: var(--ina-letter-spacing-body); line-height: var(--ina-line-height-body); }
+        .masthead p { margin: var(--spacing-2) var(--spacing-0) var(--spacing-0); color: var(--muted); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
         .card {
-            border: 1px solid var(--line); border-radius: 22px; background: rgba(13, 27, 45, .96);
-            box-shadow: 0 28px 80px rgba(0, 0, 0, .32); overflow: hidden;
+            border: 1px solid var(--line); border-radius: 4px; background: var(--panel);
+            box-shadow: none; overflow: hidden;
         }
-        .gate { max-width: 600px; margin: 8vh auto 0; padding: clamp(24px, 5vw, 48px); }
+        .gate { max-width: 600px; margin: var(--spacing-64) auto var(--spacing-0); padding: var(--spacing-48); }
         .gate-icon {
-            display: grid; place-items: center; width: 54px; height: 54px; border-radius: 16px;
-            color: var(--primary); background: rgba(56, 189, 248, .1); border: 1px solid rgba(56, 189, 248, .24);
-            font-size: 1.5rem;
+            display: grid; place-items: center; width: 54px; height: 54px; border-radius: 3px;
+            color: var(--primary); background: var(--color-info-soft); border: 1px solid var(--color-info-border);
+            font-size: var(--ina-font-size-heading-5);
+            line-height: var(--ina-line-height-heading-5);
         }
-        h2 { margin: 18px 0 7px; font-size: clamp(1.45rem, 4vw, 2rem); }
-        .lead { margin: 0 0 24px; color: var(--muted); }
+        h2 { margin: var(--spacing-16) var(--spacing-0) var(--spacing-8); font-size: var(--ina-font-size-heading-3); line-height: var(--ina-line-height-heading-3); }
+        .lead { margin: var(--spacing-0) var(--spacing-0) var(--spacing-24); color: var(--muted); }
         .security-note {
-            margin-top: 20px; padding: 13px 15px; border-radius: 12px; color: #bfd0e3;
-            border: 1px solid #24415e; background: #0a1828; font-size: .86rem;
+            margin-top: var(--spacing-24); padding: var(--spacing-12) var(--spacing-16); border-radius: 3px; color: var(--color-info);
+            border: 1px solid var(--color-info-border); background: var(--color-surface-2); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption);
         }
         .wizard { display: grid; grid-template-columns: 245px minmax(0, 1fr); min-height: 670px; }
-        .sidebar { padding: 28px 20px; background: #091726; border-right: 1px solid var(--line); }
-        .sidebar h2 { margin: 0 8px 8px; font-size: 1.14rem; }
-        .sidebar > p { margin: 0 8px 24px; color: var(--muted); font-size: .84rem; }
-        .progress { height: 5px; margin: 0 8px 22px; border-radius: 99px; background: #1c3047; overflow: hidden; }
+        .sidebar { padding: var(--spacing-32) var(--spacing-24); background: var(--color-surface-1); border-right: 1px solid var(--line); }
+        .sidebar h2 { margin: var(--spacing-0) var(--spacing-8) var(--spacing-8); font-size: var(--ina-font-size-body); line-height: var(--ina-line-height-body); }
+        .sidebar > p { margin: var(--spacing-0) var(--spacing-8) var(--spacing-24); color: var(--muted); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
+        .progress { height: 5px; margin: var(--spacing-0) var(--spacing-8) var(--spacing-24); border-radius: 4px; background: var(--color-info-soft); overflow: hidden; }
         .progress span { display: block; height: 100%; width: 16.666%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
-        .steps { display: grid; gap: 7px; }
+        .steps { display: grid; gap: var(--spacing-8); }
         .step-link {
-            display: flex; gap: 11px; align-items: center; width: 100%; padding: 10px 11px; border: 0;
-            border-radius: 11px; text-align: left; color: var(--muted); background: transparent;
+            display: flex; gap: var(--spacing-12); align-items: center; width: 100%; padding: var(--spacing-12) var(--spacing-12); border: 0;
+            border-radius: 3px; text-align: left; color: var(--muted); background: transparent;
         }
-        .step-link[aria-current="step"] { color: var(--text); background: #14283f; }
+        .step-link[aria-current="step"] { color: var(--text); background: var(--color-surface-3); }
         .step-number {
             flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
-            border: 1px solid #38506b; font-size: .78rem; font-weight: 800;
+            border: 1px solid var(--color-border-strong); font-size: var(--ina-font-size-caption); font-weight: var(--font-weight-bold); line-height: var(--ina-line-height-caption);
         }
-        .step-link[aria-current="step"] .step-number { color: #052033; background: var(--primary); border-color: var(--primary); }
-        .content { min-width: 0; padding: clamp(24px, 5vw, 48px); }
-        .eyebrow { margin: 0 0 5px; color: var(--primary); font-size: .75rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
-        .step-panel > h2 { margin: 0 0 6px; }
-        .step-description { margin: 0 0 27px; color: var(--muted); }
-        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .step-link[aria-current="step"] .step-number { color: var(--color-canvas); background: var(--primary); border-color: var(--primary); }
+        .content { min-width: 0; padding: var(--spacing-48); }
+        .eyebrow { margin: var(--spacing-0) var(--spacing-0) var(--spacing-4); color: var(--primary); font-size: var(--ina-font-size-caption-small); font-weight: var(--font-weight-bold); letter-spacing: var(--ina-letter-spacing-body); text-transform: uppercase; line-height: var(--ina-line-height-caption-small); }
+        .step-panel > h2 { margin: var(--spacing-0) var(--spacing-0) var(--spacing-8); }
+        .step-description { margin: var(--spacing-0) var(--spacing-0) var(--spacing-24); color: var(--muted); }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-16); }
         .span-2 { grid-column: span 2; }
         .field { min-width: 0; }
-        label { display: block; margin-bottom: 7px; font-size: .86rem; font-weight: 720; }
-        .hint { display: block; margin-top: 6px; color: var(--muted); font-size: .75rem; }
+        label { display: block; margin-bottom: var(--spacing-8); font-size: var(--ina-font-size-caption); font-weight: var(--font-weight-bold); line-height: var(--ina-line-height-caption); }
+        .hint { display: block; margin-top: var(--spacing-8); color: var(--muted); font-size: var(--ina-font-size-caption-small); line-height: var(--ina-line-height-caption-small); }
         input, select {
-            width: 100%; min-height: 45px; padding: 10px 12px; color: var(--text); background: #091725;
-            border: 1px solid #304762; border-radius: 10px; outline: none;
+            width: 100%; min-height: 45px; padding: var(--spacing-12) var(--spacing-12); color: var(--text); background: var(--color-surface-2);
+            border: 1px solid var(--color-border-strong); border-radius: 3px; outline: none;
         }
-        input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(56, 189, 248, .13); }
-        input::placeholder { color: #627892; }
-        .field-error { margin-top: 6px; color: #fda4af; font-size: .78rem; }
+        input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--color-focus); }
+        input::placeholder { color: var(--color-text-muted); }
+        .field-error { margin-top: var(--spacing-8); color: var(--color-danger); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
         .alert {
-            margin-bottom: 22px; padding: 13px 15px; border-radius: 12px; border: 1px solid rgba(251, 113, 133, .45);
-            background: rgba(159, 18, 57, .16); color: #fecdd3; font-size: .88rem;
+            margin-bottom: var(--spacing-24); padding: var(--spacing-12) var(--spacing-16); border-radius: 3px; border: 1px solid var(--color-danger-border);
+            background: var(--color-danger-soft); color: var(--color-danger); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption);
         }
         .toggle-box {
-            display: flex; gap: 13px; align-items: flex-start; padding: 15px; border: 1px solid var(--line);
-            background: #0a1929; border-radius: 12px;
+            display: flex; gap: var(--spacing-12); align-items: flex-start; padding: var(--spacing-16); border: 1px solid var(--line);
+            background: var(--color-surface-2); border-radius: 3px;
         }
-        .toggle-box input { flex: 0 0 auto; width: 19px; min-height: 19px; height: 19px; margin-top: 2px; accent-color: var(--primary); }
-        .toggle-box label { margin: 0; }
-        .toggle-box p { margin: 3px 0 0; color: var(--muted); font-size: .78rem; }
-        .optional-fields { margin-top: 18px; }
-        .chat-list { display: grid; gap: 10px; }
-        .chat-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+        .toggle-box input { flex: 0 0 auto; width: 19px; min-height: 19px; height: 19px; margin-top: var(--spacing-2); accent-color: var(--primary); }
+        .toggle-box label { margin: var(--spacing-0); }
+        .toggle-box p { margin: var(--spacing-4) var(--spacing-0) var(--spacing-0); color: var(--muted); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
+        .optional-fields { margin: var(--spacing-16) var(--spacing-0) var(--spacing-0); padding: var(--spacing-0); border: 0; min-width: 0; }
+        .chat-list { display: grid; gap: var(--spacing-12); }
+        .chat-row { display: grid; grid-template-columns: 1fr auto; gap: var(--spacing-8); }
         .icon-button {
-            min-width: 44px; border-radius: 10px; border: 1px solid #4d3547; color: #fda4af; background: #221725;
+            min-width: 44px; border-radius: 3px; border: 1px solid var(--color-danger-border); color: var(--color-danger); background: var(--color-danger-soft);
         }
-        .add-button { margin-top: 10px; padding: 8px 12px; color: var(--primary); border: 1px solid #275172; border-radius: 9px; background: #0a1d2f; }
+        .add-button { margin-top: var(--spacing-12); padding: var(--spacing-8) var(--spacing-12); color: var(--primary); border: 1px solid var(--color-info-border); border-radius: 3px; background: var(--color-surface-3); }
         .review {
-            padding: 16px; border: 1px solid #2a4560; border-radius: 13px; background: #0a1929;
+            padding: var(--spacing-16); border: 1px solid var(--color-info-border); border-radius: 3px; background: var(--color-surface-2);
         }
-        .review h3 { margin: 0 0 8px; font-size: .94rem; }
-        .review ul { margin: 0; padding-left: 20px; color: var(--muted); font-size: .83rem; }
-        .actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 34px; padding-top: 20px; border-top: 1px solid var(--line); }
-        .button { min-height: 44px; padding: 10px 18px; border-radius: 10px; border: 1px solid transparent; font-weight: 800; }
-        .button-primary { color: #032035; background: var(--primary); }
-        .button-primary:hover { background: #7dd3fc; }
-        .button-secondary { color: var(--text); border-color: #38506b; background: #14253a; }
+        .review h3 { margin: var(--spacing-0) var(--spacing-0) var(--spacing-8); font-size: var(--ina-font-size-body-small); line-height: var(--ina-line-height-body-small); }
+        .review ul { margin: var(--spacing-0); padding-left: var(--spacing-24); color: var(--muted); font-size: var(--ina-font-size-caption); line-height: var(--ina-line-height-caption); }
+        .actions { display: flex; justify-content: space-between; gap: var(--spacing-12); margin-top: var(--spacing-32); padding-top: var(--spacing-24); border-top: 1px solid var(--line); }
+        .button { min-height: 44px; padding: var(--spacing-12) var(--spacing-16); border-radius: 3px; border: 1px solid transparent; font-weight: var(--font-weight-bold); }
+        .button-primary { color: var(--color-on-primary); background: var(--color-primary); border-color: var(--color-accent); }
+        .button-primary:hover { background: var(--color-primary-hover); }
+        .button-secondary { color: var(--text); border-color: var(--color-border-strong); background: var(--color-surface-3); }
         .button:disabled { cursor: not-allowed; opacity: .6; }
         [hidden] { display: none !important; }
-        .noscript { margin-bottom: 20px; padding: 12px; border-radius: 10px; color: #fde68a; background: #3a2b0d; }
+        .noscript { margin-bottom: var(--spacing-24); padding: var(--spacing-12); border-radius: 3px; color: var(--color-warning); background: var(--color-warning-soft); }
         @media (max-width: 800px) {
-            .shell { width: min(100% - 20px, 680px); padding-top: 22px; }
+            .content, .gate { padding: var(--spacing-24); }
+            .shell { width: min(100% - 2 * var(--spacing-12), 680px); padding-top: var(--spacing-24); }
             .wizard { grid-template-columns: 1fr; }
             .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
             .sidebar h2, .sidebar > p { display: none; }
             .steps { grid-template-columns: repeat(6, 1fr); }
-            .step-link { justify-content: center; padding: 7px; }
+            .step-link { justify-content: center; padding: var(--spacing-8); }
             .step-label { display: none; }
             .grid { grid-template-columns: 1fr; }
             .span-2 { grid-column: span 1; }
         }
         @media (max-width: 480px) {
-            .content { padding: 22px 17px; }
-            .gate { padding: 25px 20px; }
+            .content { padding: var(--spacing-24) var(--spacing-16); }
+            .gate { padding: var(--spacing-24) var(--spacing-24); }
             .actions { flex-wrap: wrap; }
             .actions .button { flex: 1; }
         }
+            :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
     </style>
 </head>
 <body>
     <main class="shell">
         <header class="masthead">
-            <div class="mark" aria-hidden="true">S</div>
+            <x-application-logo alt="" />
             <div>
                 <h1>SIEM Salabim</h1>
                 <p>Installer aman untuk konfigurasi awal</p>
@@ -154,7 +156,7 @@
 
         @unless($unlocked)
             <section class="card gate" aria-labelledby="gate-title">
-                <div class="gate-icon" aria-hidden="true">&#128274;</div>
+                <p class="eyebrow">Konfigurasi awal</p>
                 <h2 id="gate-title">Buka sesi instalasi</h2>
                 <p class="lead">Masukkan token instalasi sekali pakai yang diberikan oleh administrator server. Token tidak akan disimpan di browser maupun ditampilkan kembali.</p>
 
@@ -188,7 +190,7 @@
             <section class="card wizard" aria-labelledby="wizard-title">
                 <aside class="sidebar">
                     <h2 id="wizard-title">Konfigurasi awal</h2>
-                    <p>Lengkapi enam tahap berikut.</p>
+                    <p>Isi aplikasi, database, dan admin. Integrasi boleh dilewati.</p>
                     <div class="progress" aria-hidden="true"><span data-progress></span></div>
                     <nav class="steps" aria-label="Tahap instalasi">
                         @foreach(['Aplikasi', 'Database', 'OpenSearch', 'Telegram', 'Integrasi', 'Admin'] as $index => $label)
@@ -293,8 +295,14 @@
                     <section class="step-panel" data-step-panel="2" hidden>
                         <p class="eyebrow">Tahap 3 dari 6</p>
                         <h2>Wazuh / OpenSearch</h2>
-                        <p class="step-description">Sumber alert utama yang akan dibaca dan dinormalisasi oleh SIEM Salabim.</p>
-                        <div class="grid">
+                        <p class="step-description">Opsional. Tanpa OpenSearch, dashboard tetap dapat dibuka dengan data lokal yang tersedia.</p>
+                        <div class="toggle-box">
+                            <input type="hidden" name="opensearch_enabled" value="0">
+                            <input id="opensearch_enabled" name="opensearch_enabled" type="checkbox" value="1" @checked((bool) old('opensearch_enabled', false)) data-toggle="opensearch-fields">
+                            <div><label for="opensearch_enabled">Konfigurasi OpenSearch sekarang</label><p>Boleh dilewati dan diatur kembali melalui Pengaturan.</p></div>
+                        </div>
+                        <fieldset class="optional-fields grid" id="opensearch-fields" @if(! old('opensearch_enabled', false)) hidden disabled @endif>
+                            <legend class="hint">Konfigurasi OpenSearch</legend>
                             <div class="field span-2">
                                 <label for="opensearch_host">Endpoint OpenSearch</label>
                                 <input id="opensearch_host" name="opensearch_host" type="url" value="{{ old('opensearch_host', $defaults['opensearch_host']) }}" required maxlength="2048">
@@ -332,14 +340,21 @@
                                 </div>
                                 @error('opensearch_verify_ssl')<div class="field-error">{{ $message }}</div>@enderror
                             </div>
-                        </div>
+                        </fieldset>
+                        <button class="add-button" type="button" data-skip-integration="opensearch_enabled">Lewati OpenSearch</button>
                     </section>
 
                     <section class="step-panel" data-step-panel="3" hidden>
                         <p class="eyebrow">Tahap 4 dari 6</p>
                         <h2>Notifikasi Telegram</h2>
-                        <p class="step-description">Telegram diwajibkan agar alarm penting dapat diteruskan kepada tim operasional.</p>
-                        <div class="grid">
+                        <p class="step-description">Opsional. Aktifkan sekarang atau atur nanti di Pengaturan untuk mengirim notifikasi.</p>
+                        <div class="toggle-box">
+                            <input type="hidden" name="telegram_enabled" value="0">
+                            <input id="telegram_enabled" name="telegram_enabled" type="checkbox" value="1" @checked((bool) old('telegram_enabled', false)) data-toggle="telegram-fields">
+                            <div><label for="telegram_enabled">Konfigurasi Telegram sekarang</label><p>Boleh dilewati dan diatur kembali melalui Pengaturan.</p></div>
+                        </div>
+                        <fieldset class="optional-fields grid" id="telegram-fields" @if(! old('telegram_enabled', false)) hidden disabled @endif>
+                            <legend class="hint">Konfigurasi Telegram</legend>
                             <div class="field span-2">
                                 <label for="telegram_bot_token">Token bot</label>
                                 <input id="telegram_bot_token" name="telegram_bot_token" type="password" required maxlength="4096" autocomplete="new-password">
@@ -361,7 +376,8 @@
                                 @error('telegram_chat_ids')<div class="field-error">{{ $message }}</div>@enderror
                                 <button class="add-button" type="button" data-add-chat>+ Tambah tujuan</button>
                             </div>
-                        </div>
+                        </fieldset>
+                        <button class="add-button" type="button" data-skip-integration="telegram_enabled">Lewati Telegram</button>
                     </section>
 
                     <section class="step-panel" data-step-panel="4" hidden>
@@ -378,22 +394,44 @@
                                         <p>AI akan menerima data alert yang telah dinormalisasi, bukan seluruh raw log.</p>
                                     </div>
                                 </div>
-                                <div class="optional-fields grid" id="ai-fields" @if(! old('ai_enabled', false)) hidden @endif>
-                                    <div class="field span-2">
-                                        <label for="ai_api_key">API key AI</label>
-                                        <input id="ai_api_key" name="ai_api_key" type="password" maxlength="4096" autocomplete="new-password" data-conditional-required>
-                                        @error('ai_api_key')<div class="field-error">{{ $message }}</div>@enderror
+                                <div class="optional-fields grid" id="ai-fields" data-ai-fields data-ai-models-url="{{ route('install.ai.models', [], false) }}" @if(! old('ai_enabled', false)) hidden @endif>
+                                    <div class="field">
+                                        <label for="ai_provider">Provider AI</label>
+                                        <select id="ai_provider" name="ai_provider" data-conditional-required>
+                                            @foreach(config('ai_providers') as $value => $provider)
+                                                <option value="{{ $value }}" @selected(old('ai_provider', 'custom') === $value)>{{ $provider['label'] }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('ai_provider')<div class="field-error">{{ $message }}</div>@enderror
                                     </div>
                                     <div class="field">
-                                        <label for="ai_base_url">Endpoint AI</label>
+                                        <label for="ai_api_format">Format API</label>
+                                        <select id="ai_api_format" name="ai_api_format" data-conditional-required>
+                                            @foreach(['chat_completions' => 'Chat Completions', 'responses' => 'Responses', 'anthropic_messages' => 'Anthropic Messages'] as $value => $label)
+                                                <option value="{{ $value }}" @selected(old('ai_api_format', 'chat_completions') === $value)>{{ $label }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('ai_api_format')<div class="field-error">{{ $message }}</div>@enderror
+                                    </div>
+                                    <div class="field span-2">
+                                        <label for="ai_api_key">API key AI</label>
+                                        <input id="ai_api_key" name="ai_api_key" type="password" maxlength="4096" autocomplete="new-password">
+                                        @error('ai_api_key')<div class="field-error">{{ $message }}</div>@enderror
+                                        <span class="hint">LLM lokal boleh tanpa API key. Token disimpan terenkripsi.</span>
+                                    </div>
+                                    <div class="field">
+                                        <label for="ai_base_url">Base URL API</label>
                                         <input id="ai_base_url" name="ai_base_url" type="url" value="{{ old('ai_base_url', $defaults['ai_base_url']) }}" maxlength="2048" data-conditional-required>
                                         @error('ai_base_url')<div class="field-error">{{ $message }}</div>@enderror
+                                        <span class="hint">Base URL tanpa akhiran /chat/completions, /responses, atau /messages. Cloud memakai HTTPS; lokal boleh HTTP.</span>
                                     </div>
                                     <div class="field">
                                         <label for="ai_model">Model</label>
                                         <input id="ai_model" name="ai_model" value="{{ old('ai_model', $defaults['ai_model']) }}" maxlength="255" data-conditional-required>
+                                        @include('partials.ai-model-discovery', ['buttonClass' => 'add-button', 'helpClass' => 'hint', 'selectClass' => ''])
                                         @error('ai_model')<div class="field-error">{{ $message }}</div>@enderror
                                     </div>
+                                    <p class="hint span-2" data-ai-local-help hidden>Alamat diakses dari server aplikasi. Pastikan server LLM berjalan dan model sudah dimuat; gunakan IP/hostname jika berada di komputer lain.</p>
                                 </div>
                             </div>
 
@@ -554,11 +592,20 @@
                     const target = document.getElementById(toggle.dataset.toggle);
                     const sync = () => {
                         target.hidden = !toggle.checked;
+                        if (target.tagName === 'FIELDSET') target.disabled = !toggle.checked;
+                        else target.querySelectorAll('input, select, button').forEach(control => control.disabled = !toggle.checked);
                         target.querySelectorAll('[data-conditional-required]').forEach(input => input.required = toggle.checked);
                     };
                     toggle.addEventListener('change', sync);
                     sync();
                 });
+
+                document.querySelectorAll('[data-skip-integration]').forEach(button => button.addEventListener('click', () => {
+                    const toggle = document.getElementById(button.dataset.skipIntegration);
+                    toggle.checked = false;
+                    toggle.dispatchEvent(new Event('change'));
+                    showStep(current + 1);
+                }));
 
                 const driver = document.querySelector('[data-db-driver]');
                 const port = document.querySelector('[data-db-port]');
@@ -596,6 +643,7 @@
                 showStep(current);
             })();
         </script>
+        @include('partials.ai-provider-fields-script')
     @endif
 </body>
 </html>

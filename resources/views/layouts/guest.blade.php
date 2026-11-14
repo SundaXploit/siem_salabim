@@ -6,8 +6,7 @@
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
         <title>SIEM Salabim | @yield('title', 'Security Operations Center')</title>
-        <link rel="icon" type="image/png" href="{{ asset('images/brand/siem-salabim-mark.png') }}">
-        <link rel="apple-touch-icon" href="{{ asset('images/brand/siem-salabim-mark.png') }}">
+    @include('partials.brand-head')
         <script>
             (function () {
                 try {
@@ -27,21 +26,26 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="auth-shell">
+    <body class="auth-shell access-shell" data-ui-view="@yield('auth-view', 'auth/guest')">
         <button class="theme-toggle-login" type="button" data-theme-toggle title="Ubah tema" aria-label="Ubah tema gelap atau terang">
             <span class="theme-icon-dark" aria-hidden="true"><i data-lucide="moon"></i></span>
             <span class="theme-icon-light" aria-hidden="true"><i data-lucide="sun"></i></span>
         </button>
-        <div class="login-container">
-            <div class="login-header">
-                <a href="/" class="login-logo" aria-label="SIEM Salabim"><img src="{{ asset('images/brand/siem-salabim-mark.png') }}" width="1254" height="1254" alt=""></a>
-                <h1 class="login-title">SIEM Salabim</h1>
-                <p class="login-subtitle">Security Operations Center</p>
-            </div>
-
-            <div class="login-card guest-panel">
+        <main class="access-workspace">
+            <a href="{{ url('/') }}" class="access-brand" aria-label="SIEM Salabim — halaman utama"><x-application-logo alt="" /><span class="brand-name">SIEM <strong>Salabim</strong></span></a>
+            <section class="access-panel" aria-labelledby="access-heading">
+                <header class="access-heading">
+                    <p class="access-eyebrow">@yield('auth-context', 'Akses akun SOC')</p>
+                    <h1 id="access-heading">@yield('auth-title', 'Akses SOC')</h1>
+                    @hasSection('auth-description')
+                        <p class="access-description">@yield('auth-description')</p>
+                    @endif
+                </header>
+                <div class="access-content">
                 {{ $slot }}
-            </div>
-        </div>
+                </div>
+            </section>
+            <p class="access-workspace-note">Security Operations Center · Akses akun SIEM Salabim</p>
+        </main>
     </body>
 </html>

@@ -307,6 +307,8 @@ final class EnvironmentFileWriter
 
     private function atomicWrite(string $path, string $contents): void
     {
+        clearstatcache(false, $path);
+        $modifiedAt = PHP_SAPI === 'cli-server' && is_file($path) ? filemtime($path) : false;
         $directory = dirname($path);
         $temporaryPath = tempnam($directory, '.siem-env-');
 
@@ -346,6 +348,14 @@ final class EnvironmentFileWriter
             }
 
             @chmod($temporaryPath, 0600);
+
+            // artisan serve restarts PHP when .env's mtime advances, killing
+            // the installer request mid-migration. Only for HTTP writes on
+            // PHP's development server, keep its watcher timestamp stable.
+            // Each subsequent request still loads the newly written values.
+            if ($modifiedAt !== false && ! @touch($temporaryPath, $modifiedAt)) {
+                throw new RuntimeException('Timestamp .env tidak dapat dipertahankan selama instalasi.');
+            }
 
             if (! @rename($temporaryPath, $path)) {
                 throw new RuntimeException('Penggantian .env secara atomik gagal.');

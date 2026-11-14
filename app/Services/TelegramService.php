@@ -23,10 +23,9 @@ class TelegramService
 
     public function __construct()
     {
-        $this->botToken = trim((string) Configuration::get(
-            'telegram_bot_token',
-            config('services.telegram.bot_token', ''),
-        ));
+        // Installer checks run before the configurations table exists.
+        // Saved credentials are resolved by sendMessage/sendPhoto at call time.
+        $this->botToken = trim((string) config('services.telegram.bot_token', ''));
 
         $this->maxAttempts = max(1, min(
             4,
@@ -80,6 +79,26 @@ class TelegramService
                 'parse_mode' => 'HTML',
             ],
         ]);
+    }
+
+    /** Check credentials and chat access without sending any messages. */
+    public function testConfiguration(string $token, array $chatIds): array
+    {
+        $result = $this->requestBotApi(trim($token), 'getMe', []);
+        if (! $result['success']) {
+            return $result;
+        }
+
+        foreach ($chatIds as $chatId) {
+            $result = $this->requestBotApi(trim($token), 'getChat', [
+                'json' => ['chat_id' => trim((string) $chatId)],
+            ]);
+            if (! $result['success']) {
+                return $result;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -152,23 +171,70 @@ class TelegramService
      */
     protected function requestBotApi(string $token, string $method, array $options): array
     {
+        $formatFallback = false;
+        $sendsMessage = in_array($method, ['sendMessage', 'sendPhoto'], true);
+        $dnsFallbackIndex = 0;
         for ($attempt = 1; $attempt <= $this->maxAttempts; $attempt++) {
             try {
                 $response = $this->client->post("/bot{$token}/{$method}", $options);
                 $status = $response->getStatusCode();
                 $body = json_decode((string) $response->getBody(), true);
-                $success = is_array($body) && ($body['ok'] ?? false) === true;
+                $success = $status >= 200 && $status < 300
+                    && is_array($body) && ($body['ok'] ?? false) === true;
+
+                if ($success) {
+                    if (defined('CURLOPT_DOH_URL') && isset($options['curl'][CURLOPT_DOH_URL])) {
+                        Log::info('[Telegram] Connected using HTTPS DNS fallback', ['operation' => $method, 'attempt' => $attempt]);
+                    }
+
+                    return [
+                        'success' => true, 'status' => $status, 'error' => null,
+                        'error_type' => null, 'attempts' => $attempt, 'format_fallback' => $formatFallback,
+                    ];
+                }
+
+                $rejected = is_array($body) && ($body['ok'] ?? null) === false;
+                $apiCode = $rejected ? (int) ($body['error_code'] ?? 0) : 0;
+                $status = $apiCode >= 400 && $apiCode <= 599 ? $apiCode : ($status >= 400 ? $status : 502);
+                $description = is_string($body['description'] ?? null) ? $body['description'] : '';
+                $retryAfter = max(0, (int) ($body['parameters']['retry_after'] ?? 0));
+
+                // Explicit rejection guarantees this attempt did not deliver a message.
+                if ($rejected && $status === 400 && $method === 'sendMessage'
+                    && isset($options['json']['parse_mode'])
+                    && preg_match('/parse entities|unsupported start tag|can.t find end tag/i', $description)
+                    && $attempt < $this->maxAttempts
+                ) {
+                    unset($options['json']['parse_mode']);
+                    $formatFallback = true;
+
+                    continue;
+                }
+
+                if ($rejected && $status === 429 && $retryAfter > 0 && $retryAfter <= 2
+                    && $attempt < $this->maxAttempts
+                ) {
+                    usleep($retryAfter * 1000000);
+
+                    continue;
+                }
+
+                Log::warning('[Telegram] Bot API rejected or did not confirm request', [
+                    'operation' => $method, 'status' => $status, 'attempt' => $attempt,
+                    'error_type' => self::apiErrorType($status), 'retry_after' => $retryAfter,
+                ]);
 
                 return [
-                    'success' => $success,
+                    'success' => false,
                     'status' => $status,
-                    'error' => $success
-                        ? null
-                        : self::apiErrorMessage(
-                            $status,
-                            is_array($body) ? ($body['description'] ?? null) : null,
-                        ),
-                    'error_type' => $success ? null : self::apiErrorType($status),
+                    'error' => $sendsMessage && ! $rejected && $status >= 500
+                        ? 'Telegram belum mengonfirmasi pengiriman. Periksa chat tujuan sebelum mengirim ulang agar pesan tidak ganda.'
+                        : ($status === 429 && $retryAfter > 0
+                            ? "Telegram membatasi permintaan. Tunggu {$retryAfter} detik sebelum mencoba kembali."
+                            : self::apiErrorMessage($status, $description)),
+                    'error_type' => self::apiErrorType($status),
+                    'retry_after' => $retryAfter,
+                    'delivery_unknown' => $sendsMessage && ! $rejected && $status >= 500,
                     'attempts' => $attempt,
                 ];
             } catch (ConnectException $exception) {
@@ -187,6 +253,9 @@ class TelegramService
                 );
 
                 if ($willRetry) {
+                    if ($errno === 6 || ($errno === 28 && blank($context['primary_ip'] ?? null))) {
+                        $options = $this->withDnsFallback($options, $dnsFallbackIndex++);
+                    }
                     $this->pauseBeforeRetry($attempt);
 
                     continue;
@@ -195,8 +264,11 @@ class TelegramService
                 return [
                     'success' => false,
                     'status' => 0,
-                    'error' => self::connectionErrorMessage($errno),
+                    'error' => $sendsMessage && ! self::safeToRetryPost($errno, $context) && in_array($errno, [0, 28], true)
+                        ? 'Respons Telegram terputus setelah koneksi dimulai. Periksa chat tujuan sebelum mengirim ulang agar pesan tidak ganda.'
+                        : self::connectionErrorMessage($errno),
                     'error_type' => self::connectionErrorType($errno),
+                    'delivery_unknown' => $sendsMessage && ! self::safeToRetryPost($errno, $context) && in_array($errno, [0, 28], true),
                     'attempts' => $attempt,
                 ];
             } catch (RequestException $exception) {
@@ -262,6 +334,40 @@ class TelegramService
             && (float) ($context['size_upload'] ?? 0) <= 0.0;
     }
 
+    /** Use encrypted DNS only after a confirmed lookup failure, without changing the API hostname. */
+    private function withDnsFallback(array $options, int $index): array
+    {
+        if (! config('services.telegram.dns_fallback', true)
+            || ! defined('CURLOPT_DOH_URL')
+            || ! defined('CURLOPT_DOH_SSL_VERIFYHOST')
+            || ! defined('CURLOPT_DOH_SSL_VERIFYPEER')
+        ) {
+            return $options;
+        }
+
+        $base = (string) $this->client->getConfig('base_uri');
+        if (parse_url($base, PHP_URL_SCHEME) !== 'https'
+            || strtolower((string) parse_url($base, PHP_URL_HOST)) !== 'api.telegram.org'
+        ) {
+            return $options;
+        }
+
+        $resolvers = config('services.telegram.doh_resolvers', ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query']);
+        $resolver = $resolvers[$index] ?? null;
+        if (! is_string($resolver) || ! filter_var($resolver, FILTER_VALIDATE_URL)
+            || parse_url($resolver, PHP_URL_SCHEME) !== 'https'
+            || parse_url($resolver, PHP_URL_USER) !== null || parse_url($resolver, PHP_URL_PASS) !== null
+        ) {
+            return $options;
+        }
+
+        $options['curl'][CURLOPT_DOH_URL] = $resolver;
+        $options['curl'][CURLOPT_DOH_SSL_VERIFYPEER] = true;
+        $options['curl'][CURLOPT_DOH_SSL_VERIFYHOST] = 2;
+
+        return $options;
+    }
+
     private function pauseBeforeRetry(int $attempt): void
     {
         $delayMs = $this->retryDelaysMs[$attempt - 1]
@@ -309,7 +415,7 @@ class TelegramService
         return match ($errno) {
             6 => 'DNS gagal menemukan api.telegram.org. Aplikasi sudah mencoba ulang, tetapi resolver masih tidak merespons.',
             7 => 'Alamat Telegram ditemukan, tetapi koneksi TCP ke port 443 gagal.',
-            28 => 'Koneksi Telegram melewati batas waktu setelah dicoba ulang.',
+            28 => 'Koneksi Telegram melewati batas waktu. Periksa jaringan server lalu coba kembali.',
             35, 60 => 'Validasi koneksi TLS Telegram gagal. Periksa sertifikat CA dan waktu sistem.',
             default => 'Tidak dapat menghubungi Telegram setelah beberapa percobaan. Periksa DNS dan koneksi internet server aplikasi.',
         };
@@ -331,13 +437,19 @@ class TelegramService
         $description = strtolower((string) $description);
 
         if ($status === 400 && str_contains($description, 'chat not found')) {
-            return 'Chat ID tidak ditemukan. Pastikan bot sudah ditambahkan ke grup tujuan.';
+            return 'Chat ID tidak ditemukan. Periksa ID tujuan, tambahkan bot ke grup/channel, atau kirim /start ke bot untuk chat pribadi.';
+        }
+        if ($status === 400 && str_contains($description, 'too long')) {
+            return 'Pesan terlalu panjang untuk Telegram. Ringkas pesan menjadi maksimal 4096 karakter.';
+        }
+        if ($status === 400 && str_contains($description, 'migrated')) {
+            return 'Grup telah berubah menjadi supergroup. Perbarui Chat ID tujuan di Pengaturan.';
         }
 
         return match ($status) {
             400 => 'Permintaan Telegram ditolak. Periksa Chat ID dan format pesan.',
             401, 404 => 'Bot token Telegram tidak valid.',
-            403 => 'Bot tidak memiliki akses ke chat tujuan. Tambahkan bot ke grup dan periksa izinnya.',
+            403 => 'Bot tidak memiliki akses ke chat tujuan. Pastikan bot tidak diblokir, kirim /start untuk chat pribadi, dan periksa izin kirim di grup/channel.',
             429 => 'Telegram membatasi permintaan. Tunggu beberapa saat lalu coba kembali.',
             default => $status >= 500
                 ? 'Layanan Telegram sedang mengalami gangguan. Coba kembali beberapa saat lagi.'
@@ -350,12 +462,17 @@ class TelegramService
      */
     public static function buildTemplate(array $alert, string $extraMessage = ''): string
     {
-        $rawData = is_array($alert['raw_data']) ? $alert['raw_data'] : [];
+        $rawData = is_array($alert['raw_data'] ?? null) ? $alert['raw_data'] : [];
         $data = $rawData['data'] ?? [];
         $syscheck = $rawData['syscheck'] ?? [];
-        $timestamp = isset($rawData['@timestamp'])
-            ? Carbon::parse($rawData['@timestamp'])->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s').' WIB'
-            : ($alert['first_seen_at'] ?? '-');
+        $timestamp = $alert['first_seen_at'] ?? '-';
+        try {
+            if (isset($rawData['@timestamp'])) {
+                $timestamp = Carbon::parse($rawData['@timestamp'])->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s').' WIB';
+            }
+        } catch (Throwable) {
+            // Invalid source timestamps must not prevent notification composition.
+        }
 
         $srcIp = $alert['src_ip'] ?? $data['srcip'] ?? '-';
         $dstIp = $alert['dst_ip'] ?? $data['dstip'] ?? '-';
@@ -365,6 +482,11 @@ class TelegramService
         $ruleLevel = $alert['rule_level'] ?? '-';
         $path = $syscheck['path'] ?? $data['path'] ?? '-';
         $dstUser = $data['dstuser'] ?? $data['win']['eventdata']['targetUserName'] ?? '-';
+
+        [$srcIp, $dstIp, $agentName, $ruleDesc, $ruleId, $ruleLevel, $path, $dstUser, $timestamp] = array_map(
+            static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            [$srcIp, $dstIp, $agentName, $ruleDesc, $ruleId, $ruleLevel, $path, $dstUser, $timestamp],
+        );
 
         $lines = [
             "🚨 <b>SOC Subang telah mendeteksi adanya {$ruleDesc}</b>",
@@ -380,7 +502,7 @@ class TelegramService
 
         if (! empty($extraMessage)) {
             $lines[] = '';
-            $lines[] = $extraMessage;
+            $lines[] = htmlspecialchars($extraMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         }
 
         return implode("\n", $lines);

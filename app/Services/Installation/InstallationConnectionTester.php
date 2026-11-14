@@ -3,6 +3,7 @@
 namespace App\Services\Installation;
 
 use App\Exceptions\InstallationException;
+use App\Services\TelegramService;
 use GuzzleHttp\Client;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
@@ -140,40 +141,9 @@ class InstallationConnectionTester
             throw new InstallationException('Token bot dan minimal satu Chat ID Telegram wajib diisi.');
         }
 
-        $client = new Client([
-            'base_uri' => rtrim((string) config('services.telegram.base_url', 'https://api.telegram.org'), '/'),
-            'connect_timeout' => 5,
-            'timeout' => 15,
-            'http_errors' => false,
-            'headers' => ['Accept' => 'application/json'],
-        ]);
-
-        try {
-            $this->assertTelegramResponse($client->get('/bot'.$token.'/getMe'));
-
-            foreach ($chatIds as $chatId) {
-                $this->assertTelegramResponse($client->post('/bot'.$token.'/getChat', [
-                    'form_params' => ['chat_id' => $chatId],
-                ]));
-            }
-        } catch (InstallationException $exception) {
-            throw $exception;
-        } catch (Throwable) {
-            throw new InstallationException(
-                'Tidak dapat memvalidasi Telegram. Periksa token, Chat ID, akses bot, DNS, TLS, dan jaringan.'
-            );
-        }
-    }
-
-    private function assertTelegramResponse(object $response): void
-    {
-        $body = json_decode((string) $response->getBody(), true);
-        if ($response->getStatusCode() < 200
-            || $response->getStatusCode() >= 300
-            || ! is_array($body)
-            || ($body['ok'] ?? false) !== true
-        ) {
-            throw new InstallationException('Telegram menolak token atau Chat ID. Pastikan bot telah ditambahkan ke tujuan.');
+        $result = app(TelegramService::class)->testConfiguration($token, $chatIds);
+        if (! $result['success']) {
+            throw new InstallationException($result['error']);
         }
     }
 

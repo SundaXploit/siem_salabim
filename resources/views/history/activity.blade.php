@@ -1,93 +1,57 @@
 @extends('layouts.app')
-
-@section('title', 'Log Aktivitas')
-@section('page-context', 'History')
-@section('page-title', 'Log Aktivitas')
-@section('page-subtitle', 'Semua tindakan triage oleh analist')
+@section('body-class', 'density-default history-page')
+@section('title', 'Log aktivitas')
+@section('page-context', 'Administration')
+@section('page-title', 'Log aktivitas')
+@section('page-subtitle', 'Riwayat akses akun, perubahan profil, dan aktivitas Settings · Khusus admin.')
 
 @section('content')
-
-<div class="card" style="margin-bottom:1rem;">
+<div class="card" style="margin-bottom:var(--spacing-16);">
     <div class="card-body">
         <form method="GET" action="{{ route('history.activity') }}">
             <div class="filter-bar">
+                <div style="flex:1; min-width:200px;">
+                    <label class="form-label" for="activity-search">Cari pelaku, objek, atau IP</label>
+                    <input id="activity-search" type="search" name="search" class="form-input" maxlength="200" value="{{ request('search') }}" placeholder="Cari aktivitas akun atau Settings…">
+                </div>
                 <div>
-                    <label class="form-label">Aksi</label>
-                    <select name="action" class="form-select" onchange="this.form.submit()">
-                        <option value="all" {{ request('action','all') === 'all' ? 'selected':'' }}>Semua Aksi</option>
-                        <option value="acknowledge" {{ request('action') === 'acknowledge' ? 'selected':'' }}>Acknowledge</option>
-                        <option value="ignore"      {{ request('action') === 'ignore' ? 'selected':'' }}>Ignore</option>
-                        <option value="notify"      {{ request('action') === 'notify' ? 'selected':'' }}>Notify</option>
+                    <label class="form-label" for="activity-action">Aktivitas</label>
+                    <select id="activity-action" name="action" class="form-select" onchange="this.form.requestSubmit()">
+                        <option value="all" @selected(request('action', 'all') === 'all')>Semua aktivitas</option>
+                        @foreach($actions as $value => $label)<option value="{{ $value }}" @selected(request('action') === $value)>{{ $label }}</option>@endforeach
                     </select>
                 </div>
-                <div>
-                    <label class="form-label">Dari</label>
-                    <input type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.submit()">
-                </div>
-                <div>
-                    <label class="form-label">Sampai</label>
-                    <input type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.submit()">
-                </div>
-                <div class="flex gap-2 items-center">
-                    <button type="submit" class="btn btn-primary">Filter</button>
-                    <a href="{{ route('history.activity') }}" class="btn btn-ghost">Reset</a>
-                </div>
+                <div><label class="form-label" for="activity-from">Dari (WIB)</label><input id="activity-from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}"></div>
+                <div><label class="form-label" for="activity-to">Sampai (WIB)</label><input id="activity-to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}"></div>
+                <div class="flex gap-2 items-center"><button type="submit" class="btn btn-primary">Filter</button><a href="{{ route('history.activity') }}" class="btn btn-ghost">Reset</a></div>
             </div>
         </form>
     </div>
 </div>
-
 <div class="card">
-    <div class="card-header">
-        <span class="card-title">{{ $triages->total() }} aktivitas tercatat</span>
-    </div>
+    <div class="card-header"><span class="card-title">{{ $logs->total() }} aktivitas tercatat</span><span class="text-muted text-xs">Terbaru lebih dulu · WIB</span></div>
     <div style="overflow-x:auto;">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Alert</th>
-                    <th>Analis</th>
-                    <th>Aksi</th>
-                    <th>Alasan / Catatan</th>
-                    <th>Waktu</th>
-                </tr>
-            </thead>
+        <table class="data-table" data-activity-log>
+            <thead><tr><th scope="col">Pelaku</th><th scope="col">Aktivitas</th><th scope="col">Objek / keterangan</th><th scope="col">Hasil</th><th scope="col">IP</th><th scope="col">Waktu (WIB)</th></tr></thead>
             <tbody>
-                @forelse($triages as $triage)
-                <tr>
-                    <td>
-                        @if($triage->alert)
-                        <a href="{{ route('alerts.show', $triage->alert) }}" style="color:var(--accent);">
-                            #{{ $triage->alert_id }}
-                            <div class="truncate-cell text-muted" style="font-size:0.72rem;">{{ $triage->alert->rule_description }}</div>
-                        </a>
-                        @else
-                        #{{ $triage->alert_id }}
-                        @endif
+                @forelse($logs as $log)
+                <tr data-activity-action="{{ $log->action }}">
+                    <td><strong>{{ $log->actor_name }}</strong><div class="text-muted text-xs">{{ $log->actor_role }}</div></td>
+                    <td>{{ $log->action_label }}</td>
+                    <td style="min-width:180px; max-width:360px;">
+                        <span>{{ $log->subject ?? '—' }}</span>
+                        @if(!empty($log->context['fields']))<div class="text-muted text-xs" style="overflow-wrap:anywhere;">Bidang formulir: {{ implode(', ', $log->context['fields']) }}</div>@endif
                     </td>
-                    <td style="font-weight:600;">{{ $triage->user->name ?? 'Unknown' }}</td>
-                    <td>
-                        <span class="badge {{ $triage->action === 'ignore' ? 'badge-ignored' : ($triage->action === 'acknowledge' ? 'badge-acknowledged' : 'badge-new') }}">
-                            {{ strtoupper($triage->action) }}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="truncate-cell" style="max-width:250px;" title="{{ $triage->reason }}">
-                            {{ $triage->reason ?? '-' }}
-                        </div>
-                    </td>
-                    <td style="font-size:0.72rem; white-space:nowrap;">
-                        {{ $triage->created_at?->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '-' }}
-                    </td>
+                    <td><span class="badge {{ $log->result === 'success' ? 'badge-sent' : 'badge-failed' }}">{{ $log->result === 'success' ? 'BERHASIL' : 'GAGAL' }}</span></td>
+                    <td class="font-technical text-xs">{{ $log->ip_address ?? '—' }}</td>
+                    <td class="text-xs" style="white-space:nowrap;">{{ $log->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '—' }}</td>
                 </tr>
                 @empty
-                <tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--text-muted);">Belum ada aktivitas tercatat</td></tr>
+                <tr><td colspan="6" class="text-muted" style="text-align:center; padding:var(--spacing-48);">Belum ada aktivitas yang sesuai filter. Pencatatan dimulai setelah pembaruan fitur ini.</td></tr>
                 @endforelse
             </tbody>
         </table>
     </div>
-    @if($triages->hasPages())
-    <div style="padding:1rem; border-top:1px solid var(--border);">{{ $triages->links('pagination::bootstrap-5') }}</div>
-    @endif
+    @if($logs->hasPages())<div style="padding:var(--spacing-16); border-top:1px solid var(--border);">{{ $logs->links('pagination::bootstrap-5') }}</div>@endif
 </div>
 @endsection

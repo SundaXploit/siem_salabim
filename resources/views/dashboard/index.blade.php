@@ -1,4 +1,5 @@
 @extends('layouts.app')
+@section('body-class', 'density-dense live-alerts-page')
 
 @section('title', 'Live Alerts')
 @section('page-context', 'Incident Queue')
@@ -6,14 +7,8 @@
 @section('page-subtitle', 'Real-time monitoring · Auto-refresh tiap 30 detik')
 
 @php
-    $chatIds = \App\Models\Configuration::getTelegramChatIds();
     $canTriage = auth()->user()?->isAdmin() || auth()->user()?->isAnalyst();
 @endphp
-
-{{-- Expose chat IDs as a safe global JS var (avoids double-quote breaking x-data HTML attr) --}}
-@push('scripts')
-<script>window.__siemChatIds = {!! \Illuminate\Support\Js::from($chatIds) !!};</script>
-@endpush
 
 @section('content')
 
@@ -43,22 +38,22 @@
 </div>
 
 {{-- Filter Bar --}}
-<div class="card mb-3" style="margin-bottom: 1rem;">
+<div class="card mb-3" style="margin-bottom: var(--spacing-16);">
     <div class="card-body">
         <form method="GET" action="{{ route('alerts.index') }}" id="filterForm"
             x-data="liveAlertFilters()" @submit.prevent="submitFilters($el)">
             <div class="filter-bar">
                 <div style="flex:1; min-width:200px;">
-                    <label class="form-label">Cari event</label>
-                    <input type="text" name="search" class="form-input search-input"
+                    <label class="form-label" for="dashboard-index-search">Cari event</label>
+                    <input id="dashboard-index-search" type="text" name="search" class="form-input search-input"
                         placeholder="Cari ID, rule, IP, agent, atau isi event..."
                         autocomplete="off"
                         @input.debounce.700ms="submitSearch($el)"
                         value="{{ request('search') }}">
                 </div>
                 <div>
-                    <label class="form-label">Status</label>
-                    <select name="status" class="form-select" onchange="this.form.requestSubmit()">
+                    <label class="form-label" for="dashboard-index-status">Status</label>
+                    <select id="dashboard-index-status" name="status" class="form-select" onchange="this.form.requestSubmit()">
                         <option value="">Active (Non-Ignored)</option>
                         <option value="new"          {{ request('status') === 'new'          ? 'selected' : '' }}>NEW</option>
                         <option value="acknowledged" {{ request('status') === 'acknowledged' ? 'selected' : '' }}>ACKNOWLEDGED</option>
@@ -67,8 +62,8 @@
                     </select>
                 </div>
                 <div>
-                    <label class="form-label">Min Level</label>
-                    <select name="level" class="form-select" onchange="this.form.requestSubmit()">
+                    <label class="form-label" for="dashboard-index-level">Min Level</label>
+                    <select id="dashboard-index-level" name="level" class="form-select" onchange="this.form.requestSubmit()">
                         <option value="">Semua Level</option>
                         <option value="12" {{ request('level') == 12 ? 'selected' : '' }}>≥ 12</option>
                         <option value="13" {{ request('level') == 13 ? 'selected' : '' }}>≥ 13</option>
@@ -77,14 +72,14 @@
                     </select>
                 </div>
                 <div>
-                    <label class="form-label">Dari Tanggal</label>
-                    <input type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.requestSubmit()">
+                    <label class="form-label" for="dashboard-index-date_from">Dari Tanggal</label>
+                    <input id="dashboard-index-date_from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.requestSubmit()">
                 </div>
                 <div>
-                    <label class="form-label">Sampai</label>
-                    <input type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.requestSubmit()">
+                    <label class="form-label" for="dashboard-index-date_to">Sampai</label>
+                    <input id="dashboard-index-date_to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.requestSubmit()">
                 </div>
-                <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+                <div style="display:flex; gap:var(--spacing-8); align-items:flex-end;">
                     <button type="submit" class="btn btn-primary">Filter</button>
                     <a href="{{ route('alerts.index') }}" class="btn btn-ghost">Reset</a>
                 </div>
@@ -104,8 +99,8 @@
 {{-- Alert Table --}}
 <div class="card" x-data="alertTable(@js(route('alerts.bulk-triage', [], false)))">
     <div class="card-header">
-        <span class="card-title"><i data-lucide="inbox" aria-hidden="true"></i> Daftar alert</span>
-        <span class="text-muted text-sm" style="margin-left:0.5rem;" id="alert-total-count">
+        <span class="card-title">Daftar alert</span>
+        <span class="text-muted text-sm" style="margin-left:var(--spacing-8);" id="alert-total-count">
             {{ $alerts->total() }} alert ditemukan
         </span>
         <div class="ml-auto flex gap-2 items-center">
@@ -129,14 +124,23 @@
         <div class="bulk-triage-actions">
             <button type="button" class="btn btn-ghost btn-sm" @click="cancelBulkMode()"
                     :disabled="submitting">Batal triage</button>
+            <form method="GET" action="{{ route('alerts.bulk-detail') }}">
+                <template x-for="id in selectedIds" :key="id"><input type="hidden" name="alert_ids[]" :value="id"></template>
+                <button type="submit" class="btn btn-secondary btn-sm" :disabled="!selectedIds.length || submitting || isRefreshing" data-bulk-detail>
+                    <i data-lucide="eye" aria-hidden="true"></i> Detail & analisis
+                </button>
+            </form>
+            @can('alerts.acknowledge')
             <button type="button" class="btn btn-primary btn-sm" @click="openBulk('acknowledge')"
-                    :disabled="!selectedIds.length || submitting || isRefreshing">
-                <i data-lucide="check" aria-hidden="true"></i> ACK massal
+                    :disabled="!selectedIds.length || submitting || isRefreshing">ACK massal
             </button>
+            @endcan
+            @can('alerts.ignore')
             <button type="button" class="btn btn-danger btn-sm" @click="openBulk('ignore')"
                     :disabled="!selectedIds.length || submitting || isRefreshing">
                 <i data-lucide="x" aria-hidden="true"></i> Abaikan massal
             </button>
+            @endcan
         </div>
     </div>
     <p class="bulk-triage-feedback" x-show="bulkMessage" x-text="bulkMessage" role="status" x-cloak></p>
@@ -173,21 +177,23 @@
             <thead>
                 <tr>
                     @if($canTriage)
-                    <th class="triage-checkbox-cell" x-show="bulkMode" x-cloak>
-                        <input type="checkbox" class="triage-checkbox" aria-label="Pilih semua alert yang dapat ditangani pada halaman ini"
-                               :checked="allSelected" x-effect="$el.indeterminate = selectedIds.length > 0 && !allSelected"
-                               @change="toggleAll($event.target.checked)" :disabled="!pageIds.length || submitting || isRefreshing">
+                    <th scope="col" class="triage-checkbox-cell" x-show="bulkMode" x-cloak>
+                        <label class="triage-check-target">
+                            <input type="checkbox" class="triage-checkbox" aria-label="Pilih semua alert yang dapat ditangani pada halaman ini"
+                                   :checked="allSelected" x-effect="$el.indeterminate = selectedIds.length > 0 && !allSelected"
+                                   @change="toggleAll($event.target.checked)" :disabled="!pageIds.length || submitting || isRefreshing">
+                        </label>
                     </th>
                     @endif
-                    <th>Rule Description</th>
-                    <th>Source IP</th>
-                    <th>Dest IP</th>
-                    <th>Agent</th>
-                    <th>Rule ID</th>
-                    <th>Level</th>
-                    <th>Waktu</th>
-                    <th>Status</th>
-                    <th>Aksi</th>
+                    <th scope="col">Rule Description</th>
+                    <th scope="col">Source IP</th>
+                    <th scope="col">Dest IP</th>
+                    <th scope="col">Agent</th>
+                    <th scope="col">Rule ID</th>
+                    <th scope="col">Level</th>
+                    <th scope="col">Waktu</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Aksi</th>
                 </tr>
             </thead>
             <tbody>
@@ -196,34 +202,34 @@
                     :class="{ 'triage-selected': selectedIds.includes('{{ $alert->id }}') }">
                     @if($canTriage)
                     <td class="triage-checkbox-cell" x-show="bulkMode" x-cloak>
-                        <input type="checkbox" class="triage-checkbox" value="{{ $alert->id }}" aria-label="Pilih alert #{{ $alert->id }}"
+                        <label class="triage-check-target"><input type="checkbox" class="triage-checkbox" value="{{ $alert->id }}" aria-label="Pilih alert #{{ $alert->id }}"
                                @if($alert->status === 'ignored')
                                    disabled title="Alert sudah diabaikan"
                                @else
                                    data-triage-id="{{ $alert->id }}" x-model="selectedIds"
                                    :disabled="submitting || isRefreshing"
-                               @endif>
+                               @endif></label>
                     </td>
                     @endif
                     <td>
-                        <a href="{{ route('alerts.show', $alert) }}" style="color: var(--text-primary); text-decoration:none; font-weight:500;" title="{{ $alert->rule_description }}">
+                        <a href="{{ route('alerts.show', $alert) }}" style="color: var(--text-primary); text-decoration:none; font-weight:var(--font-weight-bold);" title="{{ $alert->rule_description }}">
                             <div class="truncate-cell">{{ $alert->rule_description ?? '-' }}</div>
                         </a>
                     </td>
-                    <td style="font-family:monospace; font-size:0.75rem; color:var(--info);">{{ $alert->src_ip ?? '-' }}</td>
-                    <td style="font-family:monospace; font-size:0.75rem; color:var(--warning);">{{ $alert->dst_ip ?? '-' }}</td>
+                    <td style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--info); line-height:var(--leading-xs);">{{ $alert->src_ip ?? '-' }}</td>
+                    <td style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--warning); line-height:var(--leading-xs);">{{ $alert->dst_ip ?? '-' }}</td>
                     <td>{{ $alert->agent_name ?? '-' }}</td>
-                    <td style="font-family:monospace; font-size:0.75rem;">{{ $alert->rule_id ?? '-' }}</td>
+                    <td style="font-family:var(--font-mono); font-size:var(--text-xs); line-height:var(--leading-xs);">{{ $alert->rule_id ?? '-' }}</td>
                     <td>
-                        <span class="table-level" aria-label="Rule level {{ $alert->rule_level }}">
+                        <span class="table-level {{ $alert->level_badge_class }}" aria-label="Rule level {{ $alert->rule_level }}">
                             {{ $alert->rule_level }}
                         </span>
                     </td>
-                    <td style="font-size:0.72rem; white-space:nowrap;">
+                    <td style="font-size:var(--text-xs); white-space:nowrap; line-height:var(--leading-xs);">
                         {{ $alert->first_seen_at ? $alert->first_seen_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') : '-' }}
                     </td>
                     <td>
-                        <span class="table-status">{{ $alert->status_label }}</span>
+                        <span class="table-status {{ $alert->status_badge_class }}">{{ $alert->status_label }}</span>
                     </td>
                     <td>
                         {{-- ══════ Per-row Alpine component ══════ --}}
@@ -231,7 +237,7 @@
                              x-data="notifModal({{ $alert->id }})">
 
                             {{-- ACK --}}
-                            @if($alert->status === 'new')
+                            @if($alert->status === 'new' && auth()->user()->can('acknowledge', $alert))
                             <form method="POST" action="{{ route('alerts.acknowledge', $alert) }}" style="display:inline;">
                                 @csrf
                                 <button type="submit" class="table-action" title="Acknowledge alert" aria-label="Acknowledge alert"><i data-lucide="check" aria-hidden="true"></i></button>
@@ -239,7 +245,7 @@
                             @endif
 
                             {{-- IGNORE --}}
-                            @if($alert->status !== 'ignored')
+                            @if($alert->status !== 'ignored' && auth()->user()->can('ignore', $alert))
                             <button type="button" class="table-action" @click="showIgnoreModal=true" title="Abaikan alert" aria-label="Abaikan alert"><i data-lucide="x" aria-hidden="true"></i></button>
 
                             <div class="modal-backdrop" x-show="showIgnoreModal" x-cloak @click.self="showIgnoreModal=false" @keydown.escape.window="showIgnoreModal=false" role="dialog" aria-modal="true" aria-label="Abaikan alert">
@@ -263,6 +269,7 @@
                             @endif
 
                             {{-- NOTIF Button --}}
+                            @can('notify', $alert)
                             <button type="button" class="table-action"
                                     @click="openNotifModal()"
                                     title="Kirim notifikasi" aria-label="Kirim notifikasi">
@@ -275,44 +282,35 @@
                                     <div class="modal-title"><i data-lucide="send" aria-hidden="true"></i> Kirim notifikasi — alert #{{ $alert->id }}</div>
 
                                     {{-- Loading --}}
-                                    <div x-show="loading" style="text-align:center; padding:2rem; color:var(--text-muted);">
+                                    <div x-show="loading" style="text-align:center; padding:var(--spacing-32); color:var(--text-muted);">
                                         <i class="loading-state-icon" data-lucide="clock-3" aria-hidden="true"></i>
                                         Memuat template...
                                     </div>
 
                                     <form method="POST" action="{{ route('alerts.notify', $alert) }}" x-show="!loading" enctype="multipart/form-data">
                                         @csrf
+                    <div class="form-group">
+                        <span class="form-label">Tujuan otomatis</span>
+                        <p class="text-sm" x-show="destinations.length" x-text="destinations.join(', ')"></p>
+                        <p class="form-error" x-show="!destinations.length" x-text="notificationError || 'Belum ada tujuan untuk agent ini. Hubungi admin untuk mengatur Settings → Telegram.'"></p>
+                    </div>
 
-                                        {{-- ── Chat ID dari config ── --}}
-                                        <div class="form-group">
-                                            <label class="form-label">Kirim ke (Chat ID)</label>
-                                            <select name="chat_id" class="form-select" required>
-                                                <option value="">-- Pilih Chat ID --</option>
-                                                <template x-for="cid in chatIds" :key="cid">
-                                                    <option :value="cid" x-text="cid"></option>
-                                                </template>
-                                            </select>
-                                            <div x-show="chatIds.length === 0" style="color:var(--danger); font-size:0.75rem; margin-top:0.3rem;">
-                                                Belum ada Chat ID dikonfigurasi. Tambah di
-                                                <a href="{{ route('settings.index') }}" style="color:var(--accent);">Settings → Telegram</a>
-                                            </div>
-                                        </div>
 
                                         {{-- ── Template Selector ── --}}
                                         <div class="form-group">
                                             <label class="form-label">Pilih template</label>
-                                            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:0.5rem;">
+                                            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:var(--spacing-8);">
                                                 <template x-for="tpl in templates" :key="tpl.id">
                                                     <button type="button"
                                                         class="btn btn-ghost btn-sm"
                                                         :class="selectedTplId === tpl.id ? 'active-template' : ''"
                                                         :style="selectedTplId === tpl.id
-                                                            ? 'border-color:var(--accent); background:rgba(59,130,246,0.15); color:var(--accent);'
+                                                            ? 'border-color:var(--accent); background:var(--color-accent-soft); color:var(--accent);'
                                                             : ''"
                                                         @click="selectTemplate(tpl)"
-                                                        style="justify-content:flex-start; text-align:left; white-space:normal; height:auto; padding:0.5rem 0.75rem; line-height:1.3;">
+                                                        style="justify-content:flex-start; text-align:left; white-space:normal; height:auto; padding:var(--spacing-8) var(--spacing-12); line-height:var(--ina-line-height-body-small);">
                                                         <span x-text="tpl.name"
-                                                              style="font-size:0.78rem;"></span>
+                                                              style="font-size:var(--text-sm);line-height:var(--leading-sm);"></span>
                                                     </button>
                                                 </template>
                                             </div>
@@ -322,33 +320,33 @@
                                         <div class="form-group">
                                             <label class="form-label" style="display:flex; justify-content:space-between;">
                                                 <span>Pesan (dapat diedit bebas)</span>
-                                                <span style="font-size:0.7rem; color:var(--text-muted);" x-text="message.length + ' karakter'"></span>
+                                                <span style="font-size:var(--text-xs); color:var(--text-muted); line-height:var(--leading-xs);" x-text="message.length + ' karakter'"></span>
                                             </label>
                                             <textarea name="message" class="form-textarea"
                                                       rows="16"
                                                       x-model="message"
                                                       placeholder="Pilih template di atas, lalu edit sesuai kebutuhan..."
-                                                      required style="font-size:0.78rem; line-height:1.5;"></textarea>
-                                            <div class="text-muted text-sm" style="margin-top:0.3rem;">
+                                                      required style="font-size:var(--text-sm); line-height:var(--leading-sm);"></textarea>
+                                            <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">
                                                 Mendukung HTML tag Telegram: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a href&gt;
                                             </div>
                                         </div>
 
                                         {{-- ── Evidence Area ── --}}
-                                        <div class="form-group" style="margin-top:-0.5rem; margin-bottom:1.5rem;">
+                                        <div class="form-group" style="margin-top:calc(-1 * var(--spacing-8)); margin-bottom:var(--spacing-24);">
                                             <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
                                                 <span>Lampirkan evidence (opsional)</span>
                                                 <button type="button" class="btn btn-ghost btn-sm" @click="addEvidence()" style="color:var(--accent);">+ Tambah</button>
                                             </label>
-                                            <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                                            <div style="display:flex; flex-direction:column; gap:var(--spacing-8);">
                                                 <template x-for="(ev, index) in evidences" :key="ev.id">
-                                                    <div style="display:flex; gap:0.5rem; align-items:center;">
-                                                        <input type="file" name="evidence[]" class="form-input" style="padding:0.4rem; background:var(--bg-body); border-style:dashed; flex:1;" accept="image/*">
+                                                    <div style="display:flex; gap:var(--spacing-8); align-items:center;">
+                                                        <input type="file" name="evidence[]" class="form-input" style="padding:var(--spacing-8); background:var(--bg-body); border-style:dashed; flex:1;" accept="image/*">
                                                         <button type="button" class="btn btn-danger btn-sm" x-show="evidences.length > 1" @click="removeEvidence(index)" title="Hapus" aria-label="Hapus evidence"><i data-lucide="x" aria-hidden="true"></i></button>
                                                     </div>
                                                 </template>
                                             </div>
-                                            <div class="text-muted text-sm" style="margin-top:0.3rem;">
+                                            <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">
                                                 Gambar akan dikirim secara berurutan setelah pesan notifikasi.
                                             </div>
                                         </div>
@@ -356,8 +354,7 @@
                                         <div class="flex gap-2" style="justify-content:flex-end;">
                                             <button type="button" class="btn btn-ghost" @click="showNotifModal=false">Batal</button>
                                             <button type="submit" class="btn btn-primary"
-                                                    :disabled="chatIds.length === 0">
-                                                <i data-lucide="send" aria-hidden="true"></i> Kirim ke Telegram
+                                                    :disabled="destinations.length === 0 || loading">Kirim ke Telegram
                                             </button>
                                         </div>
                                     </form>
@@ -365,13 +362,14 @@
                             </div>
 
                             {{-- Detail --}}
+                            @endcan
                             <a href="{{ route('alerts.show', $alert) }}" class="table-action" title="Lihat detail alert" aria-label="Lihat detail alert"><i data-lucide="eye" aria-hidden="true"></i></a>
                         </div>
                     </td>
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="9" :colspan="{{ $canTriage ? 'bulkMode ? 10 : 9' : '9' }}" style="text-align:center; padding:3rem; color:var(--text-muted);">
+                    <td colspan="9" :colspan="{{ $canTriage ? 'bulkMode ? 10 : 9' : '9' }}" style="text-align:center; padding:var(--spacing-48); color:var(--text-muted);">
                         <div class="empty-state"><i data-lucide="circle-check" aria-hidden="true"></i></div>
                         Tidak ada alert yang cocok dengan filter saat ini.
                     </td>
@@ -382,7 +380,7 @@
         </div>
 
         @if($alerts->hasPages())
-        <div style="padding:1rem 1.25rem; border-top:1px solid var(--border);">
+        <div style="padding:var(--spacing-16) var(--spacing-24); border-top:1px solid var(--border);">
             {{ $alerts->links('pagination::bootstrap-5') }}
         </div>
         @endif
@@ -402,7 +400,9 @@ function alertStats() {
             ignored: {{ $stats['ignored'] }},
             total:   {{ $stats['total'] }},
         },
-        init() { setInterval(() => this.fetchStats(), 30000); },
+        timer: null,
+        init() { this.timer = setInterval(() => this.fetchStats(), 30000); },
+        destroy() { clearInterval(this.timer); },
         async fetchStats() {
             try {
                 const res  = await fetch('/api/alerts/new-count');
@@ -440,15 +440,13 @@ function liveAlertFilters() {
 
 // ── Auto-refresh countdown ──────────────────────────────────────────
 // ── Notification modal per row ──────────────────────────────────────
-// chatIds dibaca dari window.__siemChatIds (di-set sekali di atas, HTML-safe)
 function notifModal(alertId) {
     return {
         showIgnoreModal: false,
         showNotifModal:  false,
         loading:         false,
-
-        // Read from window variable — avoids double-quote breaking x-data HTML attr
-        chatIds:      window.__siemChatIds || [],
+        destinations: [],
+        notificationError: '',
 
         templates:    [],
         selectedTplId: null,
@@ -458,28 +456,22 @@ function notifModal(alertId) {
         async openNotifModal() {
             this.showNotifModal = true;
 
-            // Fetch templates only once (lazy)
-            if (this.templates.length > 0) return;
-
+            this.destinations = [];
+            this.notificationError = '';
             this.loading = true;
             try {
                 const res  = await fetch(`/alerts/${alertId}/template`);
+                if (!res.ok || res.redirected) throw new Error('Tidak dapat memuat tujuan notifikasi.');
                 const data = await res.json();
 
                 this.templates = data.templates || [];
-
-                // Refresh chat IDs from server in case Settings changed since page load
-                if (data.chat_ids && data.chat_ids.length > 0) {
-                    this.chatIds = data.chat_ids;
-                    window.__siemChatIds = data.chat_ids;
-                }
-
-                // Auto-select first template
-                if (this.templates.length > 0) {
-                    this.selectTemplate(this.templates[0]);
+                this.destinations = data.destinations || [];
+                if (!this.message) {
+                    if (this.templates.length) this.selectTemplate(this.templates[0]);
+                    else this.message = data.default_message || '';
                 }
             } catch(e) {
-                console.error('notifModal: failed to load templates', e);
+                this.notificationError = 'Tujuan notifikasi belum dapat dimuat. Coba buka kembali.';
             }
             this.loading = false;
         },

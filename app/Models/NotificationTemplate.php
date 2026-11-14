@@ -45,7 +45,12 @@ class NotificationTemplate extends Model
             '{wazuh_id}'         => $alert->wazuh_alert_id  ?? '-',
         ];
 
-        return str_replace(array_keys($vars), array_values($vars), $this->body);
+        $vars = array_map(
+            static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            $vars,
+        );
+
+        return strtr($this->body, $vars);
     }
 
     // ─── Static helpers ───────────────────────────────────────────────────────

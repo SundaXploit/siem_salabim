@@ -15,13 +15,56 @@ use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Mockery\MockInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SettingsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public static function missingSettingsTables(): array
+    {
+        return [
+            'exports' => [['data_exports']],
+            'updates' => [['application_update_events', 'application_updates']],
+            'update events' => [['application_update_events']],
+            'both features' => [['data_exports', 'application_update_events', 'application_updates']],
+        ];
+    }
+
+    #[DataProvider('missingSettingsTables')]
+    public function test_settings_remains_accessible_when_feature_migrations_are_missing(array $tables): void
+    {
+        $admin = $this->makeAdmin();
+        foreach ($tables as $table) {
+            Schema::drop($table);
+        }
+
+        $this->actingAs($admin)
+            ->get(route('settings.index', ['section' => 'data']))
+            ->assertOk()
+            ->assertViewHas('dataExportsReady', ! in_array('data_exports', $tables, true));
+    }
+
+    public function test_backup_requests_are_rejected_when_the_export_table_is_missing(): void
+    {
+        $admin = $this->makeAdmin();
+        Schema::drop('data_exports');
+        Queue::fake();
+
+        foreach (['settings.data.backup', 'settings.data.backup-delete'] as $route) {
+            $this->actingAs($admin)
+                ->from(route('settings.index'))
+                ->post(route($route))
+                ->assertRedirect(route('settings.index'))
+                ->assertSessionHas('error', 'Backup belum tersedia. Jalankan migrasi database terlebih dahulu.');
+        }
+
+        Queue::assertNothingPushed();
+    }
 
     public function test_only_admin_can_open_settings(): void
     {
@@ -77,11 +120,12 @@ class SettingsTest extends TestCase
     public function test_only_admin_can_save_ai_configuration_and_the_key_is_encrypted(): void
     {
         $admin = $this->makeAdmin();
+        Configuration::set('min_alert_level', 12);
         $analyst = User::factory()->create(['role' => 'analyst']);
         $payload = [
             'ai_api_key' => 'test-secret-key',
-            'ai_base_url' => 'https://api.amanai.dev/v1',
-            'ai_model' => 'amanai/glm-5.3',
+            'ai_base_url' => 'https://ai.example.test/v1',
+            'ai_model' => 'test/glm-5.3',
             'ai_snapshot_limit' => 10000,
             'min_alert_level' => 12,
             'ai_refresh_days' => 10,
@@ -107,7 +151,7 @@ class SettingsTest extends TestCase
         $this->actingAs($admin)
             ->get(route('settings.index'))
             ->assertOk()
-            ->assertSee('Konfigurasi Analisis AI')
+            ->assertSee('Konfigurasi AI')
             ->assertDontSee('test-secret-key');
     }
 
@@ -197,6 +241,50 @@ class SettingsTest extends TestCase
             ['-100123', '-100456'],
             json_decode(Configuration::get('telegram_chat_ids'), true, 512, JSON_THROW_ON_ERROR),
         );
+    }
+
+    public function test_admin_can_check_the_bot_without_a_chat_id_or_sending_a_message(): void
+    {
+        Configuration::set('telegram_bot_token', 'saved-bot-token');
+        $this->mock(TelegramService::class, function (MockInterface $service): void {
+            $service->shouldReceive('testConfiguration')->once()->with('temporary-bot-token', [])
+                ->andReturn(['success' => true, 'status' => 200, 'error' => null]);
+            $service->shouldNotReceive('sendMessage');
+        });
+        $this->actingAs($this->makeAdmin())->postJson(route('settings.test.telegram'), [
+            'test_type' => 'bot', 'telegram_bot_token' => 'temporary-bot-token',
+        ])->assertOk()->assertJsonPath('success', true)->assertJsonStructure(['message']);
+        $this->assertSame('saved-bot-token', Configuration::get('telegram_bot_token'));
+    }
+
+    public function test_bot_connection_uses_the_saved_token_and_reports_invalid_credentials(): void
+    {
+        Configuration::set('telegram_bot_token', 'saved-bot-token');
+        $this->mock(TelegramService::class, function (MockInterface $service): void {
+            $service->shouldReceive('testConfiguration')->once()->with('saved-bot-token', [])
+                ->andReturn(['success' => false, 'status' => 401, 'error' => 'Bot token Telegram tidak valid.']);
+            $service->shouldNotReceive('sendMessage');
+        });
+        $this->actingAs($this->makeAdmin())->postJson(route('settings.test.telegram'), ['test_type' => 'bot'])
+            ->assertUnprocessable()->assertJsonPath('success', false)->assertJsonPath('error', 'Bot token Telegram tidak valid.');
+    }
+
+    public function test_telegram_rate_limit_returns_a_retry_hint_without_saving_temporary_credentials(): void
+    {
+        $admin = $this->makeAdmin();
+        Configuration::set('telegram_bot_token', 'saved-bot-token');
+        $this->mock(TelegramService::class, function (MockInterface $service): void {
+            $service->shouldReceive('sendMessage')->once()->andReturn([
+                'success' => false, 'status' => 429, 'retry_after' => 60,
+                'error' => 'Tunggu 60 detik.', 'error_type' => 'rate_limited',
+            ]);
+        });
+
+        $this->actingAs($admin)->postJson(route('settings.test.telegram'), [
+            'chat_id' => '-100123', 'telegram_bot_token' => 'temporary-bot-token',
+        ])->assertStatus(429)->assertHeader('Retry-After', '60')
+            ->assertJsonPath('success', false)->assertJsonPath('retry_after', 60);
+        $this->assertSame('saved-bot-token', Configuration::get('telegram_bot_token'));
     }
 
     public function test_admin_can_create_a_user_and_cannot_delete_own_account(): void
@@ -420,17 +508,18 @@ class SettingsTest extends TestCase
                 'date_to' => '2026-08-10',
             ]);
 
-        $response->assertRedirect(route('settings.index'));
+        $response->assertRedirect(route('settings.index', ['section' => 'data']));
 
         $export = DataExport::query()->sole();
         $this->assertSame('verified', $export->status);
         Storage::disk('local')->assertExists($export->storage_path);
         Storage::disk('local')->assertExists($export->manifest_path);
 
-        $response = $this->actingAs($admin)->get(route('settings.data.exports.download', $export));
+        $response = $this->actingAs($admin)->get($this->authorizedDownloadUrl($export));
         $response->assertOk()->assertDownload($export->filename)->assertStreamed();
 
-        $backup = json_decode($response->streamedContent(), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(Storage::disk('local')->get($export->storage_path), $response->streamedContent());
+        $backup = json_decode($this->readExportPayload($export), true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertSame(1, $backup['backup_info']['total_alerts']);
         $this->assertSame([$inside->id], array_column($backup['alerts'], 'id'));
@@ -456,7 +545,7 @@ class SettingsTest extends TestCase
                 'date_to' => '2026-08-10',
             ]);
 
-        $response->assertRedirect(route('settings.index'));
+        $response->assertRedirect(route('settings.index', ['section' => 'data']));
 
         $this->assertDatabaseHas('alerts', ['id' => $before->id]);
         $this->assertDatabaseHas('alerts', ['id' => $inside->id]);
@@ -478,7 +567,7 @@ class SettingsTest extends TestCase
     public function test_manual_fetch_queues_a_today_scan_without_contacting_opensearch(): void
     {
         $admin = $this->makeAdmin();
-        config(['queue.default' => 'database']);
+        config(['queue.default' => 'database', 'services.opensearch.host' => 'https://indexer.example.test:9200']);
         Queue::fake();
 
         $this->actingAs($admin)
@@ -520,9 +609,26 @@ class SettingsTest extends TestCase
             'legitimate_indicators' => [],
             'recommended_checks' => [],
             'limitations' => [],
-            'model' => 'amanai/glm-5.3',
+            'model' => 'test/glm-5.3',
             'duration_ms' => 500,
             'generated_at' => now(),
         ]);
+    }
+
+    private function authorizedDownloadUrl(DataExport $export): string
+    {
+        return $this->postJson(route('settings.data.exports.authorize-download', $export), ['current_password' => 'password'])
+            ->assertOk()->json('download_url');
+    }
+
+    private function readExportPayload(DataExport $export): string
+    {
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open(Storage::disk('local')->path($export->storage_path)));
+        $payload = $zip->getFromName('data.'.$export->format);
+        $zip->close();
+        $this->assertIsString($payload);
+
+        return $payload;
     }
 }

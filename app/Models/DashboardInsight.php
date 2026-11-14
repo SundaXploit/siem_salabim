@@ -9,6 +9,7 @@ class DashboardInsight extends Model
 {
     protected $fillable = [
         'period_key',
+        'access_scope',
         'period_start',
         'period_end',
         'status',

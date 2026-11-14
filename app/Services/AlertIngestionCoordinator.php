@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\FetchWazuhAlerts;
+use App\Models\Configuration;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -65,6 +66,12 @@ class AlertIngestionCoordinator
     private function requestFetch(string $mode, string $trigger): array
     {
         try {
+            if (blank(config('services.opensearch.host')) && blank(Configuration::get('opensearch_host'))) {
+                $this->mark('not_configured', $trigger, null, $mode);
+
+                return $this->status($mode);
+            }
+
             if (app(ApplicationUpdateRuntimeGuard::class)->isActive()) {
                 $this->mark('maintenance', $trigger, null, $mode);
 

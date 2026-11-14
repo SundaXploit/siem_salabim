@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -51,6 +52,10 @@ class ApplicationUpdateController extends Controller
         QueueExecutionPolicy $queuePolicy,
     ): RedirectResponse {
         $this->assertAdmin($request);
+
+        if (! Schema::hasTable('application_updates') || ! Schema::hasTable('application_update_events')) {
+            return back()->with('error', 'Update belum tersedia. Jalankan migrasi database terlebih dahulu.');
+        }
 
         $data = $request->validate([
             'target_version' => ['required', 'string', 'regex:/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/D'],

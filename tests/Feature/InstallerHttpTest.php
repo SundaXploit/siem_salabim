@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\Installation\EnvironmentFileWriter;
 use App\Services\Installation\InstallationState;
 use App\Services\Installation\Installer;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class InstallerHttpTest extends TestCase
@@ -163,6 +164,92 @@ class InstallerHttpTest extends TestCase
         $this->app->instance(InstallationState::class, $legacyState);
 
         $this->get(route('install.index'))->assertRedirect(route('install.complete'));
+    }
+
+    public function test_skipped_integrations_do_not_require_or_validate_hidden_fields(): void
+    {
+        $input = array_replace($this->validInput(), [
+            'opensearch_enabled' => '0', 'opensearch_host' => 'not a URL',
+            'telegram_enabled' => '0', 'telegram_bot_token' => 'invalid',
+            'ai_enabled' => '0', 'ai_base_url' => 'not a URL',
+        ]);
+        $this->mock(Installer::class)->shouldReceive('install')->once()->withArgs(
+            fn (array $data): bool => ! $data['opensearch_enabled'] && ! $data['telegram_enabled']
+                && ! isset($data['opensearch_host']) && ! isset($data['telegram_bot_token']) && ! isset($data['ai_base_url']),
+        );
+
+        $this->withSession([
+            'installer.unlocked' => true, 'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.store'), $input)
+            ->assertSessionHasNoErrors()->assertRedirect(route('install.complete'));
+    }
+
+    public function test_enabled_integrations_still_require_valid_credentials(): void
+    {
+        $input = array_replace($this->validInput(), [
+            'opensearch_enabled' => '1', 'opensearch_password' => '',
+            'telegram_enabled' => '1', 'telegram_bot_token' => '',
+            'ai_enabled' => '1', 'ai_api_key' => '',
+        ]);
+        $this->mock(Installer::class)->shouldNotReceive('install');
+
+        $this->withSession([
+            'installer.unlocked' => true, 'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.store'), $input)
+            ->assertSessionHasErrors(['opensearch_password', 'telegram_bot_token', 'ai_api_key']);
+    }
+
+    public function test_installer_accepts_a_local_llm_without_an_api_key(): void
+    {
+        $input = array_replace($this->validInput(), [
+            'ai_enabled' => '1', 'ai_provider' => 'ollama', 'ai_api_format' => 'chat_completions',
+            'ai_base_url' => 'http://127.0.0.1:11434/v1', 'ai_model' => 'local-model', 'ai_api_key' => '',
+        ]);
+        $this->mock(Installer::class)->shouldReceive('install')->once()->withArgs(
+            fn (array $data): bool => $data['ai_provider'] === 'ollama'
+                && $data['ai_base_url'] === 'http://127.0.0.1:11434/v1' && blank($data['ai_api_key'] ?? null),
+        );
+        $this->withSession([
+            'installer.unlocked' => true, 'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.store'), $input)->assertSessionHasNoErrors()->assertRedirect(route('install.complete'));
+    }
+
+    public function test_unlocked_installer_discovers_local_models_before_database_setup(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(['http://127.0.0.1:11434/v1/models' => Http::response(['data' => [['id' => 'local-model']]])]);
+        $this->withSession([
+            'installer.unlocked' => true, 'installer.unlocked_at' => now()->timestamp,
+        ])->postJson(route('install.ai.models'), [
+            'ai_provider' => 'ollama', 'ai_api_format' => 'chat_completions',
+            'ai_base_url' => 'http://127.0.0.1:11434/v1',
+        ])->assertOk()->assertJsonPath('success', true)->assertJsonPath('models.0.id', 'local-model');
+        Http::assertSentCount(1);
+        $this->assertNull($this->environment->value('DB_HOST'));
+        $this->assertFalse($this->state->isInstalled());
+    }
+
+    public function test_locked_or_expired_installer_cannot_query_model_endpoints(): void
+    {
+        Http::preventStrayRequests();
+        $this->postJson(route('install.ai.models'))->assertForbidden()->assertJsonPath('success', false);
+        $this->withSession([
+            'installer.unlocked' => true, 'installer.unlocked_at' => now()->subMinutes(31)->timestamp,
+        ])->postJson(route('install.ai.models'))->assertForbidden();
+        Http::assertNothingSent();
+    }
+
+    public function test_invalid_model_discovery_never_flashes_installer_credentials(): void
+    {
+        Http::preventStrayRequests();
+        $this->withSession([
+            'installer.unlocked' => true, 'installer.unlocked_at' => now()->timestamp,
+        ])->post(route('install.ai.models'), [
+            'ai_provider' => 'custom', 'ai_api_format' => 'chat_completions',
+            'ai_base_url' => 'not-a-url', 'ai_api_key' => 'private-installer-model-secret',
+        ])->assertUnprocessable()->assertDontSee('private-installer-model-secret');
+        $this->assertStringNotContainsString('private-installer-model-secret', serialize(session()->all()));
+        Http::assertNothingSent();
     }
 
     /** @return array<string, mixed> */

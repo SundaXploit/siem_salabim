@@ -1,0 +1,996 @@
+CATATAN TECH STACK DAN SPESIFIKASI FRONTEND SIEM SALABIM
+=====================================================
+STATUS: Baseline sebelum redesain Industrial Signal Grid. Untuk desain frontend
+aktif setelah redesain, lihat docs/DESIGN_TOKENS.md, docs/DESIGN_DIRECTION.md,
+dan docs/REDESIGN_DELIVERY.md. Versi dependency tetap mengacu pada lockfile.
+
+Tanggal analisis : 11 November 2026, Asia/Jakarta
+Versi aplikasi  : 0.1.0, berdasarkan file VERSION
+Cakupan         : kode proyek pada working tree saat analisis, terutama frontend
+Metode          : inspeksi manifest, lockfile, CSS, JavaScript, Blade, route,
+                  controller, service, model, migration, konfigurasi, dan CI.
+
+Catatan pembacaan:
+- Ini dokumentasi implementasi yang ditemukan, bukan rancangan teknologi baru.
+- Versi terkunci berasal dari package-lock.json dan composer.lock. Constraint
+  adalah rentang di package.json/composer.json, bukan versi runtime server.
+- Konversi rem ke px di bawah mengasumsikan ukuran font root browser 16px.
+  Body aplikasi 14px tidak mengubah arti 1rem menjadi 14px.
+- Nilai CSS merupakan spesifikasi sumber, belum pengukuran computed style atau
+  pemeriksaan visual di browser. Inline style dan specificity dapat mengubahnya.
+- Default konfigurasi dijelaskan dari config/*.php dan .env.example; isi .env
+  operasional tidak digunakan untuk menyimpulkan konfigurasi deployment aktif.
+
+
+1. GAMBARAN APLIKASI DAN ARSITEKTUR
+----------------------------------
+SIEM Salabim adalah dashboard Security Operations Center untuk memantau alert
+Wazuh, melakukan triage, mengirim notifikasi Telegram, melihat aktivitas analyst,
+dan mendapatkan bantuan analisis AI.
+
+Arsitektur utama:
+  Browser
+    -> Laravel web routes + session authentication
+    -> Controller + service + Eloquent/query builder
+    -> Database aplikasi
+    -> Blade menghasilkan HTML
+    -> Alpine.js + JavaScript memperbarui interaksi dan sebagian konten
+
+Aliran data integrasi:
+  Wazuh / Wazuh Indexer / OpenSearch
+    -> job ingestion -> database lokal aplikasi
+    -> dashboard, Live Alerts, detail, triage, riwayat, leaderboard
+    -> layanan AI dan Telegram melalui backend
+
+Kesimpulan: monolit Laravel dengan HTML dirender di server dan interaksi
+JavaScript bertahap. Navigasi utama memakai URL/route Laravel. Tidak ditemukan
+React, Vue, Next.js, Nuxt, Inertia, Livewire, atau router SPA pada implementasi
+frontend yang diperiksa. Folder frontend menggunakan JavaScript, bukan TypeScript.
+
+
+2. TECH STACK FRONTEND DAN VERSI
+-------------------------------
+Teknologi                 Constraint manifest     Versi terkunci / sumber
+Laravel Blade             ikut Laravel            framework 13.32.0
+Tailwind CSS              ^4.3.3                  4.3.3
+@tailwindcss/vite         ^4.3.3                  4.3.3
+Alpine.js                 ^3.4.2                  3.15.9
+Vite                      ^8.0.0                  8.3.0
+laravel-vite-plugin       ^3.0.0                  3.0.0
+Axios                     ^1.11.0                 1.20.0
+Anime.js                  ^4.5.0                  4.5.0
+Lucide                    ^1.34.0                 1.34.0
+Chart.js                  script CDN              4.4.4, dipatok di Blade
+concurrently              ^9.2.5                  9.2.5, alat development
+
+Fungsi masing-masing:
+- Blade: layout, komponen, kondisi akses, loop data, form, validasi, dan HTML awal.
+- Tailwind CSS: utility CSS dan preflight; dipadukan dengan CSS komponen kustom.
+- Alpine.js: x-data, x-show, x-model, x-for, x-if, x-cloak, event, modal, filter,
+  state sidebar, countdown refresh, pemilihan alert, dan interaksi leaderboard.
+- Vite: dev server, refresh perubahan Blade, serta bundling CSS/JS produksi.
+- laravel-vite-plugin: menghubungkan entry aset Vite dengan directive @vite.
+- Axios: diekspos sebagai window.axios dengan header X-Requested-With.
+  Interaksi fitur yang diperiksa terutama memakai Fetch API native.
+- Anime.js: animasi masuk halaman, dialog, dan ikon pergantian tema.
+- Lucide: ikon SVG berbasis data-lucide, menggunakan daftar ikon yang diimpor
+  secara eksplisit dalam resources/js/ui/icons.js.
+- Chart.js: grafik batang horizontal dan sparkline canvas di leaderboard.
+  Tren pada dashboard SOC menggunakan SVG inline, bukan Chart.js.
+
+Klasifikasi dependency:
+- Alpine.js dan Axios berada di devDependencies bersama tooling build, tetapi
+  keduanya tetap diimpor oleh entry JavaScript aplikasi dan ikut proses bundling.
+- Anime.js dan Lucide berada di dependencies.
+- Chart.js dimuat di halaman leaderboard melalui:
+  https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js
+- Font dimuat melalui CSS Google Fonts, terpisah dari dependency npm.
+- Bootstrap bukan framework CSS/JS utama. Paginator Laravel memilih markup
+  Bootstrap Five, kemudian tampilannya diatur oleh CSS .pagination kustom.
+
+
+3. ORGANISASI FRONTEND DAN PEMETAAN HALAMAN
+------------------------------------------
+resources/css/app.css
+  Entry CSS: Google Fonts, Tailwind, token, komponen, utility, kompatibilitas.
+resources/css/ui/tokens.css
+  Design token font, ukuran teks, radius, spacing, warna, shadow, dan tema.
+resources/css/ui/components.css
+  Aturan shell, tabel, form, modal, dashboard, login, settings, dan leaderboard.
+resources/css/ui/utilities.css
+  Utility tambahan untuk gap, margin, warna, ukuran teks, dan screen reader.
+resources/js/app.js
+  Mengimpor bootstrap, Alpine, live-alerts, serta modul UI dan menjalankan UI.
+resources/js/bootstrap.js
+  Setup Axios global.
+resources/js/live-alerts.js
+  State daftar alert, refresh HTML parsial, pemilihan, dan triage massal.
+resources/js/ui/theme.js
+  Penyimpanan dan pergantian tema.
+resources/js/ui/icons.js
+  Registry dan refresh ikon Lucide.
+resources/js/ui/motion.js
+  Animasi halaman, tema, dan modal.
+resources/views/components/
+  Komponen Blade input, label, tombol, dropdown, modal, serta status autentikasi.
+
+URL / fungsi                   View utama
+/login                         auth/login.blade.php
+/dashboard                     dashboard/overview.blade.php
+/live-alerts                   dashboard/index.blade.php
+/alerts/{alert}                alerts/show.blade.php
+/leaderboard                   leaderboard/index.blade.php
+/history/alerts                history/alerts.blade.php
+/history/notifications         history/notifications.blade.php
+/history/activity              history/activity.blade.php
+/settings                      settings/index.blade.php
+/profile                       profile/edit.blade.php
+/install                       install/index.blade.php
+Penyelesaian instalasi         install/complete.blade.php
+
+Layout operasional: resources/views/layouts/app.blade.php.
+Layout guest umum: resources/views/layouts/guest.blade.php.
+Login mempunyai dokumen HTML khusus dengan body.auth-shell.auth-login-shell.
+File resources/views/dashboard.blade.php masih berisi scaffold Breeze, tetapi
+controller /dashboard saat ini memilih dashboard.overview.
+
+
+4. SUMBER DESAIN AKTIF DAN ATURAN CSS
+------------------------------------
+Urutan import di app.css:
+  1) Google Fonts
+  2) tailwindcss, dengan source(none)
+  3) ui/tokens.css
+  4) ui/components.css
+  5) ui/utilities.css
+
+Tailwind v4 menggunakan @tailwindcss/vite dan konfigurasi berbasis CSS:
+- @theme inline untuk font dan ukuran utility yang dipertahankan.
+- @source untuk resources/views/**/*.blade.php, compiled Blade di storage,
+  serta template pagination vendor Laravel.
+- Konfigurasi Vite memiliki entry resources/css/app.css dan resources/js/app.js.
+- Tidak ada konfigurasi tailwind.config.js terpisah pada root yang diperiksa.
+
+Pembedaan yang penting:
+- Layout app, detail alert, dan leaderboard masih menyimpan blok CSS lama.
+  Blok itu memiliki media="not all" dan atribut data-legacy-*. CSS tersebut
+  dinonaktifkan, sehingga bukan acuan utama tampilan saat ini.
+- Plus Jakarta Sans, Fira Mono, sidebar 260px, aksen indigo #6366f1, serta
+  radius card 12px/modal 14px di blok legacy tidak mewakili shell aktif.
+- Markup aktif masih memiliki sejumlah style inline, terutama ukuran teks,
+  font monospace, grid, dan spacing. Nilainya perlu dibaca sebagai pengecualian.
+- Nama lama seperti --bg-card, --border, --accent, dan --text-secondary tetap
+  tersedia sebagai alias ke token warna baru di tokens.css.
+- Installer menggunakan dokumen HTML/CSS/JS mandiri tanpa @vite. Gaya installer
+  harus dibaca terpisah dari design system dashboard.
+
+
+5. TIPOGRAFI DAN FONT FAMILY
+----------------------------
+Font utama UI: Inter.
+  Stack token --font-sans:
+  'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+  'Segoe UI', sans-serif.
+
+Font data teknis: IBM Plex Mono.
+  Stack token --font-mono:
+  'IBM Plex Mono', 'Fira Code', 'Cascadia Code', ui-monospace,
+  SFMono-Regular, Menlo, Monaco, Consolas, monospace.
+
+Pemuatan font di app.css:
+- Inter: optical size 14..32, weight 400, 500, 550, 600, 650, 700.
+- IBM Plex Mono: weight 400, 500, 600.
+- Google Fonts memakai display=swap; fallback tampil selama font belum tersedia.
+- Fira Code/Cascadia Code adalah fallback, tidak ikut diunduh dari import ini.
+- Installer menyebut Inter dalam font-family tetapi tidak mengimpor Google Fonts
+  maupun app.css sendiri; ketersediaan Inter tidak dijamin oleh halaman itu.
+
+Penggunaan:
+- Inter: navigasi, judul, label, tombol, isi teks, form, dan tabel umum.
+- IBM Plex Mono: angka statistik, waktu, nilai teknis, JSON, beberapa rank dan
+  nilai leaderboard, melalui --font-mono dan font-variant-numeric: tabular-nums.
+- .font-technical, .technical-value, .data-table .technical, dan .time-display
+  mempunyai aturan font teknis bersama.
+- Sebagian IP/rule/chat ID dalam Blade memakai font-family:monospace inline.
+  Bagian tersebut menggunakan monospace browser, tidak otomatis IBM Plex Mono.
+
+Aturan body:
+  font-size: var(--text-base) = 0.875rem = 14px
+  line-height: 1.5, setara sekitar 21px pada body 14px
+  text-rendering: optimizeLegibility
+  -webkit-font-smoothing: antialiased
+
+Weight umum:
+  400 = teks biasa
+  500 = item navigasi dan sebagian nilai pendukung
+  600 = tombol, label, angka statistik, teks data utama
+  650 = heading, section label, judul card, beberapa angka leaderboard
+  700 = terdapat pada beberapa teks inline
+Weight yang ditulis pada font fallback/monospace tetap bergantung pada face
+font yang tersedia. Contohnya IBM Plex Mono hanya diminta sampai weight 600.
+
+
+6. SKALA UKURAN FONT: TOKEN DAN UTILITY
+--------------------------------------
+6.1 Token desain di resources/css/ui/tokens.css
+
+Token          Nilai rem      Ekuivalen px
+--text-xs      0.6875rem      11px
+--text-sm      0.75rem        12px
+--text-base    0.875rem       14px
+--text-lg      1rem           16px
+--text-xl      1.125rem       18px
+--text-2xl     1.5rem         24px
+
+6.2 Utility Tailwind yang di-inline dalam @theme app.css
+
+Utility        Font-size      Line-height
+text-xs        12px           16px
+text-sm        14px           20px
+text-base      16px           24px
+text-lg        18px           28px
+text-xl        20px           28px
+text-2xl       24px           32px
+
+Dua skala ini memang berbeda. @theme inline mempertahankan ukuran utility
+lama agar custom property desain dengan nama sama tidak mengubah ukurannya.
+Selain itu, utilities.css menetapkan:
+  .app-shell .text-sm, .auth-shell .text-sm { font-size: var(--text-sm); }
+Artinya .text-sm di dalam shell tersebut memakai font-size 12px. Deklarasi ini
+hanya mengganti font-size; line-height tetap mengikuti aturan lain yang berlaku.
+
+6.3 Ukuran komponen aktif yang sering dipakai
+
+Elemen / selector                        Ukuran                 Weight
+Body                                     14px                   400/inherit
+.nav-section                             10px                   650
+.nav-item                                13px                   500
+.user-name                               12px                   600
+.user-role                               10px                   inherit
+.topbar-breadcrumb                       11px                   inherit
+.topbar-title                            12px                   650
+.time-display                            11px mono              inherit
+.page-eyebrow                            11px                   600
+.page-heading                            clamp(20px,1.7vw,24px) 650
+.page-description                        12px                   inherit
+.panel-title / .card-title               13px                   650
+.stat-label                              11px                   650
+.stat-value                              24px mono              600
+.stat-sub                                11px                   inherit
+.btn                                     13px                   600
+.btn-sm                                  12px                   600
+.form-label                              12px                   600
+.form-input/.form-select/.form-textarea   13px                   inherit
+.badge                                   10.4px                 650
+.data-table                              13px                   inherit
+.data-table th                           11px                   650
+.table-level / .table-status             11px                   600
+.modal-title                             16px                   650
+.empty-state-title                       14px                   600
+.empty-state-copy                        12px                   inherit
+.raw-json-pre                            11.36px mono           inherit
+.raw-table td:first-child                10.88px mono           600
+.raw-table td:last-child                 11.2px mono            inherit
+.raw-view-btn / .raw-copy-btn             11.52px                600
+.alert-ai-summary                        12px                   inherit
+.alert-ai-result-header strong           16px                   650
+.alert-ai-confidence strong              14px mono              650/inherit
+.alert-ai-result-footer                  10px                   inherit
+.settings-card-caption/.settings-field-help 11px                 inherit
+.settings-role                           11.2px mono            600
+.lb-summary-label                        11px                   650
+.lb-summary-value                        27.2px mono            650
+.lb-rank-score strong                    17.6px mono            650
+.stat-total                              16px mono              650
+.profile-section h2                      16px                   650
+.auth-login-eyebrow                      11px                   650
+.auth-login-heading h2                   clamp(21.6px,2vw,26.4px) 650
+.auth-brand-description                  clamp(14px,1.15vw,16px) inherit
+.footer-note pada login                  11px                   inherit
+
+Line-height dan tracking khusus:
+- .page-heading: 1.25; letter-spacing -0.018em.
+- .auth-login-heading h2: 1.2; letter-spacing -0.025em.
+- .stat-value: 1.2; .lb-summary-value: 1.1 dan tracking -0.05em.
+- .btn dan .badge: line-height 1.
+- Form control umum: line-height 1.4.
+- Narasi AI/JSON: line-height 1.7; daftar evidence: 1.55.
+- Deskripsi brand login: line-height 1.7.
+- Label section/eyebrow/tabel sering uppercase dengan tracking 0.04-0.08em.
+
+Ukuran di grafik leaderboard:
+- Tick sumbu X: Inter 11px.
+- Tick sumbu Y: Inter 12px, weight 600.
+- Tooltip: padding 10px, warna diambil dari design token.
+- Sparkline canvas pada tabel: atribut width 120 dan height 38.
+
+Pengecualian inline yang masih aktif:
+- IP dan rule pada daftar alert: monospace 0.75rem = 12px.
+- Rule ID/IP utama pada detail alert: monospace 1rem = 16px, weight 700.
+- Metadata dan riwayat memakai variasi 0.68-0.82rem, sekitar 10.88-13.12px.
+- Di layar <=640px, .lb-summary-value menjadi 1.4rem = 22.4px dan
+  .lb-rank-score strong menjadi 1rem = 16px.
+
+
+7. DESIGN TOKEN WARNA DAN TEMA
+------------------------------
+Token                      Light                    Dark
+--color-canvas             #f4f6f8                  #0b0e13
+--color-surface-1          #ffffff                  #10151d
+--color-surface-2          #f8fafc                  #151b24
+--color-surface-3          #eef2f6                  #1b232e
+--color-text-primary       #172033                  #e7ebf1
+--color-text-secondary     #536174                  #aab4c1
+--color-text-muted         #7b8798                  #748092
+--color-border-subtle      #e5e9ef                  rgba(218,228,241,0.055)
+--color-border-default     #d8dee7                  rgba(218,228,241,0.105)
+--color-border-strong      #bdc8d6                  rgba(218,228,241,0.18)
+--color-accent             #2769a6                  #4d91c9
+--color-accent-hover       #1e578e                  #68a7da
+--color-accent-soft        rgba(39,105,166,0.09)    rgba(77,145,201,0.13)
+--color-success            #267a57                  #4ba77b
+--color-success-soft       rgba(38,122,87,0.1)      rgba(75,167,123,0.12)
+--color-warning            #a96812                  #c89345
+--color-warning-soft       rgba(169,104,18,0.1)     rgba(200,147,69,0.12)
+--color-danger             #b23b46                  #d16a72
+--color-danger-soft        rgba(178,59,70,0.1)      rgba(209,106,114,0.12)
+--color-info               #286e9e                  #5fadd7
+--color-info-soft          rgba(40,110,158,0.1)     rgba(95,173,215,0.12)
+--color-overlay            rgba(16,24,40,0.46)      rgba(3,7,13,0.68)
+
+Prinsip visual yang tampak dari implementasi:
+- Dashboard padat informasi, panel datar, border tipis, aksen biru terukur.
+- Warna status dipakai untuk makna operasional: danger, warning, success, info.
+- Badge NEW/critical menggunakan danger; ACK/medium menggunakan warning;
+  ignored memakai surface-3 dan teks secondary; low memakai success.
+- Level-high memakai warna khusus #c26a3b dengan background/border transparan.
+- Model Alert memetakan critical >=15, high >=12, medium >=7, sisanya low.
+- Beberapa label status pada tabel sengaja tanpa background/border badge.
+- color-mix(in srgb, ...) digunakan untuk border aktif, hover, dan status.
+
+Mekanisme tema:
+- Default produk dark, bukan mengikuti prefers-color-scheme secara otomatis.
+- Preferensi disimpan pada localStorage dengan key siem-theme.
+- Root memakai data-theme="dark|light" dan class dark/light.
+- Script head menerapkan preferensi sebelum isi halaman dirender.
+- theme.js menerbitkan CustomEvent siem:themechange.
+- Leaderboard menggambar ulang grafik ketika tema berubah, mengambil warna
+  melalui getComputedStyle(document.documentElement).
+- color-scheme juga diterapkan pada input native, select, dan date control.
+
+
+8. RADIUS, BORDER, SHADOW, DAN LAPISAN
+-------------------------------------
+Token radius utama:
+  --radius-xs = 2px
+  --radius-sm = 4px
+  --radius-md = 6px
+  --radius-lg = 8px
+
+Penerapan:
+  Badge, nav badge, chip             2px
+  Tombol, input, nav item            4px
+  Icon button, toggle tema           4px
+  Panel, card, table shell           6px
+  Login card, profile section        6px
+  Dialog triage massal               6px
+  Modal box umum                     8px
+  Avatar dan status dot              50%
+  Progress/meter dan scrollbar       999px
+  Utility kompatibilitas rounded-sm  0.125rem = 2px
+
+Border:
+- Umumnya 1px solid --color-border-default.
+- Pembatas tabel/body sekunder memakai --color-border-subtle.
+- Modal memakai --color-border-strong.
+- Penanda nav aktif, stat, dan beberapa alert menggunakan garis aksen 2px.
+- Focus-visible: outline 2px solid accent, outline-offset 2px.
+- Form focus umum: box-shadow 0 0 0 2px accent-soft; login khusus 3px.
+
+Shadow token:
+  Light --shadow-sm      : 0 8px 18px rgba(23,32,51,0.09)
+  Dark  --shadow-sm      : 0 8px 18px rgba(0,0,0,0.16)
+  Light --shadow-overlay : 0 24px 56px rgba(23,32,51,0.22)
+  Dark  --shadow-overlay : 0 28px 66px rgba(0,0,0,0.46)
+- Shadow overlay dipakai modal; card umum berfokus pada border.
+- Utility .shadow-sm kompatibilitas Tailwind memiliki deklarasi --tw-shadow
+  sendiri sebesar 0 1px 2px rgba(0,0,0,0.05), terpisah dari token --shadow-sm.
+
+Z-index komponen utama:
+  Sticky table header    1
+  Sidebar desktop        20
+  Topbar sticky          20
+  Backdrop sidebar mobile 40
+  Sidebar mobile         50
+  Modal backdrop         60
+Native dialog triage menggunakan showModal(), sehingga mengikuti top layer
+browser. Nilai tersebut bukan z-index biasa yang sama dengan modal custom.
+
+
+9. SKALA JARAK, PADDING, DAN GAP
+-------------------------------
+Token           rem        px
+--space-1       0.25       4
+--space-2       0.5        8
+--space-3       0.75       12
+--space-4       1          16
+--space-5       1.25       20
+--space-6       1.5        24
+--space-8       2          32
+
+Skala utama bertahap 4px, tetapi komponen juga mempunyai angka khusus seperti
+2px, 6.4px, 9.6px, 10px, dan nilai pecahan rem untuk kepadatan data.
+
+Pemakaian aktual:
+- .page-content: padding 24px desktop, 16px pada <=640px.
+- .page-header: gap 16px, margin-bottom 20px.
+- .page-actions: gap 8px, boleh wrap.
+- .topbar: padding horizontal 24px; 16px pada <=960px; 12px pada <=640px.
+- .sidebar-nav: padding 16px vertikal dan 8px horizontal.
+- .sidebar-footer: padding 12px; collapsed desktop 8px.
+- .nav-item: padding horizontal 10px, gap 10px, margin vertikal 2px.
+- .panel-header/.card-header: padding horizontal 16px, gap 8px.
+- .panel-body/.card-body: padding 16px.
+- .panel-footer: padding 12px 16px, gap 12px.
+- .stats-grid: gap 0, pemisah border; margin-bottom 20px.
+- .stat-card: padding 16px.
+- .btn: padding 6px 12px, gap 6.4px.
+- .btn-sm: padding 4px 8.8px.
+- Form control umum: padding 7.2px 10.4px.
+- .form-group: margin-bottom 16px; label margin-bottom 5.6px.
+- .toolbar/.filter-bar: gap 12px dan flex-wrap.
+- .grid-2: gap 12px.
+- .data-table th: padding 9.6px 16px.
+- .data-table td: padding 8px 16px; horizontal menjadi 12px di mobile.
+- .table-actions: gap 3.2px.
+- .modal-backdrop: padding 16px.
+- .modal-box: padding 20px, menjadi 16px di <=640px.
+- .empty-state: padding 32px 16px, gap 8px.
+- .settings-grid: gap 20px; field AI gap horizontal 20px.
+- .settings-user-create: padding 20px; 16px di <=640px.
+- .alert-grid-main/.alert-grid-info: gap 20px.
+- .alert-grid-extra: gap 16px.
+- .alert-ai-analysis: padding 20px; evidence gap 16px vertikal/24px horizontal.
+- .soc-overview-grid/.soc-summary-grid: gap 16px, margin-bottom 16px.
+- .soc-insight-layout: gap 24px.
+- .soc-insight-facts: padding-left 20px, pembatas border kiri.
+- .lb-summary-grid: gap 12px, menjadi 8px pada <=640px.
+- .lb-summary-card: padding 16px, menjadi 12px pada <=640px.
+- .profile-section: padding 20px; .profile-stack gap 16px.
+
+Utility tambahan:
+  gap-1/2/3/4 = 4/8/12/16px
+  mb-1/2/3/4 = 4/8/12/16px
+  mt-4 = 16px; ml-auto = margin-left:auto; w-full = width:100%.
+
+
+10. DIMENSI KOMPONEN DAN LAYOUT
+-------------------------------
+Shell dan navigasi:
+- Sidebar desktop: --sidebar-w = 14rem = 224px, fixed sepanjang viewport.
+- Sidebar collapsed: 5.25rem = 84px, margin kiri konten mengikuti lebar itu.
+- Sidebar mobile: min(17.5rem, calc(100vw - 2.5rem)), maksimal 280px dan
+  menyisakan 40px viewport; dibuka dengan transform dan overlay.
+- Sidebar logo row: min-height 56px.
+- Logo horizontal sidebar: lebar maksimal 148px; logo mark collapsed 32px.
+- Nav item: min-height 36.8px.
+- Topbar: sticky, min-height 52px; pada <=640px menjadi 48px.
+- Topbar brand: clamp(128px,12vw,168px); mobile clamp(92px,28vw,116px).
+- Body min-width 320px; pada <=640px di-reset menjadi 0.
+- Konten memakai lebar penuh area setelah sidebar, bukan container maksimum
+  tetap. Sidebar dan topbar menggunakan Flexbox; konten data banyak memakai Grid.
+
+Komponen dasar:
+  Card/panel header        min-height 48px
+  Tombol normal            min-height 36px
+  Tombol kecil             min-height 30.4px
+  Icon/theme/logout button 32 x 32px
+  Action button tabel      30.4 x 30.4px
+  Input/select umum        min-height 38px
+  Textarea                 min-height 96px; resize vertikal
+  Input/tombol login utama min-height 44px
+  Badge                    min-height 21.6px
+  Checkbox triage          16 x 16px
+  Pagination link          minimal 32px lebar x 32px tinggi
+  Sel tabel                height 42.4px, dapat bertambah sesuai konten
+  Tabel utama              min-width 736px; wrapper overflow horizontal
+  Truncate cell            max-width 288px, ellipsis dan nowrap
+  Modal umum               max-width 560px; max-height min(90vh,768px)
+  Dialog triage massal     width min(512px,calc(100vw - 32px))
+  Profile stack            max-width 768px
+  Scrollbar custom         8px lebar/tinggi
+
+Grid per halaman:
+- Statistik umum: 4 kolom pada desktop, dengan border antar metric.
+- Dashboard overview: minmax(0,1.35fr) + minmax(272px,0.65fr).
+- Dashboard summary: dua kolom sama besar.
+- Dashboard insight: kolom utama fleksibel + kolom fakta minmax(240px,352px).
+- Grafik tren SVG: tinggi clamp(160px,18vw,224px).
+- Detail alert: kolom utama fleksibel + kolom kanan 380px.
+- Detail informasi: 2 kolom; blok ekstra: 3 kolom.
+- Settings: section vertikal satu kolom; user management berisi daftar + form
+  minmax(0,1.25fr) dan minmax(352px,0.75fr).
+- Settings data: 2 kolom, gap 16px; field AI: 2 kolom.
+- Leaderboard summary: 4 kolom; area operasi minmax(0,1.7fr) dan
+  minmax(288px,0.9fr); charts-grid 2 kolom.
+- Chart wrapper: min-height 192px; JavaScript mengatur tinggi wrapper grafik
+  dengan max(120px, jumlahBar * 50px + 30px).
+
+Login utama:
+- Dua panel dengan grid minmax(0,1.15fr) + minmax(400px,0.85fr).
+- Tinggi minimum 100svh.
+- Panel brand padding clamp(40px,8vw,128px).
+- Panel form padding clamp(32px,6vw,96px).
+- Konten brand max-width 480px; logo brand max-width 240px.
+- Container form max-width 400px.
+- Jarak antar form-group 20px; label ke input 8px.
+- Input padding 10px 12px; tombol selebar form.
+- Heading ke form dan footer memakai jarak 24px.
+
+
+11. RESPONSIVE DAN BREAKPOINT
+-----------------------------
+Breakpoint aktual ditulis dalam CSS komponen, bukan hanya utility Tailwind.
+
+<=1180px : daftar user dan form settings menjadi satu kolom.
+<=1100px : summary leaderboard 2 kolom; area operasi menjadi satu kolom.
+<=1024px : detail alert utama menjadi satu kolom.
+>=961px  : aturan sidebar collapsed desktop berlaku.
+<=960px  : sidebar menjadi drawer; margin kiri konten 0; charts-grid,
+           SOC overview/summary/insight menjadi satu kolom.
+<=860px  : login dua panel menjadi satu kolom; logo brand max-width 192px.
+<=760px  : stats umum menjadi 2 kolom; grid settings/data/AI, grid-2,
+           detail info/extra, dan evidence AI menjadi satu kolom.
+<=640px  : padding halaman 16px; jam dan breadcrumb disembunyikan;
+           header halaman ditumpuk; aksi halaman melebar; padding tabel/modal
+           dipadatkan; tabel user settings menjadi susunan blok per user.
+<=480px  : stats khusus dashboard SOC (.soc-stats-grid) menjadi 1 kolom;
+           padding kiri/kanan panel login menjadi 16px.
+<=390px  : teks LIVE disembunyikan, indikator dot tetap tersedia.
+
+Catatan: stats-grid umum tidak mempunyai aturan satu kolom pada 480px;
+aturan tersebut khusus .soc-stats-grid. Tabel data utama mempertahankan
+min-width dan menggunakan horizontal scrolling, bukan semuanya berubah ke card.
+
+
+12. INTERAKSI, DATA FETCHING, DAN STATE FRONTEND
+------------------------------------------------
+Entry app.js:
+- window.Alpine, window.alertTable, window.SIEMUI.refreshIcons,
+  window.applyTheme, dan window.toggleTheme diekspos untuk markup Blade.
+- Alpine.start() mengaktifkan komponen.
+- initializeTheme(), refreshIcons(), dan initializeMotion() dijalankan saat
+  DOM siap. Ikon di konten yang diganti dapat diinisialisasi ulang.
+- Sebagian logika halaman masih berupa function inline di @stack('scripts').
+
+Shell:
+- State tema dan sidebar collapsed persisten melalui localStorage.
+- Key sidebar: siem-sidebar-collapsed.
+- State drawer mobile berada di Alpine; Escape/backdrop menutup drawer.
+- Jam diperbarui tiap 1 detik dengan locale id-ID, Asia/Jakarta, dan label WIB.
+- Badge jumlah alert baru dipoll setiap 30 detik ke /api/alerts/new-count.
+
+Live Alerts:
+- Daftar awal dirender Blade, dengan filter GET dan pagination backend.
+- Refresh otomatis setiap 30 detik memakai fetch URL halaman aktif, mengambil
+  HTML, mem-parse DOMParser, dan mengganti bagian #alert-table-card-body.
+- URL filter/pagination tetap terpakai karena fetch memakai location.href.
+- Refresh dijeda ketika bulk mode, pemilihan, modal, atau submit sedang aktif.
+- Countdown 1 detik hanya indikator UI, bukan fetch server setiap 1 detik.
+- Refresh menolak response gagal/redirect dan menampilkan pesan gagal generik.
+- Triage massal POST JSON menyertakan X-CSRF-TOKEN dari meta tag.
+- Dialog menggunakan elemen native dialog dan showModal(); fokus diarahkan
+  ke alasan ignore atau tombol konfirmasi.
+- Ignore memerlukan alasan 5-1000 karakter; server membatasi maksimal 100 alert.
+- Pilihan per halaman 25/50/100, default 25; pencarian/filter dikerjakan server.
+
+Leaderboard:
+- Data awal dibaca dari script type="application/json" berisi initialData.
+- Perubahan periode mengambil /api/leaderboard menggunakan fetch.
+- Grafik lama dihancurkan sebelum menggambar ulang agar instance tidak menumpuk.
+- Warna grafik mengikuti token dan event perubahan tema.
+
+Detail, dashboard, settings:
+- Detail alert mendukung pergantian raw table/JSON/AI, copy clipboard,
+  pemuatan template notifikasi, form triage, dan modal notifikasi Telegram.
+- Dashboard menyediakan refresh insight AI lewat endpoint Laravel.
+- Settings memakai fetch untuk tes koneksi, preview data, dan status update.
+- Status application update dipoll setiap 5 detik; UI berhenti polling pada
+  status akhir dan dapat reload setelah sukses.
+
+Pembaruan data yang ditemukan menggunakan polling dan HTTP request biasa.
+Tidak ditemukan implementasi WebSocket, SSE/EventSource, atau Laravel Echo
+di kode frontend yang diperiksa. Label LIVE bukan bukti adanya streaming socket.
+Endpoint /api/... pada proyek ini tetap berada dalam grup route web + auth,
+sehingga memakai session aplikasi, bukan API publik terpisah berbasis token.
+
+
+13. IKON, ASET, MOTION, DAN AKSESIBILITAS
+---------------------------------------
+Ikon dan aset:
+- Lucide mengubah elemen data-lucide menjadi SVG melalui createIcons().
+- Ikon navigasi umumnya 16px dengan stroke-width 1.8.
+- Ikon tombol biasa 14.4px dengan stroke-width 1.9.
+- Ikon theme/logout umumnya 15.2px; icon action tabel 16px.
+- Brand PNG lokal berada di public/images/brand/:
+  siem-salabim-horizontal.png, siem-salabim-mark.png,
+  siem-salabim-vertical.png.
+- Horizontal logo memiliki atribut sumber 2172x724; mark/vertical 1254x1254.
+  Ukuran render diatur CSS, bukan ukuran atribut sumber tersebut.
+- Favicon dan apple-touch-icon memakai brand mark PNG.
+- Logo dalam dark theme diberi filter CSS untuk menyesuaikan warna.
+
+Motion:
+- Masuk halaman: opacity 0->1, translate Y 5px->0, 220ms, outQuad.
+- Modal teramati: opacity 0->1, Y 8px->0, 180ms, outQuad.
+- Pergantian tema: rotasi ikon +/-12 derajat lalu kembali, 180ms.
+- Pergeseran/lebar sidebar: 180ms ease.
+- Hover kontrol: umumnya 140ms ease; hover baris tabel 120ms.
+- Tombol saat ditekan: translateY(1px), transform 100ms.
+- Spinner analisis AI: putaran 0.75 detik linear infinite.
+- Spinner leaderboard: 0.8 detik linear infinite.
+- Animasi bar Chart.js: 220ms easeOutQuart; sparkline 160ms.
+- MutationObserver mengamati perubahan style modal dan modal baru dalam DOM.
+
+Aksesibilitas yang terlihat di sumber:
+- :focus-visible global, label form, aria-label, aria-expanded, aria-controls.
+- Ikon dekoratif memakai aria-hidden; tersedia .sr-only.
+- x-cloak mencegah elemen kondisional muncul sebelum Alpine siap.
+- Komponen modal Blade menyediakan navigasi fokus Tab/Shift+Tab dan Escape.
+  Modal inline halaman perlu dinilai sendiri; belum semuanya terbukti memiliki
+  pengelolaan fokus setara komponen modal bersama.
+- Disabled control memakai cursor not-allowed dan opacity 0.58.
+- prefers-reduced-motion mengurangi animasi/transisi CSS ke 0.01ms serta
+  mematikan animasi Anime.js/Chart.js melalui pemeriksaan JavaScript.
+- Belum dilakukan audit WCAG, pengukuran kontras, atau tes keyboard di browser;
+  daftar ini menjelaskan implementasi yang ada, bukan sertifikasi aksesibilitas.
+
+
+14. GAYA INSTALLER YANG TERPISAH
+-------------------------------
+Installer tidak memakai shell operasional, token UI bersama, Alpine, atau entry
+Vite. Halaman berisi CSS inline dan JavaScript native untuk wizard.
+
+Spesifikasi utama install/index.blade.php:
+- Tema dark tetap: background #07111f; panel #0d1b2d; border #263b55;
+  text #e7eef8; muted #9eb0c6; primary #38bdf8.
+- Font stack Inter/system sans; line-height body 1.55.
+- Shell width min(1120px,calc(100% - 32px)); padding 40px 0 64px.
+- Wizard grid 245px + kolom fleksibel; min-height 670px.
+- Card radius 22px; input/tombol 10px; note 12px; step 11px.
+- Input min-height 45px, padding 10px 12px.
+- Tombol min-height 44px, padding 10px 18px, weight 800.
+- Form grid dua kolom, gap 18px; panel padding clamp(24px,5vw,48px).
+- Heading H2 clamp(23.2px,4vw,32px); label 13.76px weight 720;
+  hint 12px; eyebrow 12px weight 800 dan tracking 0.13em.
+- Breakpoint 800px: satu kolom, step horizontal 6 kolom tanpa teks label.
+- Breakpoint 480px: padding content 22px 17px, action dapat wrap.
+- Completion page: card max-width 600px, radius 22px,
+  padding clamp(28px,6vw,52px), heading clamp(27.2px,5vw,37.6px).
+
+Dengan demikian, radius besar 22px/gradien dekoratif memang aktif di installer,
+tetapi tidak tepat dijadikan patokan card pada dashboard.
+
+
+15. TECH STACK BACKEND DAN VERSI
+--------------------------------
+Package / teknologi             Constraint            Versi composer.lock
+PHP                             ^8.3                  runtime tidak diaudit
+laravel/framework               ^13.0                 v13.32.0
+laravel/breeze                  ^2.4                  v2.4.1
+laravel/tinker                  ^3.0                  v3.0.0
+guzzlehttp/guzzle               ^7.10                 7.15.5
+irazasyed/telegram-bot-sdk       ^3.16                 v3.16.0
+spatie/laravel-permission       ^7.2                  7.2.2
+
+Dependency development utama:
+  phpunit/phpunit               ^12.5.12              12.5.14
+  laravel/pint                  ^1.27                 v1.29.0
+  laravel/pail                  ^1.2.5                v1.2.6
+  fakerphp/faker                ^1.23                 lihat composer.lock
+  mockery/mockery               ^1.6                  lihat composer.lock
+  nunomaduro/collision          ^8.6                  lihat composer.lock
+
+Pola backend:
+- Laravel MVC dengan route, controller, service, model, request validation,
+  middleware, console command, queued job, dan service provider.
+- Eloquent ORM untuk model/relasi; query builder dan SQL aggregate untuk
+  statistik dan beberapa pencarian.
+- Dependency injection/container; OpenSearchService dan TelegramService
+  diregistrasikan sebagai singleton di AppServiceProvider.
+- PSR-4 autoload: App/, Database/Factories, Database/Seeders, Tests/.
+- Route health /up tersedia melalui bootstrap/app.php.
+
+Catatan dependency vs pemakaian:
+- Spatie permission terpasang dan migration tabel permission tersedia, tetapi
+  User yang diperiksa memakai kolom role dan helper isAdmin()/isAnalyst().
+  Tidak terlihat trait HasRoles pada User; jangan menyimpulkan otorisasi aktif
+  sepenuhnya dijalankan melalui permission granular Spatie.
+- Telegram SDK terpasang, tetapi TelegramService yang digunakan mengirim HTTP
+  Bot API langsung melalui Guzzle, bukan pemanggilan SDK Telegram facade.
+
+
+16. DATABASE, MODEL, SESSION, CACHE, DAN STORAGE
+------------------------------------------------
+Database aplikasi:
+- config/database.php memiliki koneksi sqlite, mysql, mariadb, pgsql, sqlsrv.
+- Default config dan .env.example adalah SQLite untuk lokal; SQLite memakai
+  WAL, busy_timeout 5000ms, synchronous NORMAL secara default konfigurasi.
+- Wizard instalasi membatasi pilihan ke PostgreSQL, MySQL, atau MariaDB.
+- README mengarahkan penggunaan database server untuk instalasi operasional.
+- Tersedianya driver config tidak membuktikan driver itu dipakai di deployment.
+- MySQL/MariaDB menggunakan utf8mb4. Data mentah alert dan sejumlah payload
+  disimpan dalam kolom JSON, dengan cast array pada model terkait.
+
+Model dan fungsi inti:
+  User                     akun dan role admin/analyst
+  Alert                    identitas sumber, rule, level, IP, status, raw_data
+  AlertTriage              tindakan analyst dan alasan
+  NotificationLog          riwayat pengiriman notifikasi
+  NotificationTemplate     template pesan Telegram
+  Configuration            pasangan key-value konfigurasi integrasi
+  DashboardInsight         hasil analisis agregat dashboard
+  AlertAiAnalysis          hasil analisis per alert
+  IngestionCheckpoint      progres/jendela ingestion
+  DataExport               status, metadata, dan hasil ekspor/purge
+  ApplicationUpdate        status penerapan release
+  ApplicationUpdateEvent   audit event update
+
+Relasi contoh:
+  User -> banyak triage dan notification log.
+  Alert -> banyak triage, notification log, AI analysis.
+  Alert -> latestAiAnalysis berdasarkan generated_at.
+
+Identitas ingestion:
+- Alert mempunyai source_cluster, source_index, source_id, dan hash SHA-256
+  untuk identitas sumber; migration menyediakan constraint/index terkait.
+- Ada checkpoint, deduplikasi, batch insert, dan overlap waktu untuk alert yang
+  terlambat terindeks.
+
+Session/cache/queue menurut default config dan contoh environment:
+- Session driver database; lifetime contoh 120 menit.
+- SESSION_ENCRYPT=true pada .env.example, sementara fallback config adalah
+  false bila environment tidak menyetelnya.
+- Cookie default http_only=true dan same_site=lax.
+- Cache store database; juga dipakai untuk cooldown, lock, dan cache counter.
+- Jumlah alert baru pada layout di-cache selama 30 detik.
+- Queue connection database; Redis dan backend lain tersedia sebagai opsi
+  konfigurasi, bukan layanan wajib yang terbukti aktif.
+
+Filesystem:
+- Default disk local; tersedia konfigurasi disk public dan s3.
+- Ekspor memakai disk privat dan directory siem-exports secara default contoh.
+- Konfigurasi disk s3 saja tidak membuktikan penggunaan AWS/S3 pada instalasi.
+- Ekspor data mendukung JSON dan SQL; format SQL ditujukan untuk MySQL/MariaDB.
+  Pembuatan file dibagi dalam chunk; status/download/purge melalui route admin.
+
+
+17. AUTENTIKASI, OTORISASI, DAN VALIDASI
+---------------------------------------
+- Auth bawaan Laravel/Breeze memakai guard session dan provider Eloquent User.
+- Route operasional berada dalam grup middleware auth dan installed.only.
+- User membedakan admin/analyst melalui kolom role.
+- Route update menggunakan middleware admin; settings juga memeriksa adminOnly()
+  pada controller. Template notifikasi mempunyai pemeriksaan admin di controller.
+- Route registrasi publik tidak didaftarkan dalam routes/auth.php yang aktif.
+- Akun awal dibuat lewat wizard atau command siem:create-admin; seeder tidak
+  membuat akun/password default.
+- Password mempunyai cast hashed; BCRYPT_ROUNDS pada contoh environment 12.
+- Login menormalkan email, memvalidasi input, dan memakai rate limiter.
+- Form Blade menggunakan @csrf dan @method; fetch mutasi membawa CSRF header.
+- Endpoint AI/update mempunyai pembatasan request sesuai route/controller.
+- Configuration mengenkripsi opensearch_password, telegram_bot_token, dan
+  ai_api_key dengan Laravel Crypt saat disimpan. Kode tetap mendukung pembacaan
+  nilai plaintext lama untuk kompatibilitas sebelum konfigurasi disimpan ulang.
+- Form request installer dan middleware membatasi akses wizard serta menangani
+  token instalasi, validasi koneksi, dan kondisi aplikasi sudah terpasang.
+
+
+18. INTEGRASI, QUEUE, DAN SCHEDULER
+-----------------------------------
+OpenSearch / Wazuh:
+- Integrasi HTTP melalui Guzzle ke indexer, default pola indeks wazuh-alerts-*.
+- OpenSearch adalah sumber alert; database aplikasi menyimpan data operasional
+  yang dipakai halaman, triage, notifikasi, dan riwayat.
+- Scroll menjadi default pengambilan banyak halaman; PIT/search_after tersedia
+  jika konfigurasi tie-breaker yang sesuai diaktifkan.
+- Default ambang impor config level 12; ukuran halaman 100, delay halaman 250ms.
+- Overlap default 900 detik; rekonsiliasi lookback 2 hari.
+- AlertIngestionCoordinator menyatukan dispatch dari UI, scheduler, dan manual
+  fetch, beserta cooldown/status/lock agar request web tidak menjalankan fetch
+  indexer yang berat secara sinkron.
+
+Telegram:
+- TelegramService memakai HTTP Bot API sendMessage dan sendPhoto melalui Guzzle.
+- Mendukung template, beberapa chat tujuan, lampiran gambar, dan pencatatan log.
+- Default koneksi 5 detik, request 20 detik, maksimum percobaan konfigurasi 3.
+- Retry dan klasifikasi error ditangani di backend.
+
+AI:
+- Integrasi AI memakai Laravel HTTP Client melalui AiProviderService; mendukung Chat Completions, Responses, dan Anthropic Messages. Provider cloud dan LLM lokal (Ollama, LM Studio, vLLM/llama.cpp kompatibel) diatur di Settings. API key lokal opsional; cloud memakai HTTPS dan token terenkripsi.
+- Base URL, model, API key, dan sejumlah parameter dikelola di Settings.
+- Dashboard insight menganalisis agregat melalui SecurityInsightSnapshotService.
+- Analisis per alert melalui AlertAiAnalysisService dengan evidence yang
+  disanitasi, lalu hasil disimpan dalam database.
+- Provider AI dipanggil backend; frontend meminta hasil lewat route aplikasi.
+- Konfigurasi model adalah pilihan provider, bukan paket runtime frontend.
+- Timeout default config dashboard 90 detik; per alert 60 detik.
+
+Pekerjaan background:
+  Queue default : FetchWazuhAlerts
+  Queue ai      : GenerateDashboardInsight
+  Queue exports : GenerateDataExport dan pekerjaan purge terkait
+  Queue updates : ApplyApplicationUpdate
+- Job tertentu menggunakan ShouldBeUnique/WithoutOverlapping.
+- QueueExecutionPolicy memeriksa kesiapan queue asynchronous untuk operasi
+  yang tidak boleh berjalan dalam request web.
+
+Jadwal dari routes/console.php:
+- Setiap menit: meminta fetch incremental lewat coordinator.
+- Cron 17 */6 * * *, Asia/Jakarta: meminta rekonsiliasi alert.
+- Setiap hari 02:10 WIB: command refresh insight memeriksa interval refresh
+  yang ditentukan admin sebelum memutuskan melakukan analisis.
+- Jadwal memakai withoutOverlapping; beberapa output ditulis ke scheduler.log.
+
+Update aplikasi:
+- Memeriksa release GitHub melalui service backend.
+- Self-update disabled secara default konfigurasi/contoh environment.
+- Penerapan berjalan di queue updates, dengan pemeriksaan artifact/manifest,
+  SHA-256, ukuran, path, backup kode, maintenance mode, dan pencatatan event.
+- Fitur ini bagian administrasi backend, bukan mekanisme pembaruan frontend SPA.
+
+
+19. BUILD, DEVELOPMENT, TESTING, DAN RELEASE
+-------------------------------------------
+Toolchain:
+- Composer untuk dependency PHP; npm dengan package-lock.json untuk frontend.
+- package.json memakai type:module, sehingga JS proyek menggunakan ES modules.
+- Vite 8.3.0 dan laravel-vite-plugin 3.0.0 menyatakan engine Node
+  ^20.19.0 || >=22.12.0 pada lockfile.
+- Proyek menyatakan PHP ^8.3; README menyebut Composer 2.
+- Laragon adalah konteks workspace lokal; versi web server/PHP aktif tidak
+  dapat ditetapkan dari path folder proyek saja.
+- Document root deployment diarahkan ke public/.
+
+Perintah yang disediakan proyek:
+  composer install         memasang dependency PHP dari lockfile
+  npm ci                   memasang dependency JS dari lockfile
+  npm run dev              menjalankan Vite development server
+  npm run build            membangun aset produksi dengan vite build
+  npm test                 node --test tests/js/*.test.mjs
+  php artisan test         unit/feature test Laravel/PHPUnit
+  composer test            config:clear lalu artisan test
+  composer run dev         server + worker + scheduler + Vite via concurrently
+
+Proses composer run dev:
+  php artisan serve
+  php artisan queue:work --queue=ai,default --sleep=3 --tries=2 --timeout=1800
+  php artisan queue:work --queue=exports --sleep=3 --tries=3 --timeout=1800
+  php artisan queue:work --queue=updates --sleep=3 --tries=1 --timeout=3600
+  php artisan schedule:work
+  npm run dev
+
+Tes yang tersedia:
+- PHPUnit: tests/Unit dan tests/Feature, termasuk auth, installer, pencarian,
+  ingestion, dashboard, triage massal, Telegram, AI, ekspor, dan update aplikasi.
+- phpunit.xml menggunakan SQLite :memory:, cache/session array, mail array,
+  dan queue sync untuk pengujian; berbeda dari default deployment.
+- JavaScript memakai node:test dan node:assert/strict, khususnya live-alerts.
+- Tidak ditemukan konfigurasi Playwright/Cypress/Storybook pada file proyek
+  yang diperiksa. Keberadaan tes unit tidak membuktikan tampilan telah diuji
+  lintas browser atau screenshot regression.
+
+Workflow .github/workflows/release.yml:
+- Dipicu tag v*.*.*; mencocokkan tag dengan VERSION.
+- Runner Ubuntu 24.04, setup PHP 8.3 dan Node 22.
+- composer audit, npm audit, npm test, npm run build, php artisan test.
+- Memasang dependency produksi, memeriksa platform requirements, membuat ZIP
+  berisi aplikasi/vendor/public/build, release manifest, dan SHA256SUMS.
+- Menerbitkan artifact melalui GitHub Release.
+
+Analisis ini hanya menambahkan dokumentasi. Build/test aplikasi tidak dijalankan
+ulang untuk penulisan catatan ini; daftar di atas menjelaskan tooling yang ada.
+
+
+20. PENILAIAN FRONTEND DAN ACUAN PENGEMBANGAN
+--------------------------------------------
+Yang sudah terstruktur:
+- Token tema, radius, font, spacing, dan komponen mempunyai sumber bersama.
+- Kombinasi Blade/Alpine sesuai pola aplikasi berbasis tabel, form, dan dashboard.
+- Data awal dapat langsung tampil dari server, kemudian diperbarui secara parsial.
+- Tema meliputi form native, autofill, logo, grafik, dan modal.
+- Angka penting menggunakan font teknis/tabular; warna status memiliki makna.
+- Ada penyesuaian mobile, state kosong/gagal, dan reduced motion.
+
+Hal yang perlu diperhatikan ketika melanjutkan frontend:
+1) Gunakan tokens.css dan components.css sebagai acuan shell aktif; jangan
+   menyalin ukuran atau warna dari style media="not all".
+2) Bedakan ukuran token --text-sm=12px dari utility Tailwind text-sm=14px,
+   termasuk override .text-sm dalam app-shell/auth-shell.
+3) Periksa style inline sebelum menganggap seluruh UI mengikuti skala token.
+   Beberapa data teknis masih memakai monospace browser dan pecahan font lain.
+4) Font Google Fonts dan Chart.js CDN menambah kebutuhan koneksi eksternal.
+   Build aset lokal saja belum membuat seluruh tampilan sepenuhnya offline.
+5) Installer adalah sistem gaya tersendiri; penyamaan desain memerlukan perubahan
+   halaman installer, bukan cukup mengganti token dashboard.
+6) Refresh tabel memuat HTML halaman dan mengekstrak sebagian DOM. Model ini
+   sederhana, tetapi payload refresh dapat lebih besar daripada endpoint JSON
+   khusus. Belum ada pengukuran performa yang membuktikan perlu diganti.
+7) JavaScript tersebar antara modul Vite dan script inline halaman. Perubahan
+   interaksi perlu memeriksa keduanya, termasuk reinitialization ikon/modal.
+8) Kontrol umum 30-38px dan teks metadata 10-12px menunjukkan desain padat.
+   Kecukupan untuk perangkat sentuh dan keterbacaan perlu diverifikasi visual.
+9) Footer login masih menyebut v1.0, sementara VERSION berisi 0.1.0.
+   Gunakan VERSION untuk menyebut versi aplikasi dalam dokumentasi teknis ini.
+
+Resep komponen yang paling mewakili UI operasional saat ini:
+  Font UI          Inter, body 14px / line-height 1.5
+  Font data        IBM Plex Mono dengan tabular-nums, atau pengecualian inline
+  Heading halaman  20-24px, weight 650
+  Judul panel      13px, weight 650
+  Teks pendukung   11-12px
+  Radius           input/tombol 4px, card 6px, modal 8px
+  Spacing utama    8 / 12 / 16 / 20 / 24px
+  Padding halaman  24px desktop, 16px mobile
+  Border           1px token default, aksen garis 2px
+  Warna            canvas gelap/terang + surface netral + accent biru
+  Gerakan          transisi singkat sekitar 120-220ms
+  Struktur         sidebar 224px + topbar sticky + panel/tabel penuh area konten
+
+
+21. RUJUKAN SUMBER UTAMA
+------------------------
+Versi dan build:
+  package.json
+  package-lock.json
+  composer.json
+  composer.lock
+  vite.config.js
+  VERSION
+
+Desain dan interaksi frontend:
+  resources/css/app.css
+  resources/css/ui/tokens.css
+  resources/css/ui/components.css
+  resources/css/ui/utilities.css
+  resources/js/app.js
+  resources/js/bootstrap.js
+  resources/js/live-alerts.js
+  resources/js/ui/theme.js
+  resources/js/ui/icons.js
+  resources/js/ui/motion.js
+  resources/views/layouts/app.blade.php
+  resources/views/layouts/guest.blade.php
+  resources/views/auth/login.blade.php
+  resources/views/dashboard/overview.blade.php
+  resources/views/dashboard/index.blade.php
+  resources/views/alerts/show.blade.php
+  resources/views/leaderboard/index.blade.php
+  resources/views/settings/index.blade.php
+  resources/views/components/modal.blade.php
+  resources/views/components/text-input.blade.php
+  resources/views/components/primary-button.blade.php
+  resources/views/install/index.blade.php
+  resources/views/install/complete.blade.php
+
+Backend, operasional, dan pengujian:
+  bootstrap/app.php
+  routes/web.php
+  routes/auth.php
+  routes/install.php
+  routes/console.php
+  app/Providers/AppServiceProvider.php
+  app/Models/
+  app/Http/Controllers/
+  app/Http/Requests/
+  app/Http/Middleware/
+  app/Services/
+  app/Jobs/
+  database/migrations/
+  config/*.php
+  .env.example
+  phpunit.xml
+  tests/js/live-alerts.test.mjs
+  .github/workflows/release.yml
+  README.md
+  docs/OPERATIONS.md

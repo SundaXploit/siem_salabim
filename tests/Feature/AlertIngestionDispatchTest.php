@@ -23,14 +23,14 @@ class AlertIngestionDispatchTest extends TestCase
     {
         parent::setUp();
 
-        config(['queue.default' => 'database']);
+        config(['queue.default' => 'database', 'services.opensearch.host' => 'https://indexer.example.test:9200']);
         Queue::fake();
     }
 
     public function test_live_alerts_queues_a_unique_fetch_without_running_the_command_in_the_request(): void
     {
         Artisan::shouldReceive('call')->never();
-        $user = User::factory()->create();
+        $user = User::factory()->forAgent('001')->create();
 
         $this->actingAs($user)
             ->get(route('alerts.index'))
@@ -49,11 +49,12 @@ class AlertIngestionDispatchTest extends TestCase
         Alert::create([
             'wazuh_alert_id' => 'local-new-alert',
             'rule_description' => 'Already imported alert',
+            'raw_data' => ['agent' => ['id' => '001']],
             'rule_level' => 12,
             'status' => 'new',
             'first_seen_at' => now(),
         ]);
-        $user = User::factory()->create();
+        $user = User::factory()->forAgent('001')->create();
 
         $this->actingAs($user)
             ->getJson(route('api.alerts.new-count'))
@@ -73,7 +74,7 @@ class AlertIngestionDispatchTest extends TestCase
     {
         config(['queue.default' => 'sync']);
         Artisan::shouldReceive('call')->never();
-        $user = User::factory()->create();
+        $user = User::factory()->forAgent('001')->create();
 
         $this->actingAs($user)
             ->getJson(route('api.alerts.new-count'))
@@ -113,7 +114,7 @@ class AlertIngestionDispatchTest extends TestCase
 
     public function test_queue_enqueue_failure_does_not_break_the_badge_response(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->forAgent('001')->create();
         $this->mock(Dispatcher::class, function (MockInterface $dispatcher): void {
             $dispatcher->shouldReceive('dispatch')
                 ->once()
