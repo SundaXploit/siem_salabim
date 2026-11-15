@@ -1005,7 +1005,9 @@ Contoh ini tidak menyertakan kunci atau kredensial dan tidak mengonfigurasi TLS 
 
 ## Instalasi
 
-**Siapkan:** PHP **8.3+**, Composer 2, Node.js **22.12+** (atau 20.19+), PostgreSQL/MySQL/MariaDB. OpenSearch/Wazuh Indexer, Telegram, AI, dan SMTP bersifat opsional dan dapat diatur setelah instalasi.
+Pilih alur yang sesuai: [setup cepat lokal](#instalasi-cepat), [langkah lokal terperinci](#instalasi-lokal), [server Linux Apache/Nginx](#instalasi-linux), atau [reset aplikasi](#reset-aplikasi).
+
+**Siapkan:** Git, PHP **8.3+**, Composer 2, Node.js **22.12+**, npm, serta database PostgreSQL/MySQL/MariaDB. OpenSearch/Wazuh Indexer, Telegram, AI, dan SMTP dapat diatur setelah instalasi. Gunakan versi Node.js yang masih didukung dan memenuhi persyaratan build; paket Node bawaan distro belum tentu memenuhi versi tersebut.
 
 <details>
 <summary><strong>📦 Lihat kebutuhan PHP dan pilihan database</strong></summary>
@@ -1017,6 +1019,34 @@ Contoh ini tidak menyertakan kunci atau kredensial dan tidak mengonfigurasi TLS 
 
 </details>
 
+<a id="instalasi-cepat"></a>
+
+### Setup cepat lokal dalam satu perintah
+
+Setelah dependency sistem di atas terpasang dan database kosong beserta akunnya tersedia, jalankan dari direktori tempat proyek akan disimpan. Folder `siem_salabim` tujuan harus belum ada. Perintah ini mengambil kode, memasang paket PHP/JavaScript, membangun aset, membuat `.env`/key/token installer, lalu menjalankan web server lokal:
+
+```bash
+git clone https://github.com/SundaXploit/siem_salabim.git && cd siem_salabim && composer install && npm ci && npm run build && php artisan siem:prepare-installation && php artisan serve --host=127.0.0.1 --port=8000
+```
+
+Perintah tersebut berlaku pada **Bash/Git Bash, CMD, atau PowerShell 7+**. Untuk Windows PowerShell 5.1 yang belum mendukung `&&`, gunakan:
+
+```powershell
+cmd /c "git clone https://github.com/SundaXploit/siem_salabim.git && cd siem_salabim && composer install && npm ci && npm run build && php artisan siem:prepare-installation && php artisan serve --host=127.0.0.1 --port=8000"
+```
+
+Salin token yang tampil di terminal, kemudian buka **http://127.0.0.1:8000/install**. Biarkan terminal tetap terbuka selama instalasi. Pada Windows PowerShell 5.1, setelah server dihentikan, masuk ke proyek dengan `cd siem_salabim` pada terminal induk karena perpindahan direktori sebelumnya terjadi di proses CMD.
+
+Blok ini menyiapkan aplikasi; PHP, Composer, Node.js, dan server database tetap perlu disiapkan terlebih dahulu. Token installer ditampilkan sebelum pesan server berjalan. Wizard tetap diperlukan untuk mengisi koneksi database dan membuat administrator pertama.
+
+Jika salah satu tahap gagal, perintah berhenti pada tahap itu. Masuk ke folder proyek yang sudah terbuat lalu lanjutkan melalui langkah terperinci; jangan mengulang clone ke folder yang sudah berisi file.
+
+<a id="instalasi-lokal"></a>
+
+### Langkah lokal terperinci
+
+Gunakan langkah berikut jika ingin menjalankan proses satu per satu, termasuk pada Laragon. Jalankan semua perintah Artisan dari direktori yang berisi file `artisan`.
+
 ### 1. Ambil kode dan dependency
 
 ```bash
@@ -1026,13 +1056,13 @@ composer install
 npm ci
 ```
 
-### 2. Bangun aset dan siapkan web server
+### 2. Bangun aset
 
 ```bash
 npm run build
 ```
 
-Arahkan document root web server ke direktori **`public/`**. Pengguna web server harus dapat menulis `.env`, `storage/`, dan `bootstrap/cache/` selama instalasi. Setelah instalasi produksi selesai, batasi kembali izin tulis `.env`.
+Aset dibangun agar halaman dapat ditampilkan tanpa menjalankan Vite. Jika memilih Apache/Nginx/Laragon, arahkan document root ke **`public/`**, bukan root proyek. Izin khusus instalasi Linux dijelaskan di bawah.
 
 ### 3. Buat token installer
 
@@ -1042,15 +1072,25 @@ php artisan siem:prepare-installation
 
 Perintah tersebut membuat `.env` dari `.env.example` bila belum ada, menghasilkan `APP_KEY` yang stabil, dan menampilkan token installer sekali pakai. Token hanya disimpan sebagai hash, kedaluwarsa dalam satu jam secara default, dan tidak pernah ditampilkan oleh halaman web.
 
+Tidak perlu menjalankan `cp .env.example .env`, `php artisan key:generate`, `migrate`, atau `db:seed` secara terpisah pada instalasi baru melalui wizard. Jika token kedaluwarsa sebelum instalasi selesai, jalankan ulang `php artisan siem:prepare-installation`; gunakan token terbaru. Opsi `--ttl=7200` memberi masa berlaku dua jam jika dibutuhkan.
+
 > [!IMPORTANT]
 > Jangan kirim token, `.env`, atau `APP_KEY` melalui chat maupun log. Pertahankan `APP_KEY` setelah aplikasi digunakan karena kredensial integrasi dienkripsi menggunakan key tersebut.
 
-### 4. Selesaikan wizard
+### 4. Jalankan server dan buka wizard
 
-Jalankan web server, buka URL aplikasi, lalu masukkan token pada **`/install`**. Wizard akan meminta:
+Untuk server pengembangan lokal:
+
+```bash
+php artisan serve --host=127.0.0.1 --port=8000
+```
+
+Buka **http://127.0.0.1:8000/install**, lalu masukkan token. Gunakan URL aplikasi `http://127.0.0.1:8000` pada wizard agar sesuai alamat yang sedang dipakai. Untuk Laragon, gunakan domain virtual host yang document root-nya sudah menunjuk `public/`; pada alur tersebut `artisan serve` tidak perlu dijalankan.
+
+Wizard akan meminta:
 
 - nama, URL, dan zona waktu aplikasi;
-- database (wajib; PostgreSQL direkomendasikan untuk volume besar);
+- database PostgreSQL/MySQL/MariaDB yang sudah dibuat, host, port, username, dan password;
 - OpenSearch/Wazuh Indexer dan Telegram (opsional, tersedia tombol Lewati);
 - AI dan SMTP (opsional);
 - akun administrator pertama (wajib, password minimal 12 karakter).
@@ -1058,11 +1098,345 @@ Jalankan web server, buka URL aplikasi, lalu masukkan token pada **`/install`**.
 Koneksi database dan integrasi yang diaktifkan diuji sebelum `.env` diperbarui. Tanpa integrasi, pengguna tetap dapat login dan menjelajahi dashboard; data kosong sampai alert diimpor. Migrasi dijalankan tanpa seeder; secret OpenSearch, Telegram, dan AI disimpan terenkripsi di database. Kredensial database/SMTP berada di `.env` berizin privat. Installer dikunci setelah marker terakhir berhasil dibuat.
 
 
-Untuk pengembangan lokal, perintah berikut menjalankan server, worker, scheduler, dan Vite:
+### 5. Jalankan proses latar belakang setelah instalasi
+
+`php artisan serve` hanya melayani HTTP. Agar fetch, AI terjadwal, notifikasi antrean, dan ekspor berjalan, buka terminal lain dari direktori proyek dan jalankan [worker serta scheduler](#operasional).
+
+Untuk pengembangan yang menjalankan **semua proses sekaligus**, hentikan server `artisan serve` sebelumnya dengan `Ctrl+C`, kemudian jalankan:
 
 ```bash
 composer run dev
 ```
+
+Script tersebut menjalankan server HTTP, worker `ai,default`, worker `exports`, scheduler, dan Vite. Buka URL yang dicetak server. Jangan menjalankan server/worker/scheduler duplikat; script memakai `--kill-others`, sehingga penghentian satu proses ikut menghentikan kelompok prosesnya. `artisan serve`, Vite dev server, dan `composer run dev` digunakan untuk pengembangan lokal. Deployment Linux di bawah dilayani Apache/Nginx + PHP-FPM.
+
+<a id="instalasi-linux"></a>
+
+### Instalasi di server Linux dengan Apache atau Nginx
+
+<details>
+<summary><strong>Buka panduan Ubuntu Server 24.04 LTS + PHP 8.3-FPM</strong></summary>
+
+Contoh berikut ditujukan untuk **server baru Ubuntu 24.04 LTS**, menggunakan user SSH non-root yang mempunyai `sudo`. Path aplikasi adalah `/var/www/siem_salabim`, user PHP-FPM adalah `www-data`, dan domain contoh `siem.example.com`. Ganti domain dengan domain Anda dan arahkan DNS-nya ke server. Distro/versi lain memerlukan penyesuaian paket, user layanan, dan socket PHP-FPM. Pilih **salah satu** web server pada bagian D; Apache dan Nginx tidak perlu dipasang bersamaan pada port yang sama.
+
+Urutannya: A-C, pilih [Apache (D1)](#linux-apache) atau [Nginx (D2)](#linux-nginx), lalu E-F untuk wizard dan [worker permanen](#linux-worker).
+
+#### A. Pasang PHP, Composer, dan alat server
+
+```bash
+sudo apt update
+sudo apt install -y git curl ca-certificates unzip xz-utils composer supervisor cron php8.3-cli php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-pgsql php8.3-mysql php8.3-sqlite3 php8.3-bcmath php8.3-intl
+sudo systemctl enable --now php8.3-fpm cron supervisor
+php -v
+composer --version
+```
+
+Gunakan Node.js yang memenuhi versi build. Jika belum tersedia, contoh berikut memasang rilis terbaru cabang 22.x dari distribusi resmi Node.js untuk Linux x64/arm64 dan memeriksa SHA-256 arsip yang diunduh. Jalankan blok ini pada Bash; bila Node yang sesuai sudah ada, cukup periksa `node --version` dan `npm --version`.
+
+```bash
+(
+    set -eu
+    case "$(uname -m)" in
+        x86_64) node_arch=x64 ;;
+        aarch64|arm64) node_arch=arm64 ;;
+        *) printf 'Gunakan paket Node.js resmi untuk arsitektur server ini.\n'; exit 1 ;;
+    esac
+    node_temp=$(mktemp -d)
+    cd "$node_temp"
+    curl -fsSLO https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt
+    node_archive=$(awk -v arch="$node_arch" '$2 ~ "-linux-" arch "\\.tar\\.xz$" {print $2}' SHASUMS256.txt)
+    test -n "$node_archive"
+    curl -fsSLO "https://nodejs.org/dist/latest-v22.x/$node_archive"
+    sha256sum --check --ignore-missing SHASUMS256.txt
+    sudo tar -xJf "$node_archive" -C /usr/local --strip-components=1 --no-same-owner
+)
+node --version
+npm --version
+```
+
+Pemasangan tersebut menempatkan Node/npm di `/usr/local`; gunakan pada server baru agar tidak menimpa instalasi Node lain yang dikelola terpisah. Pilihan installer lain tersedia di [Node.js resmi](https://nodejs.org/en/download). Composer dapat dipasang dari paket distro di atas atau [installer resmi Composer](https://getcomposer.org/download/). Jangan menjalankan `composer install`/`npm ci` sebagai root.
+
+Siapkan database khusus. Contoh PostgreSQL lokal berikut meminta password melalui prompt, lalu membuat database yang dimiliki akun aplikasi:
+
+```bash
+sudo apt install -y postgresql
+sudo systemctl enable --now postgresql
+sudo -u postgres createuser --pwprompt siem_salabim
+sudo -u postgres createdb --owner=siem_salabim siem_salabim
+```
+
+Pada wizard pilih **PostgreSQL**, host `127.0.0.1`, port `5432`, database/username `siem_salabim`, dan password yang dibuat. Akun tersebut memerlukan izin migrasi schema saat instalasi. Untuk MySQL/MariaDB atau database di server lain, buat database dan akun khusus pada server tujuan terlebih dahulu; isikan koneksinya pada wizard. Jangan memakai database bersama aplikasi lain.
+
+#### B. Ambil kode dan bangun aset
+
+```bash
+sudo install -d -o "$(id -un)" -g www-data -m 2750 /var/www/siem_salabim
+git clone https://github.com/SundaXploit/siem_salabim.git /var/www/siem_salabim
+cd /var/www/siem_salabim
+composer install --no-dev --prefer-dist --optimize-autoloader
+npm ci
+npm run build
+```
+
+Gunakan direktori baru/kosong pada clone pertama. Pertahankan dev dependency npm saat build karena Vite berada di sana; dependency PHP produksi dipasang dengan `--no-dev`. Jangan memakai `--ignore-platform-reqs` untuk melewati kekurangan versi atau ekstensi PHP.
+
+#### C. Izin sementara dan token installer
+
+Installer mengganti `.env` secara atomik menggunakan file sementara pada root proyek. Karena itu, selama wizard, PHP-FPM perlu izin menulis root proyek, `storage/`, dan `bootstrap/cache/`. Setelah wizard selesai, izin root dan `.env` akan dibatasi kembali pada bagian E.
+
+```bash
+sudo chgrp -R www-data /var/www/siem_salabim
+sudo chmod -R g+rX,o-rwx /var/www/siem_salabim
+sudo chmod -R g-w /var/www/siem_salabim
+sudo find /var/www/siem_salabim -type d -exec chmod g+s {} \;
+sudo chmod 2770 /var/www/siem_salabim
+sudo chmod -R g+rwX storage bootstrap/cache
+sudo -u www-data /usr/bin/php artisan siem:prepare-installation
+```
+
+Gunakan `www-data` untuk perintah installer agar token, lock, dan marker privat dimiliki user yang sama dengan PHP-FPM. Perintah terakhir membuat `.env`, key, serta token. Simpan token hanya untuk membuka wizard. Jangan menjalankan `config:cache` sebelum wizard selesai.
+
+Untuk menerima lima gambar dengan batas aplikasi 10 MB per gambar, buat `/etc/php/8.3/fpm/conf.d/99-siem-upload.ini` menggunakan `sudo nano`, lalu isi:
+
+```ini
+upload_max_filesize = 10M
+post_max_size = 64M
+max_file_uploads = 5
+```
+
+```bash
+sudo systemctl restart php8.3-fpm
+```
+
+<a id="linux-apache"></a>
+
+#### D1. Pilihan Apache + PHP-FPM
+
+```bash
+sudo apt install -y apache2
+sudo a2enmod rewrite proxy_fcgi setenvif
+sudo a2enconf php8.3-fpm
+sudo nano /etc/apache2/sites-available/siem_salabim.conf
+```
+
+Isi virtual host berikut, dengan domain yang sudah diganti:
+
+```apache
+<VirtualHost *:80>
+    ServerName siem.example.com
+    DocumentRoot /var/www/siem_salabim/public
+
+    <Directory /var/www/siem_salabim/public>
+        Options -Indexes -MultiViews
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    LimitRequestBody 67108864
+    ErrorLog ${APACHE_LOG_DIR}/siem_salabim_error.log
+    CustomLog ${APACHE_LOG_DIR}/siem_salabim_access.log combined
+</VirtualHost>
+```
+
+```bash
+sudo a2ensite siem_salabim.conf
+sudo apache2ctl configtest
+sudo systemctl enable --now apache2
+sudo systemctl reload apache2
+```
+
+`AllowOverride All` mengaktifkan aturan routing pada `public/.htaccess`. Setelah tes konfigurasi menampilkan `Syntax OK`, pasang HTTPS untuk domain publik dengan:
+
+```bash
+sudo apt install -y certbot python3-certbot-apache
+sudo certbot --apache -d siem.example.com --redirect
+```
+
+Lanjutkan ke bagian E. Apache menjalankan PHP melalui PHP-FPM yang sudah diaktifkan; `php artisan serve` tidak diperlukan.
+
+<a id="linux-nginx"></a>
+
+#### D2. Pilihan Nginx + PHP-FPM
+
+```bash
+sudo apt install -y nginx
+sudo nano /etc/nginx/sites-available/siem_salabim
+```
+
+Isi server block berikut, dengan domain dan versi socket yang sesuai server:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name siem.example.com;
+    root /var/www/siem_salabim/public;
+    index index.php;
+    charset utf-8;
+    client_max_body_size 64m;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /index.php {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_read_timeout 240s;
+    }
+
+    location ~ \.php$ {
+        return 404;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+
+    access_log /var/log/nginx/siem_salabim_access.log;
+    error_log /var/log/nginx/siem_salabim_error.log;
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/siem_salabim /etc/nginx/sites-enabled/siem_salabim
+sudo nginx -t
+sudo systemctl enable --now nginx
+sudo systemctl reload nginx
+```
+
+Pastikan socket `/run/php/php8.3-fpm.sock` ada. Jika menggunakan versi PHP lain, ubah nama paket, layanan, path konfigurasi, dan socket secara konsisten. Setelah tes konfigurasi berhasil, pasang HTTPS untuk domain publik:
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d siem.example.com --redirect
+```
+
+Lanjutkan ke bagian E. Nginx meneruskan request ke `public/index.php` melalui PHP-FPM; tidak perlu `php artisan serve` maupun `npm run dev` pada server produksi.
+
+#### E. Selesaikan wizard melalui HTTPS dan batasi izin
+
+Sebelum Certbot dijalankan, DNS domain harus menuju server dan port HTTP/HTTPS harus diizinkan pada firewall/security group yang sesuai. Untuk domain internal yang tidak memenuhi validasi sertifikat publik, gunakan sertifikat dari CA organisasi dan konfigurasi HTTPS internal. Hindari mengisi kredensial operasional melalui HTTP terbuka.
+
+Buka **`https://siem.example.com/install`**, masukkan token dari bagian C, lalu isi wizard. Gunakan URL aplikasi `https://siem.example.com`; installer menyesuaikan Secure cookie berdasarkan URL ini. Jika token kedaluwarsa, ulangi perintah persiapan sebagai `www-data`. Setelah instalasi berhasil:
+
+```bash
+cd /var/www/siem_salabim
+sudo chmod 2750 /var/www/siem_salabim
+sudo chown root:www-data .env
+sudo chmod 640 .env
+sudo -u www-data /usr/bin/php artisan config:cache
+sudo -u www-data /usr/bin/php artisan view:cache
+```
+
+Root proyek kini dapat dibaca PHP-FPM tetapi tidak dapat ditulis oleh grup `www-data`; `.env` juga hanya dapat dibaca oleh user runtime. `storage/` dan `bootstrap/cache/` tetap writable untuk operasi aplikasi. Lindungi direktori cache karena konfigurasi yang dikompilasi dapat berisi secret. Jangan menggunakan `chmod -R 777`.
+
+Untuk sertifikat Certbot, periksa simulasi perpanjangan dengan `sudo certbot renew --dry-run` dan pastikan timer/perpanjangan sertifikat dipantau.
+
+<a id="linux-worker"></a>
+
+#### F. Worker permanen dan scheduler
+
+Setelah database dan akun admin selesai dibuat oleh wizard, buat `/etc/supervisor/conf.d/siem-salabim.conf`:
+
+```ini
+[program:siem-default]
+directory=/var/www/siem_salabim
+command=/usr/bin/php artisan queue:work --queue=ai,default --sleep=3 --tries=3 --timeout=1800
+user=www-data
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=1860
+umask=0027
+redirect_stderr=true
+stdout_logfile=/var/www/siem_salabim/storage/logs/worker-default.log
+
+[program:siem-exports]
+directory=/var/www/siem_salabim
+command=/usr/bin/php artisan queue:work --queue=exports --sleep=3 --tries=3 --timeout=1800
+user=www-data
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=1860
+umask=0027
+redirect_stderr=true
+stdout_logfile=/var/www/siem_salabim/storage/logs/worker-exports.log
+```
+
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl status siem-default siem-exports
+sudo crontab -u www-data -e
+```
+
+Tambahkan satu baris berikut pada crontab user `www-data`:
+
+```cron
+* * * * * cd /var/www/siem_salabim && /usr/bin/php artisan schedule:run >> storage/logs/scheduler.log 2>&1
+```
+
+Gunakan satu scheduler per instalasi. Dengan cron ini, jangan sekaligus menjalankan `schedule:work` atau `composer run dev` pada server. `QUEUE_CONNECTION=database` memerlukan tabel antrean hasil wizard; `retry_after` harus lebih besar dari timeout worker. Nilai bawaan proyek adalah 3660 detik.
+
+Sesudah mengganti kode atau konfigurasi, jalankan dari direktori proyek:
+
+```bash
+sudo -u www-data /usr/bin/php artisan config:cache
+sudo -u www-data /usr/bin/php artisan view:cache
+sudo -u www-data /usr/bin/php artisan queue:restart
+sudo supervisorctl status siem-default siem-exports
+```
+
+Supervisor memulai kembali worker setelah proses lama menyelesaikan job dan keluar. Jika file PHP di-cache oleh OPcache, muat ulang PHP-FPM secara terencana. Periksa `storage/logs/laravel.log`, log worker/scheduler, serta error log Apache/Nginx bila antrean tidak bergerak atau muncul 500/502.
+
+Rujukan konfigurasi: [deployment Laravel 13](https://laravel.com/framework/docs/13.x/deployment), [worker/Supervisor Laravel](https://laravel.com/framework/docs/13.x/queues#supervisor-configuration), [Apache Ubuntu](https://ubuntu.com/server/docs/how-to/web-services/install-apache2/), [Nginx Ubuntu](https://ubuntu.com/server/docs/how-to/web-services/install-nginx/), dan [sertifikat TLS Ubuntu](https://ubuntu.com/server/docs/how-to/security/obtain-tls-certificates/). Sesuaikan konfigurasi dengan kebijakan jaringan dan server Anda.
+
+</details>
+
+<a id="reset-aplikasi"></a>
+
+### Reset aplikasi dan ulangi instalasi
+
+> [!WARNING]
+> Reset **menghapus seluruh tabel pada database aktif**, termasuk akun, alert, konfigurasi, riwayat, dan antrean database. Ini bukan reset tampilan atau cara memperbarui versi. Gunakan database khusus aplikasi dan buat backup database, `.env`/kunci, serta file private sebelum melanjutkan.
+
+Hentikan worker, scheduler, dan akses pengguna terlebih dahulu. Dari direktori proyek, jalankan reset interaktif dan baca target database yang ditampilkan sebelum mengonfirmasi:
+
+```bash
+php artisan siem:reset-installation
+```
+
+Untuk otomatisasi yang memang sengaja menghapus data tanpa prompt:
+
+```bash
+php artisan siem:reset-installation --force
+```
+
+Setelah berhasil, perintah reset otomatis menjalankan persiapan installer dan menampilkan **token baru**. Database menjadi kosong; key aplikasi serta pengaturan koneksi database dipertahankan, sementara integrasi perlu dikonfigurasi ulang. File arsip/private tidak otomatis menjadi terhapus hanya karena tabel database di-reset; kelola backup dan retensinya secara terpisah.
+
+Untuk lokal, jalankan kembali `php artisan serve --host=127.0.0.1 --port=8000`, buka `http://127.0.0.1:8000/install`, dan gunakan token baru. Jika hanya token yang kedaluwarsa pada instalasi yang belum selesai, cukup jalankan `siem:prepare-installation` tanpa reset.
+
+Untuk server Linux pada panduan di atas:
+
+1. Batasi akses pengguna ke aplikasi; hentikan kedua worker dengan `sudo supervisorctl stop siem-default siem-exports`. Nonaktifkan sementara hanya baris cron SIEM melalui `sudo crontab -u www-data -e`.
+2. Berikan kembali izin sementara dan jalankan reset sebagai user runtime:
+
+```bash
+cd /var/www/siem_salabim
+sudo chmod 2770 /var/www/siem_salabim
+sudo chmod 660 .env
+sudo -u www-data /usr/bin/php artisan siem:reset-installation
+```
+
+3. Buka URL HTTPS `/install`, selesaikan wizard dengan token baru, lalu ulangi pembatasan izin `.env`/root proyek dan cache pada bagian E.
+4. Aktifkan kembali baris cron dan jalankan `sudo supervisorctl start siem-default siem-exports`. Pastikan keduanya kembali berstatus RUNNING.
+
+Jika tujuan Anda hanya memperbarui 1.1 ke 1.2, gunakan [panduan upgrade](docs/README.md#upgrade-dan-operasional) agar data dipertahankan. Jika hanya perlu membuat admin dari terminal, gunakan `php artisan siem:create-admin` dengan akun sistem yang dapat membaca konfigurasi; pada Linux gunakan `sudo -u www-data /usr/bin/php artisan siem:create-admin`.
 
 <a id="akun-bawaan"></a>
 
@@ -1132,6 +1506,7 @@ Gunakan satu scheduler per instalasi. Untuk pengembangan yang sekaligus menjalan
 | Kebutuhan | Dokumentasi |
 | :--- | :--- |
 | Cara kerja dan batas perlindungan keamanan | [Keamanan SIEM Salabim](#keamanan) |
+| Setup lokal, Linux, dan mengulang instalasi | [Instalasi cepat](#instalasi-cepat), [Apache](#linux-apache), [Nginx](#linux-nginx), [reset aplikasi](#reset-aplikasi) |
 | Filter impor, tanggal, level, dan fetch manual | [OpenSearch dan impor alert](docs/README.md#integrasi-wazuh-waktu-dan-ssl) |
 | Role, privilege, dan pembatasan agent | [Akses agent](#akses) |
 | Data yang dikirim ke AI | [Analisis AI](docs/README.md#analisis-ai) |
