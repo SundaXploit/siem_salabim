@@ -615,7 +615,7 @@ class SettingController extends Controller
     // ─── Data Management ─────────────────────────────────────────────────────
 
     /**
-     * Preview — how many records will be affected?
+     * Preview - how many records will be affected?
      */
     public function previewData(Request $request)
     {

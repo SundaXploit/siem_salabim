@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         $legacyBody = <<<'TPL'
-🚨 <b>SOC Subang — Notifikasi Alert</b>
+🚨 <b>SOC Subang - Notifikasi Alert</b>
 
 📌 <b>Rule ID</b>   : {rule_id} (Level {rule_level})
 📋 <b>Deskripsi</b> : {rule_description}
@@ -29,7 +29,7 @@ TPL;
         $existing = DB::table('notification_templates')->where('name', 'Custom / Pesan Bebas')->first();
         if ($existing !== null) {
             // Preserve an administrator's edited body. Only replace the shipped default.
-            if ($existing->body === $legacyBody) {
+            if (str_replace(mb_chr(8212, 'UTF-8'), '-', $existing->body) === $legacyBody) {
                 DB::table('notification_templates')->where('id', $existing->id)->update([
                     'body' => NotificationTemplate::CUSTOM_BODY, 'updated_at' => now(),
                 ]);

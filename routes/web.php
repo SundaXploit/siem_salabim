@@ -55,7 +55,7 @@ Route::middleware(['auth', 'can:alerts.view'])->group(function () {
     Route::get('/alerts/{alert}/notifications/{operationId}', [NotificationController::class, 'status'])->whereUuid('operationId')->middleware('can:notify,alert')->name('alerts.notification-status');
     Route::get('/alerts/{alert}/template', [NotificationController::class, 'template'])->middleware('can:notify,alert')->name('alerts.template');
 
-    // Notification templates management — admin only (enforced in controller)
+    // Notification templates management - admin only (enforced in controller)
     Route::get('/notification-templates', [NotificationController::class, 'templatesList'])->middleware('admin')->name('templates.list');
     Route::post('/notification-templates', [NotificationController::class, 'saveTemplate'])->middleware('admin')->name('templates.save');
     Route::delete('/notification-templates/{template}', [NotificationController::class, 'deleteTemplate'])->middleware('admin')->name('templates.delete');
@@ -103,7 +103,7 @@ Route::middleware(['auth', 'can:alerts.view'])->group(function () {
         // Manual trigger fetch
         Route::post('/settings/fetch-now', [SettingController::class, 'manualFetch'])->name('settings.fetch-now');
 
-        // Data management — flexible POST (format, scope, period)
+        // Data management - flexible POST (format, scope, period)
         Route::get('/settings/data/preview', [SettingController::class, 'previewData'])->name('settings.data.preview');
         Route::post('/settings/data/backup', [SettingController::class, 'backupData'])->name('settings.data.backup');
         Route::post('/settings/data/delete', [SettingController::class, 'deleteData'])->name('settings.data.delete');

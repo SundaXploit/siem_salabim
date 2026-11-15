@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow, noarchive">
-    <title>Instalasi Selesai &mdash; SIEM Salabim</title>
+    <title>Instalasi Selesai - SIEM Salabim</title>
     @include('partials.brand-head')
     <style>
         :root { --bg: var(--color-canvas); --panel: var(--color-surface-1); --line: var(--color-border-default); --text: var(--color-text-primary); --muted: var(--color-text-secondary); --success: var(--color-success); }

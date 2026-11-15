@@ -34,7 +34,7 @@
                 <p class="settings-field-help">Variabel tunggal dan massal: <code>{alert_id}</code>, <code>{agent_id}</code>, <code>{agent_name}</code>, <code>{agent_ip}</code>, <code>{src_ip}</code>, <code>{dst_ip}</code>, <code>{rule_id}</code>, <code>{rule_level}</code>, <code>{rule_description}</code>, <code>{source_cluster}</code>, <code>{timestamp}</code>, <code>{wazuh_id}</code>.</p>
                 <p class="settings-field-help">Khusus ringkasan massal: <code>{alert_count}</code>, <code>{alert_ids}</code>, <code>{agent_count}</code>, <code>{agents}</code>, <code>{agent_ids}</code>, <code>{rule_ids}</code>, <code>{max_level}</code>, <code>{alerts}</code>. Nilai daftar hanya mencakup agent yang dipetakan ke masing-masing tujuan.</p>
             </div>
-            <label class="form-checkbox-label"><input type="checkbox" x-model="editor.is_active"> Aktif — tampil pada pemilih template</label>
+            <label class="form-checkbox-label"><input type="checkbox" x-model="editor.is_active"> Aktif - tampil pada pemilih template</label>
             <p class="form-error" x-show="error" x-text="error" role="alert"></p>
             <div class="bulk-triage-actions"><button type="button" class="btn btn-ghost" @click="closeEditor()" :disabled="saving">Batal</button><button type="submit" class="btn btn-primary" :disabled="saving" x-text="saving ? 'Menyimpan…' : 'Simpan template'">Simpan template</button></div>
         </form>

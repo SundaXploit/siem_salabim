@@ -39,13 +39,13 @@
                     <td><strong>{{ $log->actor_name }}</strong><div class="text-muted text-xs">{{ $log->actor_role }}</div></td>
                     <td>{{ $log->action_label }}</td>
                     <td style="min-width:180px; max-width:360px;">
-                        <span>{{ $log->subject ?? '—' }}</span>
+                        <span>{{ $log->subject ?? '-' }}</span>
                         @if(array_key_exists('is_active', $log->context ?? []))<div class="text-muted text-xs">Status aktif: {{ $log->context['is_active'] ? 'Aktif' : 'Nonaktif' }}</div>@endif
                         @if(!empty($log->context['fields']))<div class="text-muted text-xs" style="overflow-wrap:anywhere;">Bidang formulir: {{ implode(', ', $log->context['fields']) }}</div>@endif
                     </td>
                     <td><span class="badge {{ $log->result === 'success' ? 'badge-sent' : 'badge-failed' }}">{{ $log->result === 'success' ? 'BERHASIL' : 'GAGAL' }}</span></td>
-                    <td class="font-technical text-xs">{{ $log->ip_address ?? '—' }}</td>
-                    <td class="text-xs" style="white-space:nowrap;">{{ $log->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '—' }}</td>
+                    <td class="font-technical text-xs">{{ $log->ip_address ?? '-' }}</td>
+                    <td class="text-xs" style="white-space:nowrap;">{{ $log->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '-' }}</td>
                 </tr>
                 @empty
                 <tr><td colspan="6" class="text-muted" style="text-align:center; padding:var(--spacing-48);">Belum ada aktivitas yang sesuai filter. Pencatatan dimulai setelah pembaruan fitur ini.</td></tr>

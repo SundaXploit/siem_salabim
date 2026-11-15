@@ -130,7 +130,7 @@ Cipher default menjadi **AES-256-GCM**, dengan verifikasi integritas bawaan. Pem
 | Ekspor dan konfigurasi | Password arsip, password OpenSearch, bot token Telegram, API key AI |
 | Cache AI massal | Hasil analisis tersimpan |
 
-- Metadata operasional—identitas sumber/deduplikasi, Rule ID/level, status, cluster/index/ID sumber, waktu, dan kepemilikan ACK—tetap dapat diproses SQL. Ini enkripsi selektif; nama agent, deskripsi rule, dan metadata akun/audit tidak seluruhnya dienkripsi.
+- Metadata operasional-identitas sumber/deduplikasi, Rule ID/level, status, cluster/index/ID sumber, waktu, dan kepemilikan ACK-tetap dapat diproses SQL. Ini enkripsi selektif; nama agent, deskripsi rule, dan metadata akun/audit tidak seluruhnya dienkripsi.
 - Cast mendekripsi atribut ketika diakses. Batch ingestion tetap mengenkripsi payload sebelum upsert, karena upsert tidak menjalankan cast/event model secara otomatis.
 - Indeks **HMAC-SHA256** menjaga pencarian exact-match IP dan pencarian kata utuh pada data terenkripsi. Nilai asli tidak disimpan pada tabel indeks.
 - Indeks memakai `SIEM_BLIND_INDEX_KEY` yang independen dan stabil, sehingga rotasi `APP_KEY` tidak mengubah kunci lookup.

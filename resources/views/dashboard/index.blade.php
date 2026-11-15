@@ -184,7 +184,7 @@
     @can('alerts.notify')
     <div x-data="notificationComposer(@js(['bulk' => true, 'asyncSubmit' => true, 'templateUrl' => route('alerts.bulk-notify-preview'), 'sendUrl' => route('alerts.bulk-notify'), 'operationId' => (string) Illuminate\Support\Str::uuid()]))"
          @open-bulk-notification.window="openNotifModal($event.detail.alertIds)">
-        @include('partials.notification-dialog', ['notificationAction' => route('alerts.bulk-notify'), 'notificationTitle' => 'Kirim notifikasi Telegram — triage massal', 'bulkNotification' => true])
+        @include('partials.notification-dialog', ['notificationAction' => route('alerts.bulk-notify'), 'notificationTitle' => 'Kirim notifikasi Telegram - triage massal', 'bulkNotification' => true])
     </div>
     @endcan
     @endif
@@ -299,7 +299,7 @@
                             </button>
 
                             {{-- NOTIF MODAL --}}
-                            @include('partials.notification-dialog', ['notificationAction' => route('alerts.notify', $alert), 'notificationTitle' => 'Kirim notifikasi Telegram — alert #'.$alert->id])
+                            @include('partials.notification-dialog', ['notificationAction' => route('alerts.notify', $alert), 'notificationTitle' => 'Kirim notifikasi Telegram - alert #'.$alert->id])
                             {{-- Detail --}}
                             @endcan
                             <a href="{{ route('alerts.show', $alert) }}" class="table-action" title="Lihat detail alert" aria-label="Lihat detail alert"><i data-lucide="eye" aria-hidden="true"></i></a>

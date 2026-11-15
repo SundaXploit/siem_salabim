@@ -28,7 +28,7 @@
                     <div><span>Rule berbeda</span><strong>{{ $alerts->pluck('rule_id')->unique()->count() }}</strong></div>
                     <div><span>Level tertinggi</span><strong>{{ $alerts->max('rule_level') }}</strong></div>
                 </div>
-                <p class="bulk-alert-period">{{ $alerts->first()->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} — {{ $alerts->last()->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} WIB</p>
+                <p class="bulk-alert-period">{{ $alerts->first()->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} - {{ $alerts->last()->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} WIB</p>
                 <p class="text-muted text-sm">Buka tab <strong>AI</strong> untuk menganalisis seluruh pilihan dalam satu konteks. Periksa juga kronologi dan log lengkap di bawah.</p>
             </div>
         </div>
@@ -102,7 +102,7 @@
         @can('alerts.notify')
         <div x-data="notificationComposer(@js(['bulk' => true, 'templateUrl' => route('alerts.bulk-notify-preview'), 'sendUrl' => route('alerts.bulk-notify'), 'operationId' => (string) Illuminate\Support\Str::uuid()]))"
              @open-bulk-detail-notification.window="openNotifModal(@js($ids))">
-            @include('partials.notification-dialog', ['notificationAction' => route('alerts.bulk-notify'), 'notificationTitle' => 'Kirim notifikasi Telegram — '.count($ids).' alert terpilih', 'bulkNotification' => true])
+            @include('partials.notification-dialog', ['notificationAction' => route('alerts.bulk-notify'), 'notificationTitle' => 'Kirim notifikasi Telegram - '.count($ids).' alert terpilih', 'bulkNotification' => true])
         </div>
         @endcan
     </aside>

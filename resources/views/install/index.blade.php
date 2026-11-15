@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow, noarchive">
-    <title>Instalasi &mdash; SIEM Salabim</title>
+    <title>Instalasi - SIEM Salabim</title>
     @include('partials.brand-head')
     <style>
         :root {

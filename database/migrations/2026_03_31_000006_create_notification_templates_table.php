@@ -197,7 +197,7 @@ TPL,
                 'icon'     => '✍️',
                 'category' => 'Custom',
                 'body'     => <<<'TPL'
-🚨 <b>SOC Subang — Notifikasi Alert</b>
+🚨 <b>SOC Subang - Notifikasi Alert</b>
 
 📌 <b>Rule ID</b>   : {rule_id} (Level {rule_level})
 📋 <b>Deskripsi</b> : {rule_description}

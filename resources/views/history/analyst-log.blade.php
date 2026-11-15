@@ -48,14 +48,14 @@
                         @if($log->action === 'notify')
                         <div class="font-technical text-xs">{{ $log->chat_id }}</div>
                         @include('partials.notification-result', ['state' => $log->delivery_state, 'status' => $log->response_status])
-                        @else<span class="text-muted">—</span>@endif
+                        @else<span class="text-muted">-</span>@endif
                     </td>
                     <td style="min-width:200px; max-width:380px;">
                         @if(mb_strlen($log->note ?? '') > 140)
                         <details class="history-log-note"><summary>{{ \Illuminate\Support\Str::limit($log->note, 140) }}</summary><p>{{ $log->note }}</p></details>
-                        @else <span>{{ $log->note ?: '—' }}</span> @endif
+                        @else <span>{{ $log->note ?: '-' }}</span> @endif
                     </td>
-                    <td class="text-xs" style="white-space:nowrap;">{{ $log->occurred_at ? \Carbon\Carbon::parse($log->occurred_at, config('app.timezone'))->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') : '—' }}</td>
+                    <td class="text-xs" style="white-space:nowrap;">{{ $log->occurred_at ? \Carbon\Carbon::parse($log->occurred_at, config('app.timezone'))->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') : '-' }}</td>
                 </tr>
                 @empty
                 <tr><td colspan="6" class="text-muted" style="text-align:center; padding:var(--spacing-48);">Belum ada riwayat analis yang sesuai filter.</td></tr>

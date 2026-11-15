@@ -178,7 +178,7 @@
         {{-- ── NOTIFY MODAL ── --}}
         @endcan
         @can('notify', $alert)
-        @include('partials.notification-dialog', ['notificationAction' => route('alerts.notify', $alert), 'notificationTitle' => 'Kirim notifikasi Telegram — alert #'.$alert->id])
+        @include('partials.notification-dialog', ['notificationAction' => route('alerts.notify', $alert), 'notificationTitle' => 'Kirim notifikasi Telegram - alert #'.$alert->id])
         @endcan
     </div>
 

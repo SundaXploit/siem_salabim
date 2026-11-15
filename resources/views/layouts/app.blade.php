@@ -6,8 +6,8 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @include('partials.session-security')
     @include('partials.brand-head')
-    <title>@yield('title', 'Dashboard') — SIEM Salabim</title>
-    <meta name="description" content="@yield('description', 'Security Information and Event Management — SOC Subang')">
+    <title>@yield('title', 'Dashboard') - SIEM Salabim</title>
+    <meta name="description" content="@yield('description', 'Security Information and Event Management - SOC Subang')">
     <script>
         (function () {
             try {
@@ -39,7 +39,7 @@
     <a class="skip-link" href="#main-workspace">Langsung ke konten</a>
     <aside id="primary-sidebar" class="sidebar" :class="{ 'is-mobile-open': sidebarOpen }" :inert="isMobile && !sidebarOpen">
         <div class="sidebar-logo">
-            <a href="{{ route('dashboard.index') }}" class="sidebar-brand-link" aria-label="SIEM Salabim — Dashboard">
+            <a href="{{ route('dashboard.index') }}" class="sidebar-brand-link" aria-label="SIEM Salabim - Dashboard">
                 <x-application-logo alt="" />
                 <span class="sidebar-wordmark">SIEM <strong>Salabim</strong></span>
             </a>
@@ -105,7 +105,7 @@
                 <i data-lucide="menu" aria-hidden="true"></i>
             </button>
 
-            <a href="{{ route('dashboard.index') }}" class="topbar-identity" aria-label="SIEM Salabim — Dashboard">
+            <a href="{{ route('dashboard.index') }}" class="topbar-identity" aria-label="SIEM Salabim - Dashboard">
                 <x-application-logo alt="" />
                 <span class="brand-name">SIEM <strong>Salabim</strong></span>
             </a>

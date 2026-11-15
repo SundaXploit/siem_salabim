@@ -10,7 +10,7 @@
 @source '../../storage/framework/views/*.php';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
-/* Alpine.js cloak — hide elements until Alpine initializes */
+/* Alpine.js cloak - hide elements until Alpine initializes */
 [x-cloak] { display: none !important; }
 
 /* Compatibility for the two v3 utilities still present in Breeze markup. */

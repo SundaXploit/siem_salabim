@@ -4,7 +4,7 @@
 @section('title', 'Settings')
 @section('page-context', 'Administration')
 @section('page-title', 'Settings')
-@section('page-subtitle', 'Konfigurasi sistem — Admin Only')
+@section('page-subtitle', 'Konfigurasi sistem - Admin Only')
 
 @section('content')
 
@@ -97,8 +97,8 @@
                 <div class="form-group">
                     <label class="form-label" for="opensearch-verify-ssl">Verifikasi SSL Wazuh/OpenSearch</label>
                     <select id="opensearch-verify-ssl" name="opensearch_verify_ssl" class="form-select" required>
-                        <option value="1" @selected(filter_var(old('opensearch_verify_ssl', $configs['opensearch_verify_ssl']), FILTER_VALIDATE_BOOL))>true — Verifikasi sertifikat (disarankan)</option>
-                        <option value="0" @selected(!filter_var(old('opensearch_verify_ssl', $configs['opensearch_verify_ssl']), FILTER_VALIDATE_BOOL))>false — Lewati verifikasi sertifikat</option>
+                        <option value="1" @selected(filter_var(old('opensearch_verify_ssl', $configs['opensearch_verify_ssl']), FILTER_VALIDATE_BOOL))>true - Verifikasi sertifikat (disarankan)</option>
+                        <option value="0" @selected(!filter_var(old('opensearch_verify_ssl', $configs['opensearch_verify_ssl']), FILTER_VALIDATE_BOOL))>false - Lewati verifikasi sertifikat</option>
                     </select>
                     <p class="settings-field-help">Jika sertifikat internal belum dipercaya, false dapat dipakai sementara pada jaringan tepercaya. Perbaiki CA/nama host lalu aktifkan true kembali. Pilihan ini juga dipakai tombol Uji koneksi sebelum disimpan.</p>
                 </div>
@@ -106,7 +106,7 @@
                     <label class="form-label" for="opensearch-timezone">Zona waktu Wazuh untuk timestamp tanpa offset</label>
                     <select id="opensearch-timezone" name="opensearch_timezone" class="form-select" required>
                         @foreach(DateTimeZone::listIdentifiers() as $timezone)
-                            <option value="{{ $timezone }}" @selected(old('opensearch_timezone', $configs['opensearch_timezone']) === $timezone)>{{ match ($timezone) { 'UTC' => 'UTC', 'Asia/Jakarta' => 'Asia/Jakarta — WIB (UTC+07:00)', 'Asia/Makassar' => 'Asia/Makassar — WITA (UTC+08:00)', 'Asia/Jayapura' => 'Asia/Jayapura — WIT (UTC+09:00)', default => $timezone } }}</option>
+                            <option value="{{ $timezone }}" @selected(old('opensearch_timezone', $configs['opensearch_timezone']) === $timezone)>{{ match ($timezone) { 'UTC' => 'UTC', 'Asia/Jakarta' => 'Asia/Jakarta - WIB (UTC+07:00)', 'Asia/Makassar' => 'Asia/Makassar - WITA (UTC+08:00)', 'Asia/Jayapura' => 'Asia/Jayapura - WIT (UTC+09:00)', default => $timezone } }}</option>
                         @endforeach
                     </select>
                     <p class="settings-field-help">Jika waktu Wazuh sudah WIB tanpa offset, pilih Asia/Jakarta. Timestamp dengan Z atau +07:00 selalu mengikuti offset aslinya; waktu WIB tetap tampil pada jam yang sama. Berlaku untuk impor baru.</p>
@@ -116,7 +116,7 @@
                     <label class="form-label" for="alert-min-alert-level">Ambang impor rule level alert</label>
                     <select id="alert-min-alert-level" name="min_alert_level" class="form-select" required>
                         @foreach($levelOptions as $lvl => $opt)
-                            <option value="{{ $lvl }}" @selected($currentLevel === $lvl)>{{ $opt['label'] }} — {{ $opt['desc'] }}</option>
+                            <option value="{{ $lvl }}" @selected($currentLevel === $lvl)>{{ $opt['label'] }} - {{ $opt['desc'] }}</option>
                         @endforeach
                     </select>
                     <p class="settings-field-help">Hanya alert Wazuh pada level ini atau lebih tinggi yang diimpor.</p>

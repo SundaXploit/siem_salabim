@@ -103,7 +103,7 @@ class TelegramService
 
     /**
      * Send a photo file to a Telegram chat.
-     * Photo is sent as a separate message from text — NOT as caption.
+     * Photo is sent as a separate message from text - NOT as caption.
      *
      * @param  string  $photoPath  Absolute path to the image file on disk
      * @param  string|null  $filename  Optional filename to send to Telegram (useful for temp files)

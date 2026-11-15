@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
     @include('partials.brand-head')
-    <title>Masuk &mdash; SIEM Salabim</title>
+    <title>Masuk - SIEM Salabim</title>
     <script>
         (function () {
             try {
@@ -35,7 +35,7 @@
     <main class="auth-login-layout" aria-label="Masuk ke SIEM Salabim">
         <section class="auth-signin-panel" aria-labelledby="login-form-title">
             <div class="login-container">
-                <a href="{{ url('/') }}" class="auth-login-brand" aria-label="SIEM Salabim — halaman utama">
+                <a href="{{ url('/') }}" class="auth-login-brand" aria-label="SIEM Salabim - halaman utama">
                     <x-application-logo alt="" />
                     <span class="auth-login-wordmark">SIEM <strong>Salabim</strong><small>Security Operations Center</small></span>
                 </a>

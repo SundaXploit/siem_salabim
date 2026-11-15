@@ -73,7 +73,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Get ALL notification templates list (for Settings management) — Admin only
+     * Get ALL notification templates list (for Settings management) - Admin only
      */
     public function templatesList()
     {
@@ -84,7 +84,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Save a new or update existing template — Admin only
+     * Save a new or update existing template - Admin only
      */
     public function saveTemplate(Request $request)
     {
@@ -118,7 +118,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Delete a template — Admin only
+     * Delete a template - Admin only
      */
     public function deleteTemplate(NotificationTemplate $template)
     {

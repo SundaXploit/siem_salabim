@@ -43,7 +43,7 @@
                     <input type="hidden" :name="`messages[${index}][destination_key]`" :value="item.destination_key">
                     @endif
                     <label class="form-label notification-message-label" :for="$id('notification-message') + '-' + index">
-                        <span>Pesan (dapat diedit bebas)<span x-show="messages.length > 1" x-text="' — ' + item.label"></span></span>
+                        <span>Pesan (dapat diedit bebas)<span x-show="messages.length > 1" x-text="' - ' + item.label"></span></span>
                         <span class="text-muted text-xs" x-text="characterCount(item.message) + ' / 4096 karakter'"></span>
                     </label>
                     <textarea class="form-textarea" :id="$id('notification-message') + '-' + index" rows="16" minlength="5" maxlength="4096"

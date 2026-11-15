@@ -19,7 +19,7 @@ class AlertController extends Controller
     public function __construct(private readonly AlertIngestionCoordinator $ingestion) {}
 
     /* ═══════════════════════════════════════════════════════════════════
-     ║  Dashboard — optimized for fast page load
+     ║  Dashboard - optimized for fast page load
      ║
      ║  Bottlenecks fixed:
      ║  1. Artisan::call('siem:fetch-alerts') moved to background
@@ -27,7 +27,7 @@ class AlertController extends Controller
      ║     every single page request.
      ║  2. Stats (new/ack/ignored/total) computed in ONE SQL query
      ║     instead of 4 separate Model::where()->count() calls.
-     ║  3. $newCount removed — stats already passed to view.
+     ║  3. $newCount removed - stats already passed to view.
      ═══════════════════════════════════════════════════════════════════*/
 
     public function index(Request $request)
@@ -256,7 +256,7 @@ class AlertController extends Controller
     }
 
     /* ═══════════════════════════════════════════════════════════════════
-     ║  Private helper — rate-limited Artisan dispatch
+     ║  Private helper - rate-limited Artisan dispatch
      ═══════════════════════════════════════════════════════════════════*/
 
     /**

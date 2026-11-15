@@ -2,9 +2,9 @@
 
 <div align="center">
 
-<img src="public/images/brand/siem-salabim-logo.png" width="50%" alt="SIEM Salabim — dashboard SIEM Wazuh dan OpenSearch untuk monitoring keamanan serta operasi SOC.">
+<img src="public/images/brand/siem-salabim-logo.png" width="50%" alt="SIEM Salabim - dashboard SIEM Wazuh dan OpenSearch untuk monitoring keamanan serta operasi SOC.">
 
-# SIEM Salabim — Dashboard SIEM Wazuh untuk SOC
+# SIEM Salabim - Dashboard SIEM Wazuh untuk SOC
 
 **Pantau alert. Selidiki keterkaitan. Dokumentasikan respons.**
 
@@ -89,7 +89,7 @@ Mengenali pintu masuk aplikasi dan pilihan tema sebelum mulai bekerja.
 
 <a id="preview-01"></a>
 
-#### 01 / 49 — Login dalam mode gelap
+#### 01 / 49 - Login dalam mode gelap
 
 **Bagian:** Login · **Akses:** Admin dan analis · **Halaman:** `/login`.
 
@@ -103,7 +103,7 @@ Mengenali pintu masuk aplikasi dan pilihan tema sebelum mulai bekerja.
 
 <a id="preview-02"></a>
 
-#### 02 / 49 — Login dalam mode terang
+#### 02 / 49 - Login dalam mode terang
 
 **Bagian:** Login · **Akses:** Admin dan analis · **Halaman:** `/login`.
 
@@ -123,7 +123,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-03"></a>
 
-#### 03 / 49 — Dashboard SOC untuk admin
+#### 03 / 49 - Dashboard SOC untuk admin
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Admin · **Halaman:** `/dashboard`.
 
@@ -137,7 +137,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-04"></a>
 
-#### 04 / 49 — Dashboard SOC untuk analis
+#### 04 / 49 - Dashboard SOC untuk analis
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Analis · **Halaman:** `/dashboard`.
 
@@ -151,7 +151,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-05"></a>
 
-#### 05 / 49 — Dashboard admin secara lengkap
+#### 05 / 49 - Dashboard admin secara lengkap
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Admin · **Halaman:** `/dashboard`.
 
@@ -165,7 +165,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-06"></a>
 
-#### 06 / 49 — Dashboard analis secara lengkap
+#### 06 / 49 - Dashboard analis secara lengkap
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Analis · **Halaman:** `/dashboard`.
 
@@ -179,7 +179,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-07"></a>
 
-#### 07 / 49 — Kesimpulan AI pada dashboard admin
+#### 07 / 49 - Kesimpulan AI pada dashboard admin
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Admin · **Halaman:** `/dashboard`.
 
@@ -193,7 +193,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-08"></a>
 
-#### 08 / 49 — Kesimpulan AI pada dashboard analis
+#### 08 / 49 - Kesimpulan AI pada dashboard analis
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Analis · **Halaman:** `/dashboard`.
 
@@ -207,7 +207,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-09"></a>
 
-#### 09 / 49 — Dashboard admin dalam mode terang
+#### 09 / 49 - Dashboard admin dalam mode terang
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Admin · **Halaman:** `/dashboard`.
 
@@ -221,7 +221,7 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 
 <a id="preview-10"></a>
 
-#### 10 / 49 — Dashboard analis dalam mode terang
+#### 10 / 49 - Dashboard analis dalam mode terang
 
 **Bagian:** Monitoring → Dashboard · **Akses:** Analis · **Halaman:** `/dashboard`.
 
@@ -241,7 +241,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-11"></a>
 
-#### 11 / 49 — Daftar Live Alerts untuk admin
+#### 11 / 49 - Daftar Live Alerts untuk admin
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Admin · **Halaman:** `/live-alerts`.
 
@@ -255,7 +255,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-12"></a>
 
-#### 12 / 49 — Daftar Live Alerts untuk analis
+#### 12 / 49 - Daftar Live Alerts untuk analis
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Analis · **Halaman:** `/live-alerts`.
 
@@ -269,7 +269,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-13"></a>
 
-#### 13 / 49 — Detail satu alert untuk admin
+#### 13 / 49 - Detail satu alert untuk admin
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Admin · **Halaman:** `/alerts/{id}`.
 
@@ -283,7 +283,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-14"></a>
 
-#### 14 / 49 — Detail satu alert untuk analis
+#### 14 / 49 - Detail satu alert untuk analis
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Analis · **Halaman:** `/alerts/{id}`.
 
@@ -297,7 +297,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-15"></a>
 
-#### 15 / 49 — Bukti alert dalam tabel untuk admin
+#### 15 / 49 - Bukti alert dalam tabel untuk admin
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Admin · **Halaman:** `/alerts/{id} → tab Table`.
 
@@ -311,7 +311,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-16"></a>
 
-#### 16 / 49 — Bukti alert dalam tabel untuk analis
+#### 16 / 49 - Bukti alert dalam tabel untuk analis
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Analis · **Halaman:** `/alerts/{id} → tab Table`.
 
@@ -325,7 +325,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-17"></a>
 
-#### 17 / 49 — Analisis AI satu alert untuk admin
+#### 17 / 49 - Analisis AI satu alert untuk admin
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Admin · **Halaman:** `/alerts/{id} → tab AI`.
 
@@ -339,7 +339,7 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 
 <a id="preview-18"></a>
 
-#### 18 / 49 — Analisis AI satu alert untuk analis
+#### 18 / 49 - Analisis AI satu alert untuk analis
 
 **Bagian:** Monitoring → Live Alerts → Detail alert · **Akses:** Analis · **Halaman:** `/alerts/{id} → tab AI`.
 
@@ -359,7 +359,7 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 
 <a id="preview-19"></a>
 
-#### 19 / 49 — Detail dan analisis massal untuk admin
+#### 19 / 49 - Detail dan analisis massal untuk admin
 
 **Bagian:** Live Alerts → Triage massal / Detail alert → Telegram · **Akses:** Admin · **Halaman:** `/live-alerts/triage/detail`.
 
@@ -373,7 +373,7 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 
 <a id="preview-20"></a>
 
-#### 20 / 49 — Detail dan analisis massal untuk analis
+#### 20 / 49 - Detail dan analisis massal untuk analis
 
 **Bagian:** Live Alerts → Triage massal / Detail alert → Telegram · **Akses:** Analis · **Halaman:** `/live-alerts/triage/detail`.
 
@@ -387,7 +387,7 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 
 <a id="preview-21"></a>
 
-#### 21 / 49 — Kronologi alert pilihan untuk admin
+#### 21 / 49 - Kronologi alert pilihan untuk admin
 
 **Bagian:** Live Alerts → Triage massal / Detail alert → Telegram · **Akses:** Admin · **Halaman:** `/live-alerts/triage/detail → kronologi`.
 
@@ -401,7 +401,7 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 
 <a id="preview-22"></a>
 
-#### 22 / 49 — Kronologi alert pilihan untuk analis
+#### 22 / 49 - Kronologi alert pilihan untuk analis
 
 **Bagian:** Live Alerts → Triage massal / Detail alert → Telegram · **Akses:** Analis · **Halaman:** `/live-alerts/triage/detail → kronologi`.
 
@@ -415,7 +415,7 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 
 <a id="preview-23"></a>
 
-#### 23 / 49 — Pratinjau notifikasi Telegram untuk admin
+#### 23 / 49 - Pratinjau notifikasi Telegram untuk admin
 
 **Bagian:** Live Alerts → Triage massal / Detail alert → Telegram · **Akses:** Admin · **Halaman:** `/alerts/{id} → pratinjau Telegram`.
 
@@ -429,7 +429,7 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 
 <a id="preview-24"></a>
 
-#### 24 / 49 — Pratinjau notifikasi Telegram untuk analis
+#### 24 / 49 - Pratinjau notifikasi Telegram untuk analis
 
 **Bagian:** Live Alerts → Triage massal / Detail alert → Telegram · **Akses:** Analis · **Halaman:** `/alerts/{id} → pratinjau Telegram`.
 
@@ -449,7 +449,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-25"></a>
 
-#### 25 / 49 — Riwayat alert untuk admin
+#### 25 / 49 - Riwayat alert untuk admin
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Admin · **Halaman:** `/history/alerts`.
 
@@ -463,7 +463,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-26"></a>
 
-#### 26 / 49 — Riwayat alert untuk analis
+#### 26 / 49 - Riwayat alert untuk analis
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Analis · **Halaman:** `/history/alerts`.
 
@@ -477,7 +477,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-27"></a>
 
-#### 27 / 49 — Log analis dari sisi admin
+#### 27 / 49 - Log analis dari sisi admin
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Admin · **Halaman:** `/analyst-log`.
 
@@ -491,7 +491,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-28"></a>
 
-#### 28 / 49 — Log analis dalam cakupan akses analis
+#### 28 / 49 - Log analis dalam cakupan akses analis
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Analis · **Halaman:** `/analyst-log`.
 
@@ -505,7 +505,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-29"></a>
 
-#### 29 / 49 — Kinerja tim SOC untuk admin
+#### 29 / 49 - Kinerja tim SOC untuk admin
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Admin · **Halaman:** `/leaderboard`.
 
@@ -519,7 +519,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-30"></a>
 
-#### 30 / 49 — Kinerja akun analis
+#### 30 / 49 - Kinerja akun analis
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Analis · **Halaman:** `/leaderboard`.
 
@@ -533,7 +533,7 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 
 <a id="preview-31"></a>
 
-#### 31 / 49 — Audit Log aktivitas khusus admin
+#### 31 / 49 - Audit Log aktivitas khusus admin
 
 **Bagian:** History / Monitoring → Leaderboard / Admin → Log aktivitas · **Akses:** Admin · **Halaman:** `/history/activity`.
 
@@ -553,7 +553,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-32"></a>
 
-#### 32 / 49 — Daftar bagian Settings
+#### 32 / 49 - Daftar bagian Settings
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings`.
 
@@ -567,7 +567,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-33"></a>
 
-#### 33 / 49 — Koneksi OpenSearch dan ambang alert
+#### 33 / 49 - Koneksi OpenSearch dan ambang alert
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=opensearch`.
 
@@ -581,7 +581,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-34"></a>
 
-#### 34 / 49 — Pengecualian impor berdasarkan Rule ID
+#### 34 / 49 - Pengecualian impor berdasarkan Rule ID
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=permanent-ignore`.
 
@@ -595,7 +595,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-35"></a>
 
-#### 35 / 49 — Konfigurasi layanan AI
+#### 35 / 49 - Konfigurasi layanan AI
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=ai`.
 
@@ -609,7 +609,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-36"></a>
 
-#### 36 / 49 — Tujuan Telegram dan pemetaan agent
+#### 36 / 49 - Tujuan Telegram dan pemetaan agent
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=telegram`.
 
@@ -623,7 +623,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-37"></a>
 
-#### 37 / 49 — Notifikasi otomatis dan batas harian
+#### 37 / 49 - Notifikasi otomatis dan batas harian
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=telegram → notifikasi otomatis`.
 
@@ -637,7 +637,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-38"></a>
 
-#### 38 / 49 — Ekspor, backup, dan retensi data
+#### 38 / 49 - Ekspor, backup, dan retensi data
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=data`.
 
@@ -651,7 +651,7 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 
 <a id="preview-39"></a>
 
-#### 39 / 49 — Daftar akun dan akses pengguna
+#### 39 / 49 - Daftar akun dan akses pengguna
 
 **Bagian:** Admin → Settings · **Akses:** Admin · **Halaman:** `/settings?section=users`.
 
@@ -672,7 +672,7 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 
 <a id="preview-40"></a>
 
-#### 40 / 49 — Menu tindakan pada akun pengguna
+#### 40 / 49 - Menu tindakan pada akun pengguna
 
 **Bagian:** Settings → Manajemen user · **Akses:** Admin · **Halaman:** `/settings?section=users → menu ⋮`.
 
@@ -686,7 +686,7 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 
 <a id="preview-41"></a>
 
-#### 41 / 49 — Dialog tambah pengguna
+#### 41 / 49 - Dialog tambah pengguna
 
 **Bagian:** Settings → Manajemen user · **Akses:** Admin · **Halaman:** `/settings?section=users → Tambah pengguna`.
 
@@ -700,7 +700,7 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 
 <a id="preview-42"></a>
 
-#### 42 / 49 — Edit role, agent, dan privilege
+#### 42 / 49 - Edit role, agent, dan privilege
 
 **Bagian:** Settings → Manajemen user · **Akses:** Admin · **Halaman:** `/settings?section=users → Edit`.
 
@@ -714,7 +714,7 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 
 <a id="preview-43"></a>
 
-#### 43 / 49 — Penolakan akses Settings untuk analis
+#### 43 / 49 - Penolakan akses Settings untuk analis
 
 **Bagian:** Settings → Manajemen user · **Akses:** Analis · **Halaman:** `/settings`.
 
@@ -735,7 +735,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 
 <a id="preview-44"></a>
 
-#### 44 / 49 — Profil dan kata sandi admin
+#### 44 / 49 - Profil dan kata sandi admin
 
 **Bagian:** Profile / Keamanan akun · **Akses:** Admin · **Halaman:** `/profile`.
 
@@ -749,7 +749,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 
 <a id="preview-45"></a>
 
-#### 45 / 49 — Profil dan kata sandi analis
+#### 45 / 49 - Profil dan kata sandi analis
 
 **Bagian:** Profile / Keamanan akun · **Akses:** Analis · **Halaman:** `/profile`.
 
@@ -763,7 +763,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 
 <a id="preview-46"></a>
 
-#### 46 / 49 — Konfirmasi akses akun admin
+#### 46 / 49 - Konfirmasi akses akun admin
 
 **Bagian:** Profile / Keamanan akun · **Akses:** Admin · **Halaman:** `/confirm-password`.
 
@@ -777,7 +777,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 
 <a id="preview-47"></a>
 
-#### 47 / 49 — Konfirmasi akses akun analis
+#### 47 / 49 - Konfirmasi akses akun analis
 
 **Bagian:** Profile / Keamanan akun · **Akses:** Analis · **Halaman:** `/confirm-password`.
 
@@ -791,7 +791,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 
 <a id="preview-48"></a>
 
-#### 48 / 49 — Verifikasi email akun admin
+#### 48 / 49 - Verifikasi email akun admin
 
 **Bagian:** Profile / Keamanan akun · **Akses:** Admin · **Halaman:** `/verify-email`.
 
@@ -805,7 +805,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 
 <a id="preview-49"></a>
 
-#### 49 / 49 — Verifikasi email akun analis
+#### 49 / 49 - Verifikasi email akun analis
 
 **Bagian:** Profile / Keamanan akun · **Akses:** Analis · **Halaman:** `/verify-email`.
 
@@ -947,10 +947,10 @@ Telegram tidak menyediakan idempotency key untuk menjamin pengiriman tepat satu 
 
 | Kondisi data | Perlindungan yang tersedia | Batas cakupan |
 | :--- | :--- | :--- |
-| **At rest — database** | AES-256-GCM untuk payload log, IP, hasil/evidence AI, pesan dan rincian notifikasi, alasan triage, insight, serta secret integrasi/password arsip yang terkait. Tag autentikasi memeriksa integritas ciphertext. | Enkripsi bersifat selektif. Nama agent, deskripsi rule, status, identitas sumber, waktu, serta metadata akun/audit tidak seluruhnya dienkripsi. |
-| **At rest — lampiran antrean** | Evidence notifikasi massal disimpan sementara dalam bentuk terenkripsi pada disk private, diverifikasi ketika dipakai, lalu dihapus setelah seluruh tujuan mencapai hasil akhir. | Operasi pending/sending dapat mempertahankan file. Salinan plaintext sementara diperlukan saat mengirim foto ke API dan dihapus setelah pemakaian. |
-| **In use — proses aplikasi** | Dekripsi dilakukan ketika atribut dibutuhkan; akses pengguna dan scope data diperiksa pada jalur aplikasi. Daftar/dashboard memakai metadata dan proyeksi kecil untuk mengurangi pembacaan payload. | Data yang sedang digunakan tetap berada dalam bentuk terbaca di RAM PHP, browser pengguna berizin, atau proses integrasi. Tidak ada klaim enkripsi RAM/TEE pada implementasi ini. |
-| **In transit — antar layanan** | OpenSearch mendukung verifikasi sertifikat; default instalasi baru true. Telegram menggunakan endpoint HTTPS bawaan. Aplikasi dan database dapat dikonfigurasi memakai TLS. | HTTPS aplikasi, TLS database, URL provider AI, dan CA yang dipercaya bergantung pada deployment. Enkripsi field tidak mengenkripsi seluruh koneksi jaringan. |
+| **At rest - database** | AES-256-GCM untuk payload log, IP, hasil/evidence AI, pesan dan rincian notifikasi, alasan triage, insight, serta secret integrasi/password arsip yang terkait. Tag autentikasi memeriksa integritas ciphertext. | Enkripsi bersifat selektif. Nama agent, deskripsi rule, status, identitas sumber, waktu, serta metadata akun/audit tidak seluruhnya dienkripsi. |
+| **At rest - lampiran antrean** | Evidence notifikasi massal disimpan sementara dalam bentuk terenkripsi pada disk private, diverifikasi ketika dipakai, lalu dihapus setelah seluruh tujuan mencapai hasil akhir. | Operasi pending/sending dapat mempertahankan file. Salinan plaintext sementara diperlukan saat mengirim foto ke API dan dihapus setelah pemakaian. |
+| **In use - proses aplikasi** | Dekripsi dilakukan ketika atribut dibutuhkan; akses pengguna dan scope data diperiksa pada jalur aplikasi. Daftar/dashboard memakai metadata dan proyeksi kecil untuk mengurangi pembacaan payload. | Data yang sedang digunakan tetap berada dalam bentuk terbaca di RAM PHP, browser pengguna berizin, atau proses integrasi. Tidak ada klaim enkripsi RAM/TEE pada implementasi ini. |
+| **In transit - antar layanan** | OpenSearch mendukung verifikasi sertifikat; default instalasi baru true. Telegram menggunakan endpoint HTTPS bawaan. Aplikasi dan database dapat dikonfigurasi memakai TLS. | HTTPS aplikasi, TLS database, URL provider AI, dan CA yang dipercaya bergantung pada deployment. Enkripsi field tidak mengenkripsi seluruh koneksi jaringan. |
 | **Backup dan unduhan** | Field terenkripsi tetap berupa ciphertext dalam ekspor; checksum/fingerprint membantu verifikasi arsip dan sumber data. Unduhan diperiksa melalui autentikasi admin, password akun, dan tautan bertanda tangan berumur pendek. | ZIP unduhan merupakan arsip standar tanpa password arsip. Metadata ekspor tetap dapat terlihat; password akun saat mengunduh tidak menjadi enkripsi ZIP. |
 
 Pencarian data sensitif memakai **blind index HMAC-SHA256** sehingga server dapat mencocokkan IP atau kata utuh tanpa mendekripsi semua payload. Kunci indeks terpisah, `SIEM_BLIND_INDEX_KEY`, dipertahankan saat `APP_KEY` dirotasi. Indeks memperlihatkan kesamaan/frekuensi token dan menambah biaya penyimpanan; cakupan pencarian dibatasi jumlah token serta ukuran teks yang diindeks.

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
-    <title>@yield('title') — SIEM Salabim</title>
+    <title>@yield('title') - SIEM Salabim</title>
     @include('partials.brand-head')
     <script>
         try { document.documentElement.dataset.theme = localStorage.getItem('siem-theme') === 'light' ? 'light' : 'dark'; } catch (_) {}

@@ -148,7 +148,7 @@
                     {{-- Rank 2 --}}
                     <div class="podium-slot rank-2" x-show="currentRanking[1]">
                         <div class="podium-avatar" x-text="currentRanking[1]?.initials ?? '?'"></div>
-                        <div class="podium-name" x-text="currentRanking[1]?.name ?? '—'"></div>
+                        <div class="podium-name" x-text="currentRanking[1]?.name ?? '-'"></div>
                         <div class="podium-score">
                             <span x-text="currentValue(currentRanking[1])"></span>
                             <span class="podium-score-unit" x-text="currentUnit()"></span>
@@ -164,7 +164,7 @@
                     {{-- Rank 1 --}}
                     <div class="podium-slot rank-1" x-show="currentRanking[0]">
                         <div class="podium-avatar" x-text="currentRanking[0]?.initials ?? '?'"></div>
-                        <div class="podium-name" x-text="currentRanking[0]?.name ?? '—'"></div>
+                        <div class="podium-name" x-text="currentRanking[0]?.name ?? '-'"></div>
                         <div class="podium-score">
                             <span x-text="currentValue(currentRanking[0])"></span>
                             <span class="podium-score-unit" x-text="currentUnit()"></span>
@@ -180,7 +180,7 @@
                     {{-- Rank 3 --}}
                     <div class="podium-slot rank-3" x-show="currentRanking[2]">
                         <div class="podium-avatar" x-text="currentRanking[2]?.initials ?? '?'"></div>
-                        <div class="podium-name" x-text="currentRanking[2]?.name ?? '—'"></div>
+                        <div class="podium-name" x-text="currentRanking[2]?.name ?? '-'"></div>
                         <div class="podium-score">
                             <span x-text="currentValue(currentRanking[2])"></span>
                             <span class="podium-score-unit" x-text="currentUnit()"></span>
@@ -243,7 +243,7 @@
         </section>
 
         {{-- ═══════════════════════════════════════════════════════════
-             CHARTS SECTION — Notifikasi & Filter (2 col)
+             CHARTS SECTION - Notifikasi & Filter (2 col)
         ═══════════════════════════════════════════════════════════ --}}
         <div class="charts-grid" x-show="hasActivity" x-cloak>
 
@@ -384,7 +384,7 @@
                                             </span>
                                         </template>
                                         <span x-show="analyst.badges.length === 0"
-                                            style="font-size:var(--text-xs); color:var(--text-secondary); line-height:var(--leading-xs);">—</span>
+                                            style="font-size:var(--text-xs); color:var(--text-secondary); line-height:var(--leading-xs);">-</span>
                                     </div>
                                 </td>
                             </tr>
@@ -592,7 +592,7 @@ function leaderboard(currentUserId) {
         },
 
         currentValue(analyst) {
-            if (!analyst) return '—';
+            if (!analyst) return '-';
             const v = { total: analyst.total, notify: analyst.notify, ignore: analyst.ignore, ack: analyst.acknowledge };
             return v[this.activeTab] ?? analyst.total;
         },

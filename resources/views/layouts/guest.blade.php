@@ -33,7 +33,7 @@
             <span class="theme-icon-light" aria-hidden="true"><i data-lucide="sun"></i></span>
         </button>
         <main class="access-workspace">
-            <a href="{{ url('/') }}" class="access-brand" aria-label="SIEM Salabim — halaman utama"><x-application-logo alt="" /><span class="brand-name">SIEM <strong>Salabim</strong></span></a>
+            <a href="{{ url('/') }}" class="access-brand" aria-label="SIEM Salabim - halaman utama"><x-application-logo alt="" /><span class="brand-name">SIEM <strong>Salabim</strong></span></a>
             <section class="access-panel" aria-labelledby="access-heading">
                 <header class="access-heading">
                     <p class="access-eyebrow">@yield('auth-context', 'Akses akun SOC')</p>

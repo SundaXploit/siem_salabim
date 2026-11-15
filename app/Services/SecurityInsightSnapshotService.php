@@ -285,7 +285,7 @@ class SecurityInsightSnapshotService
                 $id = $ids[$index] ?? $ids[0] ?? null;
                 $technique = $techniques[$index] ?? $techniques[0] ?? null;
                 $label = $this->sanitiseInsightLabel(
-                    trim(implode(' — ', array_filter([$id, $technique])))
+                    trim(implode(' - ', array_filter([$id, $technique])))
                 );
 
                 if ($label !== '') {

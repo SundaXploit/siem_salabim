@@ -20,7 +20,7 @@
                     <tr data-permanent-ignore-rule="{{ $rule->id }}">
                         <td class="font-technical">{{ $rule->rule_id }}</td>
                         <td>{{ $rule->created_by_name }}</td>
-                        <td class="text-xs" style="white-space:nowrap;">{{ $rule->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '—' }}</td>
+                        <td class="text-xs" style="white-space:nowrap;">{{ $rule->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '-' }}</td>
                         <td><form method="POST" action="{{ route('settings.permanent-ignores.destroy', $rule) }}" onsubmit="return confirm('Hapus aturan ini? Rule ID tersebut dapat diimpor kembali pada fetch berikutnya.')">
                             @csrf @method('DELETE')
                             <input type="hidden" name="_section" value="permanent-ignore">

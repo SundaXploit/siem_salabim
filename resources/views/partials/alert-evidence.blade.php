@@ -122,7 +122,7 @@
                         <div>
                             <span x-text="aiResult?.model"></span>
                             <span x-show="aiResult?.generated_at" x-text="analysisMeta(aiResult)"></span>
-                            <span>Bukti teknis tersanitasi dapat mencakup IOC seperti IP atau path. Second opinion saja — keputusan akhir tetap pada analyst SOC.</span>
+                            <span>Bukti teknis tersanitasi dapat mencakup IOC seperti IP atau path. Second opinion saja - keputusan akhir tetap pada analyst SOC.</span>
                             @if($isBulk)<span>Hasil gabungan tersedia selama 24 jam. Kesimpulan keseluruhan perlu ditinjau terhadap setiap alert sebelum triage.</span>@endif
                         </div>
                         <button type="button" class="settings-text-action" @click="analyseWithAi(true)" :disabled="aiLoading">

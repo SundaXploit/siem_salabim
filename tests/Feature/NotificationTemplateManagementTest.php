@@ -79,4 +79,31 @@ class NotificationTemplateManagementTest extends TestCase
         $this->assertSame($count, NotificationTemplate::count());
         $this->assertSame('Template manual milik administrator', $custom->fresh()->body);
     }
+
+    public function test_legacy_custom_template_with_old_punctuation_still_migrates(): void
+    {
+        $legacy = <<<'TPL'
+🚨 <b>SOC Subang - Notifikasi Alert</b>
+
+📌 <b>Rule ID</b>   : {rule_id} (Level {rule_level})
+📋 <b>Deskripsi</b> : {rule_description}
+🖥️ <b>Agent</b>     : {agent_name}
+🌐 <b>Source IP</b> : {src_ip}
+🎯 <b>Dest IP</b>   : {dst_ip}
+🕐 <b>Waktu</b>     : {timestamp}
+
+[Tambahkan narasi analisis di sini]
+
+<b>⚠️ Rekomendasi:</b>
+[Tambahkan rekomendasi di sini]
+
+<b>💥 Impact:</b>
+[Tambahkan dampak potensial di sini]
+TPL;
+        $custom = NotificationTemplate::where('name', 'Custom / Pesan Bebas')->sole();
+        $custom->update(['body' => str_replace('Subang -', 'Subang '.mb_chr(8212, 'UTF-8'), $legacy)]);
+        $migration = require database_path('migrations/2026_11_15_000023_prepare_custom_notification_template.php');
+        $migration->up();
+        $this->assertSame(NotificationTemplate::CUSTOM_BODY, $custom->fresh()->body);
+    }
 }

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 class LeaderboardController extends Controller
 {
     /* ═══════════════════════════════════════════════════════════════════
-     ║  Page — pre-load default data (week) to avoid AJAX on first visit
+     ║  Page - pre-load default data (week) to avoid AJAX on first visit
      ═══════════════════════════════════════════════════════════════════*/
 
     public function index()
@@ -25,7 +25,7 @@ class LeaderboardController extends Controller
     }
 
     /* ═══════════════════════════════════════════════════════════════════
-     ║  API — only called when user changes period/date filter
+     ║  API - only called when user changes period/date filter
      ═══════════════════════════════════════════════════════════════════*/
 
     public function data(Request $request): JsonResponse
@@ -40,13 +40,13 @@ class LeaderboardController extends Controller
     }
 
     /* ═══════════════════════════════════════════════════════════════════
-     ║  Core computation — shared by index() and data()
+     ║  Core computation - shared by index() and data()
      ║
      ║  DB queries: only 2 total
      ║    Q1) notification_logs  GROUP BY user_id, DATE(sent_at)
      ║    Q2) alert_triages       GROUP BY user_id, action, DATE(created_at)
      ║
-     ║  Sparklines reuse the same daily data — zero extra queries.
+     ║  Sparklines reuse the same daily data - zero extra queries.
      ║  Badge maxes computed once (O(N)) instead of per-user (O(N²)).
      ═══════════════════════════════════════════════════════════════════*/
 
@@ -59,7 +59,7 @@ class LeaderboardController extends Controller
         $users   = User::query()->when(! $viewer->isAdmin(), fn ($query) => $query->whereKey($viewer->id))->orderBy('name')->get()->keyBy('id');
         $userIds = $users->keys()->all();
 
-        /* ── Q1: notification_logs — daily per user ─────────────────────────
+        /* ── Q1: notification_logs - daily per user ─────────────────────────
          * Result shape after transform:
          *   Collection{ userId => Collection{'2026-04-11' => 5, ...} }
          */
@@ -72,7 +72,7 @@ class LeaderboardController extends Controller
             ->groupBy('user_id')
             ->map(fn($rows) => $rows->pluck('cnt', 'day'));
 
-        /* ── Q2: alert_triages — daily per user per action ──────────────────
+        /* ── Q2: alert_triages - daily per user per action ──────────────────
          * Result shape after transform:
          *   Collection{ userId => Collection[{action, day, cnt}, ...] }
          */
@@ -108,7 +108,7 @@ class LeaderboardController extends Controller
             ];
         }
 
-        /* ── Badge computation — maxes resolved once, O(N) not O(N²) ───────*/
+        /* ── Badge computation - maxes resolved once, O(N) not O(N²) ───────*/
         $maxTotal  = max(array_column($analysts, 'total')       ?: [0]);
         $maxNotify = max(array_column($analysts, 'notify')      ?: [0]);
         $maxIgnore = max(array_column($analysts, 'ignore')      ?: [0]);
@@ -127,7 +127,7 @@ class LeaderboardController extends Controller
         $byIgnore = collect($analysts)->sortByDesc('ignore')->values();
         $byAck    = collect($analysts)->sortByDesc('acknowledge')->values();
 
-        /* ── Sparklines — reuse existing daily data, zero extra DB hits ──────*/
+        /* ── Sparklines - reuse existing daily data, zero extra DB hits ──────*/
         $sparklines = $this->buildSparklinesFromDaily(
             $userIds, $notifByUserDay, $triageByUserDay, $start, $end
         );
@@ -211,7 +211,7 @@ class LeaderboardController extends Controller
 
     /**
      * Build sparklines directly from already-fetched daily data.
-     * Zero extra DB queries — reuses $notifByUserDay and $triageByUserDay.
+     * Zero extra DB queries - reuses $notifByUserDay and $triageByUserDay.
      */
     private function buildSparklinesFromDaily(
         array      $userIds,
