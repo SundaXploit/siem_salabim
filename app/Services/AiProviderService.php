@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Exceptions\AiAnalysisException;
+use App\Exceptions\UnsafeOutboundEndpoint;
 use App\Models\Configuration;
+use App\Services\Installation\InstallationState;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
@@ -23,14 +25,14 @@ class AiProviderService
     }
 
     /** Shared validation for Settings, connection tests, and both installer layers. */
-    public static function configurationRules(string $provider, bool $requireApiKey = true): array
+    public static function configurationRules(string $provider, bool $requireApiKey = true, bool $requireModel = true): array
     {
         return [
             'ai_provider' => ['required', Rule::in(array_keys(config('ai_providers')))],
             'ai_api_format' => ['required', Rule::in(['chat_completions', 'responses', 'anthropic_messages'])],
-            'ai_base_url' => ['required', 'url:http,https', 'max:2048',
+            'ai_base_url' => ['required', 'url:http,https', 'max:2048', OutboundEndpointPolicy::urlRule(),
                 ...(self::isLocal($provider) ? [] : ['starts_with:https://'])],
-            'ai_model' => ['required', 'string', 'max:255'],
+            'ai_model' => [$requireModel ? 'required' : 'nullable', 'string', 'max:255'],
             'ai_api_key' => [Rule::requiredIf($requireApiKey && ! self::isLocal($provider)), 'nullable', 'string', 'max:4096'],
         ];
     }
@@ -166,10 +168,18 @@ class AiProviderService
         return $text;
     }
 
-    private function request(array $settings, int $timeout): PendingRequest
+    private function request(array $settings, int $timeout, bool $installation = false): PendingRequest
     {
+        try {
+            if (! $installation) {
+                app(OutboundEndpointPolicy::class)->assertConfigured('ai', $settings['base_url']);
+            }
+            $options = app(OutboundEndpointPolicy::class)->options($settings['base_url']);
+        } catch (UnsafeOutboundEndpoint $exception) {
+            throw new AiAnalysisException($exception->getMessage(), previous: $exception);
+        }
         $request = Http::acceptJson()->connectTimeout(5)->timeout($timeout)
-            ->withOptions(['allow_redirects' => false]);
+            ->withOptions($options);
         if ($settings['api_format'] === 'anthropic_messages') {
             $request = $request->withHeaders(['anthropic-version' => '2023-06-01']);
             if (filled($settings['api_key'])) {
@@ -183,8 +193,12 @@ class AiProviderService
     }
 
     /** Read the endpoint catalogue without generating text or requiring a model name. */
-    public function models(array $settings): array
+    public function models(array $settings, bool $installation = false): array
     {
+        // Only the token-unlocked installer calls this mode, before configuration exists.
+        if ($installation && app(InstallationState::class)->isInstalled()) {
+            throw new AiAnalysisException('Mode koneksi instalasi tidak tersedia setelah aplikasi terpasang.');
+        }
         if (blank($settings['base_url']) || (! self::isLocal($settings['provider']) && blank($settings['api_key']))) {
             throw new AiAnalysisException('Isi endpoint dan API key untuk tujuan ini. LLM lokal boleh tanpa API key.');
         }
@@ -197,7 +211,7 @@ class AiProviderService
         // ponytail: bound catalogue reads to 3 pages/1000 models; expose truncation for manual entry.
         for ($page = 0; $page < 3; $page++) {
             try {
-                $response = $this->request($settings, 10)->get(rtrim($settings['base_url'], '/').'/models', $query);
+                $response = $this->request($settings, 10, $installation)->get(rtrim($settings['base_url'], '/').'/models', $query);
             } catch (ConnectionException) {
                 throw new AiAnalysisException('Daftar model tidak dapat diambil. Periksa endpoint dan jaringan server, atau isi model secara manual.');
             }

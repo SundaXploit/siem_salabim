@@ -18,6 +18,7 @@ class AlertAiAnalysisTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->fakeIntegrationDns();
 
         config([
             'services.ai.alert_model' => null,

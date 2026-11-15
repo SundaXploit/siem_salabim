@@ -15,8 +15,9 @@ class AiConnectionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->fakeIntegrationDns();
         Http::preventStrayRequests();
-        config(['services.ai.reasoning_effort' => 'none']);
+        config(['services.ai.reasoning_effort' => 'none', 'services.ai.base_url' => 'https://ai.example.test/v1']);
     }
 
     public function test_successful_http_without_answer_is_not_reported_as_working_ai(): void
@@ -37,7 +38,7 @@ class AiConnectionTest extends TestCase
             ->postJson(route('settings.test.ai'), $this->connectionSettings())
             ->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('reply', 'pong');
+            ->assertJsonPath('reply', 'Respons AI diterima.');
         Http::assertSent(fn (Request $request): bool => data_get($request->data(), 'reasoning.effort') === 'none');
     }
 

@@ -196,6 +196,7 @@ class AnalystAgentAccessTest extends TestCase
 
     public function test_dashboard_ai_receives_only_authorised_data_and_cannot_reuse_global_results_after_revocation(): void
     {
+        $this->fakeIntegrationDns();
         $admin = User::factory()->create(['role' => 'admin']);
         $analyst = $this->analyst(['alerts.analyze']);
         $allowed = $this->event('allowed', 'Allowed authentication pattern');

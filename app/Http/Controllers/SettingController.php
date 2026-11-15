@@ -22,6 +22,7 @@ use App\Services\ApplicationUpdateRuntimeGuard;
 use App\Services\AutomaticAlertNotifier;
 use App\Services\DataExportArchiveService;
 use App\Services\OpenSearchService;
+use App\Services\OutboundEndpointPolicy;
 use App\Services\QueueExecutionPolicy;
 use App\Services\TelegramService;
 use App\Services\UserManagementService;
@@ -135,7 +136,7 @@ class SettingController extends Controller
     {
         $this->adminOnly();
         $data = $request->validate([
-            'opensearch_host' => ['required', 'url', 'max:2048'],
+            'opensearch_host' => ['required', 'url:http,https', 'max:2048', OutboundEndpointPolicy::urlRule()],
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['nullable', 'string', 'max:4096'],
             'opensearch_index' => ['required', 'string', 'max:255'],
@@ -144,22 +145,25 @@ class SettingController extends Controller
             'min_alert_level' => ['sometimes', 'required', 'integer', Rule::in([3, 5, 7, 10, 12, 13, 14, 15])],
         ]);
 
-        Configuration::set('opensearch_host', trim($data['opensearch_host']));
-        Configuration::set('opensearch_username', trim($data['opensearch_username']));
-        Configuration::set('opensearch_index', trim($data['opensearch_index']));
-        if (array_key_exists('opensearch_verify_ssl', $data)) {
-            Configuration::set('opensearch_verify_ssl', $request->boolean('opensearch_verify_ssl') ? 'true' : 'false');
-        }
-        if (isset($data['opensearch_timezone'])) {
-            Configuration::set('opensearch_timezone', $data['opensearch_timezone']);
-        }
-        if (filled($data['opensearch_password'] ?? null)) {
-            Configuration::set('opensearch_password', $data['opensearch_password']);
-        }
-        if (array_key_exists('min_alert_level', $data)) {
-            Configuration::set('min_alert_level', (int) $data['min_alert_level']);
-            Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
-        }
+        $data['opensearch_password'] = $this->openSearchPassword($data);
+        DB::transaction(function () use ($data, $request): void {
+            Configuration::set('opensearch_host', trim($data['opensearch_host']));
+            Configuration::set('opensearch_username', trim($data['opensearch_username']));
+            Configuration::set('opensearch_index', trim($data['opensearch_index']));
+            if (array_key_exists('opensearch_verify_ssl', $data)) {
+                Configuration::set('opensearch_verify_ssl', $request->boolean('opensearch_verify_ssl') ? 'true' : 'false');
+            }
+            if (isset($data['opensearch_timezone'])) {
+                Configuration::set('opensearch_timezone', $data['opensearch_timezone']);
+            }
+            if (filled($data['opensearch_password'] ?? null)) {
+                Configuration::set('opensearch_password', $data['opensearch_password']);
+            }
+            if (array_key_exists('min_alert_level', $data)) {
+                Configuration::set('min_alert_level', (int) $data['min_alert_level']);
+                Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
+            }
+        });
 
         return back()->with('settings_section', 'opensearch')->with('success', 'Konfigurasi OpenSearch & Alert berhasil disimpan.');
     }
@@ -358,26 +362,28 @@ class SettingController extends Controller
     {
         $this->adminOnly();
         $provider = $this->prepareAiConfiguration($request);
-        $data = $request->validate(AiProviderService::configurationRules($provider, false) + [
+        $data = $request->validate(AiProviderService::configurationRules($provider, false, requireModel: false) + [
             'ai_snapshot_limit' => ['required', 'integer', 'min:1000', 'max:10000'],
             'ai_refresh_days' => ['required', 'integer', 'min:1', 'max:30'],
         ]);
         $client = app(AiProviderService::class);
-        $settings = $client->settings($data);
-        if (! $client->isConfigured($settings)) {
+        $settings = $client->settings([...$data, 'ai_model' => $data['ai_model'] ?? '']);
+        if (! AiProviderService::isLocal($provider) && blank($settings['api_key'])) {
             throw ValidationException::withMessages([
                 'ai_api_key' => 'Masukkan API key untuk provider dan endpoint ini. Token tersimpan hanya dipakai untuk tujuan yang sama.',
             ]);
         }
 
-        foreach (['provider', 'api_format', 'base_url', 'model', 'api_key'] as $key) {
-            Configuration::set('ai_'.$key, $settings[$key]);
-        }
-        Configuration::set('ai_snapshot_limit', (int) $data['ai_snapshot_limit']);
-        Configuration::set('ai_refresh_days', (int) $data['ai_refresh_days']);
+        DB::transaction(function () use ($settings, $data): void {
+            foreach (['provider', 'api_format', 'base_url', 'model', 'api_key'] as $key) {
+                Configuration::set('ai_'.$key, $settings[$key]);
+            }
+            Configuration::set('ai_snapshot_limit', (int) $data['ai_snapshot_limit']);
+            Configuration::set('ai_refresh_days', (int) $data['ai_refresh_days']);
+        });
         Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
 
-        return back()->with('settings_section', 'ai')->with('success', 'Konfigurasi Analisis AI berhasil disimpan.');
+        return back()->with('settings_section', 'ai')->with('success', 'Konfigurasi Analisis AI berhasil disimpan.'.(blank($settings['model']) ? ' Muat daftar model, pilih model, lalu simpan kembali untuk mengaktifkan analisis.' : ''));
     }
 
     public function updateAlerts(Request $request)
@@ -404,14 +410,14 @@ class SettingController extends Controller
         }
 
         try {
-            $reply = $client->generate(
+            $client->generate(
                 'Jawab singkat untuk tes koneksi.', 'Jawab tepat satu kata: pong', 256, 30,
                 reasoningEffort: config('services.ai.reasoning_effort'), settings: $settings,
             );
 
             return response()->json([
                 'success' => true, 'provider' => $settings['provider'],
-                'model' => $settings['model'], 'reply' => mb_substr($reply, 0, 200),
+                'model' => $settings['model'], 'reply' => 'Respons AI diterima.',
             ]);
         } catch (AiAnalysisException $exception) {
             return response()->json(['success' => false, 'error' => $exception->getMessage()]);
@@ -444,16 +450,14 @@ class SettingController extends Controller
     {
         $this->adminOnly();
         $data = $request->validate([
-            'opensearch_host' => ['required', 'url', 'max:2048'],
+            'opensearch_host' => ['required', 'url:http,https', 'max:2048', OutboundEndpointPolicy::urlRule()],
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['nullable', 'string', 'max:4096'],
             'opensearch_index' => ['required', 'string', 'max:255'],
             'opensearch_verify_ssl' => ['sometimes', 'required', 'boolean'],
         ]);
 
-        $data['opensearch_password'] = filled($data['opensearch_password'] ?? null)
-            ? $data['opensearch_password']
-            : Configuration::get('opensearch_password', config('services.opensearch.password', ''));
+        $data['opensearch_password'] = $this->openSearchPassword($data);
 
         if (blank($data['opensearch_password'])) {
             return response()->json([
@@ -847,6 +851,25 @@ class SettingController extends Controller
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────
+
+    private function openSearchPassword(array $data): string
+    {
+        if (filled($data['opensearch_password'] ?? null)) {
+            return $data['opensearch_password'];
+        }
+        $password = (string) Configuration::get('opensearch_password', config('services.opensearch.password', ''));
+        if ($password === '') {
+            return '';
+        }
+        $savedHost = (string) Configuration::get('opensearch_host', config('services.opensearch.host', ''));
+        $savedUsername = (string) Configuration::get('opensearch_username', config('services.opensearch.username', ''));
+        if (rtrim(trim($data['opensearch_host']), '/') !== rtrim(trim($savedHost), '/')
+            || trim($data['opensearch_username']) !== trim($savedUsername)) {
+            throw ValidationException::withMessages(['opensearch_password' => 'Masukkan password kembali saat mengubah host, port, atau username OpenSearch.']);
+        }
+
+        return $password;
+    }
 
     private function queueDataExport(
         Request $request,

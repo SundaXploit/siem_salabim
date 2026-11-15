@@ -6,6 +6,8 @@ Diperbarui **15 November 2026**. Acuan versi 1.1 adalah commit `c4da117` dengan 
 
 Versi 1.2 berfokus pada keamanan akun dan data, kepemilikan penanganan alert, keandalan notifikasi Telegram, serta kemudahan administrasi SOC. Dashboard, Live Alerts, analisis AI, RBAC per agent, ignore permanen, leaderboard, installer, dan ekspor data sudah tersedia pada 1.1; bagian berikut menjelaskan penambahan dan perbaikannya.
 
+Catatan ini mencakup patch keamanan yang telah diterapkan sampai tanggal pembaruan: [akun, sesi, dan ACK](#akun-sesi-dan-kepemilikan-ack), [identitas agent dan TLS](#integrasi-wazuh-waktu-dan-ssl), [notifikasi](#notifikasi-telegram-dan-template), [enkripsi dan rotasi kunci](#enkripsi-data-dan-pencarian), [backup](#backup-sql-dan-pemulihan), serta [SSRF, validasi tanggal, dan dependency](#perbaikan-keamanan-koneksi). Langkah pemasangan patch untuk instalasi 1.2 yang sudah berjalan tersedia pada [upgrade dan operasional](#upgrade-dan-operasional).
+
 ## Ringkasan perubahan
 
 | Area | Perubahan pada 1.2 | Dampak penggunaan |
@@ -19,6 +21,7 @@ Versi 1.2 berfokus pada keamanan akun dan data, kepemilikan penanganan alert, ke
 | Enkripsi | AES-256-GCM, pembacaan data lama, rotasi kunci, indeks HMAC | Payload sensitif terlindungi dengan metadata operasional tetap dapat dikueri SQL. |
 | Backup | SQL sesuai engine, pemulihan sequence PostgreSQL, metadata keamanan lengkap | Backup mengikuti struktur dan relasi data versi baru. |
 | AI | Batas permintaan dan konkurensi provider, pencatatan percobaan gagal | Kapasitas AI dibatasi bersama di sisi server. |
+| Koneksi dan dependency | Izin otomatis dari alamat tersimpan, DNS pinning, redirect nonaktif, patch Laravel/Symfony/Vite | Integrasi tetap mendukung IP lokal/publik dan port pilihan admin tanpa daftar izin terpisah. |
 | Audit dan UI | Audit fitur baru, ID objek, status akun/template, filter responsif | Aktivitas administrasi lebih mudah ditelusuri pada desktop dan ponsel. |
 
 <a id="akun-sesi-dan-kepemilikan-ack"></a>
@@ -30,6 +33,7 @@ Versi 1.2 berfokus pada keamanan akun dan data, kepemilikan penanganan alert, ke
 - Tambah tindakan **nonaktifkan/aktifkan akun** pada Manajemen user. Penonaktifan mempertahankan akun dan riwayatnya.
 - Akun nonaktif ditolak saat login dan tidak dapat melanjutkan tindakan dengan sesi lama.
 - Perubahan password, status aktif, role, pilihan agent, atau privilege mencabut versi sesi sebelumnya dan remember token.
+- Penggantian password dari akun sendiri meregenerasi ID sesi dan memulai ulang sesi yang valid; sesi lama tetap dicabut.
 - Admin aktif terakhir tidak dapat diturunkan menjadi analis atau dinonaktifkan. Pengguna juga tidak dapat menonaktifkan akun sendiri.
 - Admin tidak dapat mengedit profil akun admin lain. Admin tetap mengelola akun analis sesuai aturan akses.
 - Jika akun dinonaktifkan, alert berstatus ACK yang masih dimilikinya dikembalikan ke **NEW**. Pemilik dan waktu ACK dilepas; setiap pelepasan dicatat pada Log aktivitas.
@@ -40,6 +44,7 @@ Versi 1.2 berfokus pada keamanan akun dan data, kepemilikan penanganan alert, ke
 - Gerakan pointer, klik, sentuhan, pengetikan, dan scroll dapat memperbarui aktivitas. Polling dashboard, refresh otomatis, dan request latar belakang tidak memperpanjang sesi.
 - Aktivitas dibagikan antartab untuk sesi browser yang sama. Heartbeat dibatasi agar tidak menghasilkan request pada setiap gerakan pointer.
 - Server memeriksa kembali status akun dan versi sesi pada request berikutnya. Penyimpanan aktivitas terpisah mencegah request polling lama menimpa waktu aktivitas terbaru.
+- Installer baru menyiapkan `SESSION_ENCRYPT=true`. Secure cookie disesuaikan dengan URL HTTPS aplikasi; instalasi lama perlu memeriksa konfigurasi efektifnya.
 
 ### Triage tunggal dan massal
 
@@ -61,6 +66,7 @@ Versi 1.2 berfokus pada keamanan akun dan data, kepemilikan penanganan alert, ke
 - Nama tetap ditampilkan untuk membantu operator, tetapi nama sama tidak menyamakan identitas, akses, atau tujuan pengiriman.
 - Pemetaan lama berdasarkan nama dimigrasikan hanya jika ditemukan satu identitas yang pasti. Nama yang ambigu atau tidak ditemukan ditandai untuk dipilih ulang oleh admin.
 - Worker memeriksa kembali pemetaan agent sebelum mengirim notifikasi yang masih pending.
+- Notifikasi otomatis dan pengelompokan kuotanya juga memakai identitas agent, sehingga dua agent bernama sama tidak berbagi grup kuota hanya karena namanya sama. Pesan otomatis menyertakan Agent ID.
 
 ### Zona waktu
 
@@ -138,6 +144,7 @@ Cipher default menjadi **AES-256-GCM**, dengan verifikasi integritas bawaan. Pem
 - Batas indeks default: 512 token unik dan 128 KiB teks yang diproses per log/catatan. `SIEM_SEARCH_MAX_TOKENS=0` menonaktifkan indeks kata; pencarian exact-match pada kolom IP tetap tersedia.
 - Indeks menambah penyimpanan/biaya ingest dan mengungkap kesamaan token. Pencarian kata utuh dengan batas token berbeda dari pencarian substring bebas seluruh JSON.
 - Perintah migrasi mendukung proses bertahap yang dapat dilanjutkan, pemeriksaan autentikasi/index, serta enkripsi ulang untuk rotasi kunci.
+- Pembuatan kunci indeks oleh migrator memakai penulis konfigurasi yang mempertahankan `APP_KEY`. Jalur pembaruan runtime ini menolak perubahan `APP_KEY`, sehingga menambahkan kunci pencarian tidak mengganti kunci dekripsi data yang sudah ada.
 
 ### Rotasi kunci
 
@@ -196,9 +203,109 @@ AI digunakan untuk membantu membaca evidence dan memberi rekomendasi pemeriksaan
 - Galeri README mempertahankan 49 gambar asli dalam bagian terstruktur, lengkap dengan kegunaan halaman dan navigasi preview. Screenshot dapat mewakili tampilan sebelum beberapa penyempurnaan 1.2.
 - README utama memperjelas tujuan aplikasi SIEM, cakupan monitoring Wazuh, pengguna SOC/CSIRT, serta jalur masukan, laporan bug, dan kontribusi.
 
+<a id="perbaikan-keamanan-koneksi"></a>
+
+## Perbaikan keamanan koneksi dan dependency
+
+### OpenSearch dan provider AI
+
+Kebijakan koneksi bersama berlaku pada tes OpenSearch di Settings/installer, pengambilan log/agent OpenSearch, tes AI, daftar model, dan analisis AI operasional:
+
+- Setelah instalasi, tujuan yang diizinkan otomatis dibaca dari konfigurasi integrasi yang disimpan admin. Protokol, host, port, dan base path harus sama; request tes/model tidak dapat menambahkan izin dari URL yang dikirimkannya. Bentuk ekuivalen seperti port HTTPS default dan slash akhir dinormalisasi.
+- Mengganti konfigurasi mengganti izin tujuan, tanpa menyimpan daftar historis. Transport OpenSearch memeriksa konfigurasi aktif pada setiap request; tujuan lama pada client yang tersimpan dalam memori ditolak. Endpoint kosong yang tersimpan menonaktifkan fallback environment. Fallback `.env` hanya digunakan bila konfigurasi terkait belum memiliki entri database.
+- HTTP/HTTPS saja, tanpa userinfo, query, fragment, karakter kontrol, atau path ambigu pada base URL. Indeks OpenSearch tidak boleh menyisipkan URL atau perpindahan direktori.
+- Alamat metadata cloud, link-local, unspecified, multicast, serta representasi IP yang ambigu ditolak sebelum koneksi. Pemeriksaan mencakup IPv4, IPv6, dan seluruh hasil resolusi DNS.
+- DNS hasil pemeriksaan dipasang ke cURL melalui `CURLOPT_RESOLVE`; URL host asli tetap dipakai untuk TLS. Semua alamat cadangan diperiksa dan redirect HTTP dinonaktifkan. Proxy dari environment tidak digunakan untuk koneksi ini agar pemeriksaan tujuan tidak dilewati.
+- Password OpenSearch tersimpan hanya dipakai kembali ketika URL tujuan dan username sama. Mengganti protokol, host, port, base path, atau username dengan password kosong ditolak bila ada password tersimpan. API key AI tersimpan hanya digunakan kembali untuk provider dan endpoint yang sama.
+- Tes AI mengembalikan konfirmasi tetap, bukan potongan isi respons endpoint. Katalog model tetap menampilkan identitas model yang diperlukan fitur tersebut. Tes OpenSearch di Settings dan installer mensyaratkan respons JSON dengan `count` berupa bilangan bulat tidak negatif; status HTTP 200 atau JSON sembarang tidak cukup untuk menyatakan koneksi berhasil.
+
+### Mengganti tujuan tanpa mengelola daftar izin
+
+1. Isi URL integrasi, termasuk port/base path yang diperlukan, melalui Settings dan pilih **Simpan konfigurasi**. Perubahan konfigurasi disimpan dalam transaksi dan dicatat pada Log aktivitas. IP privat, loopback, domain, dan IP publik tetap didukung; alamat metadata dan alamat khusus tetap ditolak.
+2. Jalankan **Test Koneksi** untuk alamat tersimpan. Kredensial, indeks, dan pilihan verifikasi SSL dapat diuji tanpa menyimpannya bila tujuannya tetap sama. URL baru pada request tes tidak langsung mendapat izin.
+3. Untuk AI baru yang belum diketahui modelnya, simpan endpoint/provider/API key dengan model kosong, kemudian **Ambil daftar model**. Pilih model dan simpan kembali untuk mengaktifkan analisis. Menyimpan endpoint saja tidak menjalankan analisis maupun tes koneksi.
+
+Saat instalasi pertama belum ada konfigurasi tersimpan. Wizard dengan token dan sesi instalasi yang valid boleh menguji pilihan OpenSearch dan memuat katalog AI; mode awal ini tidak tersedia setelah aplikasi terpasang. Pilihan yang disimpan menjadi sumber izin untuk penggunaan berikutnya.
+
+Izin ini mengikat hostname yang dipilih, bukan membuka akses langsung ke semua IP hasil DNS atau seluruh port host tersebut. DNS tetap dapat berubah untuk kebutuhan operasional; hasil setiap resolusi diperiksa dan koneksi dipasang ke alamat hasil pemeriksaan. Identitas layanan juga bergantung pada verifikasi TLS bila menggunakan HTTPS. Pendekatan tujuan tepercaya dan pembatasan redirect dijelaskan pada [panduan SSRF OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+**Batas kepercayaan:** admin tetap berwenang mengganti tujuan lewat penyimpanan konfigurasi. Admin yang sengaja menyimpan alamat layanan internal lain dapat mengizinkan alamat itu, selama bukan alamat terlarang. Penguasaan hak tulis database juga dapat mengubah konfigurasi sumber izin. Fitur ini membatasi request ke tujuan resmi yang disimpan; pembatasan kewenangan admin atau isolasi jaringan keluar memerlukan kontrol terpisah. Pemilihan provider `ollama`/lokal tidak membolehkan request melampaui tujuan tersimpan.
+
+PHP cURL diperlukan. Base URL tetap diisi melalui installer atau Settings tanpa konfigurasi daftar izin tambahan. Jika jaringan bergantung pada forward proxy, siapkan rute langsung ke integrasi karena proxy environment sengaja dilewati.
+
+### Leaderboard
+
+Filter periode divalidasi sebelum perhitungan. Periode harus termasuk pilihan yang didukung; rentang custom wajib berisi tanggal kalender `YYYY-MM-DD`, tanggal akhir minimal sama dengan awal, dan maksimal **366 hari**. Input salah atau rentang berlebihan mengembalikan HTTP **422**, bukan exception parsing/HTTP 500.
+
+Permintaan browser memakai `Accept: application/json`. Pesan validasi ditampilkan pada halaman, ranking sebelumnya dipertahankan, dan pengguna dapat memperbaiki rentang lalu mencoba kembali. Array, teks tanggal relatif, tanggal kalender tidak valid, dan rentang yang terlalu besar tidak diteruskan ke perhitungan leaderboard.
+
+### Dependency dan penilaian advisory
+
+Pemeriksaan tanggal 15 November 2026 menemukan delapan advisory Composer pada lima paket. Semua paket tersebut diperbarui, termasuk yang jalur eksploitasinya tidak ditemukan pada kode aplikasi; tidak ada advisory yang diabaikan melalui konfigurasi audit.
+
+| Paket | Sebelum | Sesudah |
+| --- | --- | --- |
+| `laravel/framework` | 13.32.0 | 13.42.0 |
+| `symfony/http-foundation` | 7.4.19 | 7.4.23 |
+| `symfony/http-kernel` | 7.4.19 | 7.4.23 |
+| `symfony/mime` | 7.4.19 | 7.4.22 |
+| `symfony/routing` | 7.4.18 | 7.4.23 |
+
+`laravel/prompts` ikut diperbarui ke 0.3.27 sesuai kebutuhan framework. Audit npm juga menemukan dua paket rentan tambahan; `vite` diperbarui dari 8.3.0 ke 8.3.8 dan `follow-redirects` dari 1.16.0 ke 1.16.3 bersama dependency yang diperlukan. Setelah pembaruan, `composer audit --locked` dan `npm audit` melaporkan nol advisory; hasil ini mengikuti database advisory saat pemeriksaan.
+
+Delapan advisory Composer yang tercakup pembaruan tersebut:
+
+| Advisory | Paket | Masalah yang diperbaiki upstream | Versi terpasang setelah patch |
+| --- | --- | --- | --- |
+| [CVE-2026-128083](https://github.com/advisories/GHSA-63hm-g96r-2m2q) | `laravel/framework` | Injeksi keluaran proses Laravel Concurrency | 13.42.0 |
+| [CVE-2026-121619](https://github.com/symfony/symfony/security/advisories/GHSA-xg2q-4rrq-657q) | `symfony/http-foundation` | Penafsiran alamat proxy khusus pada shortcut `private_ranges` | 7.4.23 |
+| [CVE-2026-118514](https://symfony.com/cve-2026-118514) | `symfony/http-foundation` | Ketidaksesuaian pencocokan HEAD/GET pada aturan akses berbasis metode | 7.4.23 |
+| [PKSA-pr6q-2w5s-kzzf](https://github.com/symfony/symfony/security/advisories/GHSA-3h27-hjv7-fqjx) | `symfony/http-foundation` | Prefix nama script dapat melewati ACL path di depan PHP | 7.4.23 |
+| [PKSA-b2gg-vk1g-6d5q](https://github.com/symfony/symfony/security/advisories/GHSA-5mx8-mwrp-5693) | `symfony/http-foundation` | Path request dapat memengaruhi host pada URL yang dibangkitkan | 7.4.23 |
+| [CVE-2026-123339](https://github.com/symfony/symfony/security/advisories/GHSA-wg5q-m2ww-f3c9) | `symfony/http-kernel` | Header forwarded pada inline fragment dapat memengaruhi URL request utama | 7.4.23 |
+| [CVE-2026-45070](https://symfony.com/cve-2026-45070) | `symfony/mime` | Injeksi header melalui nama parameter MIME | 7.4.22 |
+| [CVE-2026-118516](https://symfony.com/cve-2026-118516) | `symfony/routing` | Pencocokan host placeholder dapat melampaui batas host ke path | 7.4.23 |
+
+Audit npm sebelum patch mencatat sembilan advisory pada dua paket berikut. Paket rentan pada lockfile diperbarui tanpa mengabaikan advisory atau memakai pembaruan major secara paksa:
+
+| Paket setelah patch | Cakupan advisory | Rujukan |
+| --- | --- | --- |
+| `follow-redirects` 1.16.3 | Header kredensial dapat ikut pada redirect lintas origin akibat penanganan format header, regex, atau array lintas realm | [GHSA-q3jh-wrc6-jgq8](https://github.com/advisories/GHSA-q3jh-wrc6-jgq8), [GHSA-8r9p-f939-6h3c](https://github.com/advisories/GHSA-8r9p-f939-6h3c), [GHSA-mrwp-f3q8-3g9p](https://github.com/advisories/GHSA-mrwp-f3q8-3g9p) |
+| `vite` 8.3.8 | Escaping, penafsiran argumen editor, dan pemeriksaan path pada integrasi launch-editor | [GHSA-698v-4r3x-3vcv](https://github.com/advisories/GHSA-698v-4r3x-3vcv), [GHSA-r825-w8mm-5pxw](https://github.com/advisories/GHSA-r825-w8mm-5pxw), [GHSA-587h-7wmj-h5pm](https://github.com/advisories/GHSA-587h-7wmj-h5pm) |
+| `vite` 8.3.8 | Eksekusi script lintas origin melalui middleware dan pembacaan file di luar batas filesystem server dev | [GHSA-9jrq-w75r-8gcw](https://github.com/advisories/GHSA-9jrq-w75r-8gcw), [GHSA-rq7h-c2jc-7f22](https://github.com/advisories/GHSA-rq7h-c2jc-7f22), [GHSA-vfpm-58rq-9qcg](https://github.com/advisories/GHSA-vfpm-58rq-9qcg) |
+
+Keberadaan advisory pada dependency tidak menyatakan seluruh jalur eksploitasi tersedia pada deployment aplikasi. Pembaruan tetap mencakup seluruh paket yang ditandai audit. Produksi menggunakan aset hasil build; Vite dev server tidak diperlukan untuk melayani aplikasi.
+
+Untuk dua advisory yang bergantung pada infrastruktur:
+
+- **PKSA-pr6q-2w5s-kzzf:** request seperti `/index.phpadmin` sebelumnya dapat dipetakan sebagai `/admin`. Risiko bypass berlaku untuk ACL path pada Nginx/Apache/CDN/WAF di depan PHP. Otorisasi aplikasi memakai middleware Laravel; contoh konfigurasi README tidak membuat ACL admin di luar aplikasi. Konfigurasi server produksi lain tetap perlu diperiksa. Patch dan regresi memastikan prefix tersebut tidak berubah menjadi `/admin`. Lihat [advisory resmi Symfony tentang path](https://github.com/symfony/symfony/security/advisories/GHSA-3h27-hjv7-fqjx).
+- **PKSA-b2gg-vk1g-6d5q:** rewrite tertentu dapat membuat path `//...` atau `/\\...` memengaruhi base URL. Ini relevan karena aplikasi membangkitkan URL, termasuk `URL::temporarySignedRoute` untuk unduhan; tanda tangan tidak dengan sendirinya membersihkan base URL. Document root `public/` pada contoh deployment menghindari rewrite root ke subdirektori `public/`, tetapi kondisi server aktif lain belum dianggap terverifikasi. Patch dan regresi memeriksa path berbahaya tidak menjadi host URL. Lihat [advisory resmi Symfony tentang URL](https://github.com/symfony/symfony/security/advisories/GHSA-5mx8-mwrp-5693).
+
+Kode aplikasi tidak menggunakan Laravel Concurrency atau shortcut proxy `private_ranges`. Jalur email masih ada melalui notifikasi verifikasi akun/konfigurasi SMTP; tidak ditemukan input pengguna yang dijadikan nama parameter header MIME. Karena itu, ketiadaan penggunaan email pada suatu deployment tidak dipakai sebagai alasan melewatkan patch [CVE-2026-45070](https://symfony.com/cve-2026-45070).
+
+Regresi khusus tersedia di [izin tujuan tersimpan](../tests/Feature/ConfiguredIntegrationDestinationTest.php), [kebijakan endpoint](../tests/Unit/OutboundEndpointPolicyTest.php), [integrasi](../tests/Feature/IntegrationEndpointSecurityTest.php), [validasi leaderboard](../tests/Feature/LeaderboardValidationTest.php), dan [perilaku path/base URL Symfony](../tests/Unit/HttpFoundationSecurityTest.php).
+
 <a id="upgrade-dan-operasional"></a>
 
 ## Upgrade dan operasional
+
+### Memasang patch pada instalasi 1.2 yang sudah berjalan
+
+Siapkan backup dan gunakan prosedur deployment yang sesuai server. Setelah menempatkan kode serta lockfile versi patch, pasang versi dependency yang dikunci dan bangun ulang aset:
+
+```bash
+composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+npm ci
+npm run build
+php artisan config:clear
+php artisan migrate --force
+php artisan view:clear
+php artisan queue:restart
+```
+
+Gunakan `composer install` dan `npm ci` agar versi mengikuti lockfile patch. Dependency build diperlukan saat menjalankan Vite, sehingga jangan menghilangkannya sebelum `npm run build`. `queue:restart` menghentikan worker setelah job aktif selesai; jalankan kembali worker terminal, atau pastikan Supervisor memulainya lagi. Muat ulang proses aplikasi yang menyimpan kode/config dalam memori sesuai deployment.
+
+Patch pembatasan tujuan dan validasi tanggal tidak menambah migrasi tersendiri. Instalasi 1.2 dengan schema lengkap tidak perlu mengulang migrasi enkripsi, mengganti `APP_KEY`, atau menjalankan reset. Alamat integrasi yang sudah tersimpan otomatis menjadi sumber izin; untuk menggantinya, simpan konfigurasi baru sebelum tes koneksi atau pemuatan model. Periksa versi paket dan advisory setelah deployment dengan `composer audit --locked` dan `npm audit`.
 
 ### Migrasi yang ditambahkan
 
@@ -244,6 +351,10 @@ Kunci aplikasi dan kunci indeks tidak boleh dipublikasikan atau dibuang ketika m
 
 Regresi mencakup ACK bersamaan dari dua proses, retry notifikasi, pembatalan grup, scope agent, keamanan sesi, enkripsi dan rotasi, restore SQL, template yang dihapus, audit aktivitas, serta tampilan responsif. Pengujian Telegram menggunakan tiruan layanan.
 
+Verifikasi kode terakhir pada **15 November 2026** memeriksa **693 kasus PHP**: 692 lulus, satu dilewati, dan tidak ada kegagalan/error. Tes benturan nama file dilewati karena filesystem Windows; `InstallerDevelopmentServerTest` dikecualikan dari suite tersebut. **30 tes JavaScript lulus**, termasuk pesan validasi leaderboard dan pemulihan tampilan setelah input diperbaiki. Build produksi berhasil setelah pembaruan dependency. Pengujian PHP memakai database SQLite pengujian, bukan database operasional.
+
+Sebanyak **17 tes khusus tujuan integrasi** memeriksa penolakan host/port/protokol/base path yang belum disimpan, pencabutan tujuan lama, penyimpanan endpoint AI sebelum model dipilih, audit perubahan, dan penolakan mode installer setelah aplikasi terpasang. Pemeriksaan transport cURL dengan listener lokal terkontrol memverifikasi DNS pinning dan tidak adanya request lanjutan ke tujuan redirect. Hasil audit dependency pada tanggal yang sama adalah nol advisory Composer dan nol kerentanan npm; hasil ini bukan jaminan terhadap advisory yang terbit kemudian.
+
 | Area | Rujukan kode/pengujian |
 | --- | --- |
 | Akun, sesi, dan aturan admin | [SecurityPolicyTest](../tests/Feature/SecurityPolicyTest.php), [aktivitas browser](../tests/js/session-activity.test.mjs) |
@@ -251,6 +362,9 @@ Regresi mencakup ACK bersamaan dari dua proses, retry notifikasi, pembatalan gru
 | Notifikasi tunggal dan massal | [ManualNotificationIdempotencyTest](../tests/Feature/ManualNotificationIdempotencyTest.php), [BulkNotificationTest](../tests/Feature/BulkNotificationTest.php) |
 | Manajemen template dan audit | [NotificationTemplateManagementTest](../tests/Feature/NotificationTemplateManagementTest.php), [ActivityLoggingTest](../tests/Feature/ActivityLoggingTest.php) |
 | Waktu dan SSL | [WazuhTimezoneTest](../tests/Feature/WazuhTimezoneTest.php), [OpenSearchTlsSettingsTest](../tests/Feature/OpenSearchTlsSettingsTest.php) |
+| SSRF dan izin tujuan otomatis | [ConfiguredIntegrationDestinationTest](../tests/Feature/ConfiguredIntegrationDestinationTest.php), [IntegrationEndpointSecurityTest](../tests/Feature/IntegrationEndpointSecurityTest.php), [OutboundEndpointPolicyTest](../tests/Unit/OutboundEndpointPolicyTest.php) |
+| Validasi dan tampilan leaderboard | [LeaderboardValidationTest](../tests/Feature/LeaderboardValidationTest.php), [pesan validasi browser](../tests/js/leaderboard-validation.test.mjs) |
+| Patch penafsiran path dan base URL | [HttpFoundationSecurityTest](../tests/Unit/HttpFoundationSecurityTest.php) |
 | Enkripsi dan pemulihan SQL | [SensitiveDataEncryptionTest](../tests/Feature/SensitiveDataEncryptionTest.php), [SqlExportRoundTripTest](../tests/Feature/SqlExportRoundTripTest.php) |
 | Pemeriksaan UI | [security-policy.mjs](../tests/ui/security-policy.mjs) |
 

@@ -695,7 +695,7 @@ class OpenSearchService
         $index = trim((string) ($configuration['opensearch_index'] ?? $this->index));
         $verifySsl = filter_var($configuration['opensearch_verify_ssl'] ?? $this->verifySsl, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true;
 
-        if (! $this->isValidEndpoint($host) || $username === '' || $password === '' || ! $this->isValidIndex($index)) {
+        if ($username === '' || $password === '' || ! $this->isValidIndex($index)) {
             return [
                 'success' => false,
                 'error' => 'Konfigurasi OpenSearch belum lengkap atau tidak valid.',
@@ -703,6 +703,8 @@ class OpenSearchService
         }
 
         try {
+            app(OutboundEndpointPolicy::class)->validateUrl($host);
+            app(OutboundEndpointPolicy::class)->assertConfigured('opensearch', $host);
             $response = $this->makeClient($host, $username, $password, $verifySsl)
                 ->get("/{$index}/_count", ['http_errors' => false]);
 
@@ -721,6 +723,9 @@ class OpenSearchService
             }
 
             $body = json_decode($response->getBody()->getContents(), true);
+            if (! is_array($body) || ! isset($body['count']) || ! is_int($body['count']) || $body['count'] < 0) {
+                return ['success' => false, 'error' => 'Respons hitungan indeks OpenSearch tidak valid. Periksa host dan index pattern.'];
+            }
 
             return [
                 'success' => true,
@@ -749,6 +754,7 @@ class OpenSearchService
     {
         return new Client([
             'base_uri' => rtrim($host, '/'),
+            'handler' => app(OutboundEndpointPolicy::class)->handler($host, 'opensearch'),
             'auth' => [$username, $password],
             'verify' => $verifySsl ?? $this->verifySsl,
             'timeout' => 15,
@@ -761,6 +767,10 @@ class OpenSearchService
 
     private function client(): Client
     {
+        if (! $this->isValidIndex($this->index)) {
+            throw new \RuntimeException('Index pattern OpenSearch tidak valid.');
+        }
+
         return $this->client ??= $this->makeClient($this->host, $this->username, $this->password);
     }
 
@@ -777,19 +787,9 @@ class OpenSearchService
         }
     }
 
-    private function isValidEndpoint(string $host): bool
-    {
-        $parts = parse_url($host);
-
-        return is_array($parts)
-            && isset($parts['scheme'], $parts['host'])
-            && in_array(strtolower($parts['scheme']), ['http', 'https'], true);
-    }
-
     private function isValidIndex(string $index): bool
     {
-        return $index !== ''
-            && ! str_starts_with($index, '/')
+        return preg_match('/\A[a-zA-Z0-9_.\-*,]+\z/', $index) === 1
             && ! str_contains($index, '..')
             && ! str_contains($index, "\0");
     }

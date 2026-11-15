@@ -20,6 +20,7 @@ class AiProviderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->fakeIntegrationDns();
         Http::preventStrayRequests();
         config(['services.ai.api_key' => '', 'services.ai.base_url' => '', 'services.ai.model' => '']);
     }
@@ -34,6 +35,7 @@ class AiProviderTest extends TestCase
             'responses' => '/responses', 'anthropic_messages' => '/messages', default => '/chat/completions',
         };
         $url = $preset['base_url'] ?: ($local ? 'http://llm.internal:8000/v1' : 'https://gateway.example.test/tenant/soc/api/v1');
+        config(['services.ai.base_url' => $url]);
         $answer = match ($format) {
             'responses' => ['output_text' => '', 'output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'pong']]]]],
             'anthropic_messages' => ['content' => [['type' => 'thinking', 'thinking' => 'private'], ['type' => 'text', 'text' => 'pong']]],
@@ -44,7 +46,7 @@ class AiProviderTest extends TestCase
             ->postJson(route('settings.test.ai'), [
                 'ai_provider' => $provider, 'ai_api_format' => $format,
                 'ai_base_url' => $url, 'ai_model' => 'test-model', 'ai_api_key' => $local ? '' : 'temporary-secret',
-            ])->assertOk()->assertJsonPath('success', true)->assertJsonPath('reply', 'pong');
+            ])->assertOk()->assertJsonPath('success', true)->assertJsonPath('reply', 'Respons AI diterima.');
 
         Http::assertSent(function (Request $request) use ($url, $path, $format, $local): bool {
             $this->assertSame($url.$path, $request->url());

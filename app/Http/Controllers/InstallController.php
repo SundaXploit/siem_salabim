@@ -148,7 +148,7 @@ class InstallController extends Controller
         ];
 
         try {
-            return $this->noStore(response()->json(['success' => true, ...app(AiProviderService::class)->models($settings)]));
+            return $this->noStore(response()->json(['success' => true, ...app(AiProviderService::class)->models($settings, installation: true)]));
         } catch (AiAnalysisException $exception) {
             return $this->noStore(response()->json(['success' => false, 'error' => $exception->getMessage()]));
         } catch (Throwable $exception) {

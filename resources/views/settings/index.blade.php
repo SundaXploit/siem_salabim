@@ -78,6 +78,7 @@
                     <label class="form-label">Host URL</label>
                     <input aria-label="Host URL" type="url" name="opensearch_host" class="form-input" value="{{ old('opensearch_host', $configs['opensearch_host'] ?? 'https://localhost:9200') }}" placeholder="https://wazuh-indexer.example:9200" required>
                     <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">Gunakan URL Wazuh Indexer (umumnya port <code>9200</code>), bukan Dashboard atau Wazuh API.</div>
+                    <p class="settings-field-help">Alamat tersimpan otomatis menjadi tujuan yang diizinkan. Jika mengganti protokol, host, atau port, simpan konfigurasi sebelum Test Koneksi.</p>
                 </div>
                 <div class="grid-2">
                     <div class="form-group">
@@ -87,6 +88,7 @@
                     <div class="form-group">
                         <label class="form-label">Password</label>
                         <input aria-label="Password" type="password" name="opensearch_password" class="form-input" placeholder="Tersimpan" autocomplete="new-password">
+                        <small class="text-muted">Isi kembali password jika host, port, atau username berubah.</small>
                     </div>
                 </div>
                 <div class="form-group">
@@ -187,12 +189,13 @@
                         <label class="form-label" for="ai-base-url">Base URL API</label>
                         <input id="ai-base-url" type="url" name="ai_base_url" class="form-input" value="{{ old('ai_base_url', $configs['ai_base_url']) }}" placeholder="Pilih provider atau isi base URL API" required>
                         <p class="settings-field-help">Gunakan base URL tanpa akhiran <code>/responses</code>, <code>/chat/completions</code>, atau <code>/messages</code>. Cloud memakai HTTPS; provider lokal boleh HTTP.</p>
+                        <p class="settings-field-help">Simpan konfigurasi sebelum Test Koneksi atau Muat daftar model jika alamat berubah. Model boleh dikosongkan saat menyimpan tujuan pertama kali; analisis aktif setelah model dipilih dan disimpan.</p>
                         <p class="settings-field-help" data-ai-local-help hidden>Alamat lokal diakses dari server aplikasi. Gunakan IP/hostname server LLM jika berada di komputer atau container lain, lalu pastikan model sudah dimuat.</p>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label" for="ai-model">Model AI</label>
-                        <input id="ai-model" type="text" name="ai_model" class="form-input" value="{{ old('ai_model', $configs['ai_model']) }}" placeholder="Nama model di provider atau server lokal" required>
+                        <input id="ai-model" type="text" name="ai_model" class="form-input" value="{{ old('ai_model', $configs['ai_model']) }}" placeholder="Pilih model setelah menyimpan tujuan">
                         @include('partials.ai-model-discovery', ['buttonClass' => 'btn btn-secondary btn-sm', 'helpClass' => 'settings-field-help', 'selectClass' => 'form-select'])
                     </div>
 

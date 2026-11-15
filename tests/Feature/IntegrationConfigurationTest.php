@@ -190,7 +190,9 @@ class IntegrationConfigurationTest extends TestCase
 
     public function test_settings_connection_check_uses_configured_password_when_form_is_blank(): void
     {
-        config(['services.opensearch.password' => 'configured-test-password']);
+        config(['services.opensearch.password' => 'configured-test-password',
+            'services.opensearch.host' => 'https://form-indexer.example.test:9200',
+            'services.opensearch.username' => 'form-user']);
         $this->mock(OpenSearchService::class, function (MockInterface $service): void {
             $service->shouldReceive('testConfiguration')->once()
                 ->withArgs(fn (array $configuration) => $configuration['opensearch_password'] === 'configured-test-password'
@@ -235,6 +237,7 @@ class IntegrationConfigurationTest extends TestCase
 
     private function mockOpenSearchTransport(array &$history): OpenSearchService
     {
+        $this->fakeIntegrationDns();
         $service = new OpenSearchService;
         // Initialise the real configured client, then replace only its transport.
         $client = (new ReflectionMethod($service, 'client'))->invoke($service);

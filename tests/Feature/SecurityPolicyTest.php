@@ -252,7 +252,9 @@ class SecurityPolicyTest extends TestCase
 
     public function test_provider_budget_counts_failures_and_releases_concurrency_slots(): void
     {
-        config(['services.ai.requests_per_minute' => 2, 'services.ai.max_concurrent_requests' => 1]);
+        $this->fakeIntegrationDns();
+        config(['services.ai.requests_per_minute' => 2, 'services.ai.max_concurrent_requests' => 1,
+            'services.ai.base_url' => 'https://ai.example.test']);
         $settings = ['provider' => 'custom', 'api_format' => 'chat_completions', 'base_url' => 'https://ai.example.test', 'api_key' => 'test', 'model' => 'test'];
         Http::fake(['https://ai.example.test/*' => Http::response([], 503)]);
         for ($i = 0; $i < 3; $i++) {

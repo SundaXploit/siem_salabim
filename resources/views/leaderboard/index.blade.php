@@ -503,13 +503,18 @@ function leaderboard(currentUserId) {
             this.error   = '';
             if (!hasExistingData) this.ready = false;
             this.destroyAllCharts();
+            let errorMessage = 'Data leaderboard belum dapat dimuat. Silakan coba lagi.';
             try {
                 const params = new URLSearchParams({ period: this.period });
                 if (this.period === 'custom') {
                     params.set('date_from', this.dateFrom);
                     params.set('date_to',   this.dateTo);
                 }
-                const res = await fetch(`/api/leaderboard?${params}`);
+                const res = await fetch(`/api/leaderboard?${params}`, { headers: { Accept: 'application/json' } });
+                if (res.status === 422) {
+                    const validation = await res.json();
+                    errorMessage = Object.values(validation.errors ?? {}).flat().find(message => typeof message === 'string') || errorMessage;
+                }
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 this.data  = await res.json();
                 this.ready = true;
@@ -518,7 +523,7 @@ function leaderboard(currentUserId) {
                 this.renderSparklines();
             } catch (e) {
                 console.error('[Leaderboard] Fetch error:', e);
-                this.error = 'Data leaderboard belum dapat dimuat. Silakan coba lagi.';
+                this.error = errorMessage;
                 this.ready = hasExistingData;
                 if (hasExistingData) {
                     await this.$nextTick();

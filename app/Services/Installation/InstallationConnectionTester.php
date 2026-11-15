@@ -4,6 +4,7 @@ namespace App\Services\Installation;
 
 use App\Exceptions\InstallationException;
 use App\Services\OpenSearchConnectionError;
+use App\Services\OutboundEndpointPolicy;
 use App\Services\TelegramService;
 use GuzzleHttp\Client;
 use Illuminate\Database\ConnectionInterface;
@@ -91,6 +92,7 @@ class InstallationConnectionTester
             || $username === ''
             || $password === ''
             || ! preg_match('/\A[a-zA-Z0-9_.\-*,]+\z/', $index)
+            || str_contains($index, '..')
         ) {
             throw new InstallationException('Konfigurasi OpenSearch/Wazuh tidak lengkap atau tidak valid.');
         }
@@ -111,6 +113,9 @@ class InstallationConnectionTester
             }
 
             $body = json_decode((string) $response->getBody(), true);
+            if (! is_array($body) || ! isset($body['count']) || ! is_int($body['count']) || $body['count'] < 0) {
+                throw new InstallationException('Respons hitungan indeks OpenSearch tidak valid. Periksa host dan index pattern.');
+            }
 
             return [
                 'count' => (int) ($body['count'] ?? 0),
@@ -127,6 +132,8 @@ class InstallationConnectionTester
 
     protected function openSearchClient(array $options): Client
     {
+        $options['handler'] = app(OutboundEndpointPolicy::class)->handler($options['base_uri']);
+
         return new Client($options);
     }
 

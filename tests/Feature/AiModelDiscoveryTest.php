@@ -17,8 +17,9 @@ class AiModelDiscoveryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->fakeIntegrationDns();
         Http::preventStrayRequests();
-        config(['services.ai.api_key' => '', 'services.ai.base_url' => '']);
+        config(['services.ai.api_key' => '', 'services.ai.base_url' => 'https://gateway.example.test/v1']);
     }
 
     #[DataProvider('providers')]
@@ -26,6 +27,7 @@ class AiModelDiscoveryTest extends TestCase
     {
         $local = in_array($provider, ['ollama', 'lmstudio'], true);
         $baseUrl = $local ? 'http://127.0.0.1:11434/v1' : 'https://gateway.example.test/tenant/soc/v1';
+        config(['services.ai.base_url' => $baseUrl]);
         Http::fake([$baseUrl.'/models*' => Http::response(['data' => [
             ['id' => 'model-b', 'owner_secret' => 'private-metadata'],
             ['id' => 'model-a', 'display_name' => 'Model A'], ['id' => 'model-b'], ['id' => null],

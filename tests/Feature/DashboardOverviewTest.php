@@ -19,6 +19,7 @@ class DashboardOverviewTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->fakeIntegrationDns();
         config([
             'services.ai.api_key' => 'test-only-key',
             'services.ai.base_url' => 'https://ai.example.test/v1',

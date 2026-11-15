@@ -6,6 +6,7 @@ use App\Exceptions\InstallationException;
 use App\Models\Configuration;
 use App\Models\User;
 use App\Services\AiProviderService;
+use App\Services\OutboundEndpointPolicy;
 use DateTimeZone;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -155,7 +156,7 @@ class Installer
 
             'opensearch_enabled' => ['boolean'],
             'telegram_enabled' => ['boolean'],
-            'opensearch_host' => ['required', 'url:http,https', 'max:2048'],
+            'opensearch_host' => ['required', 'url:http,https', 'max:2048', OutboundEndpointPolicy::urlRule()],
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['required', 'string', 'max:4096'],
             'opensearch_index' => ['required', 'string', 'max:255', 'regex:/\A[a-zA-Z0-9_.\-*,]+\z/'],

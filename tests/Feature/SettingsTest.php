@@ -84,6 +84,8 @@ class SettingsTest extends TestCase
     {
         $admin = $this->makeAdmin();
         Configuration::set('opensearch_password', 'saved-secret');
+        Configuration::set('opensearch_host', 'https://indexer.example.test:9200');
+        Configuration::set('opensearch_username', 'siem_alarm_service');
         Configuration::set('min_alert_level', 12);
 
         $response = $this->actingAs($admin)
@@ -155,10 +157,10 @@ class SettingsTest extends TestCase
             ->assertDontSee('test-secret-key');
     }
 
-    public function test_opensearch_test_uses_unsaved_form_configuration_without_persisting_it(): void
+    public function test_opensearch_test_uses_form_credentials_for_the_saved_destination_without_persisting_them(): void
     {
         $admin = $this->makeAdmin();
-        Configuration::set('opensearch_host', 'https://saved-indexer.example.test:9200');
+        Configuration::set('opensearch_host', 'https://temporary-indexer.example.test:9200');
         Configuration::set('opensearch_password', 'saved-password');
 
         $payload = [
@@ -187,7 +189,7 @@ class SettingsTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('count', 42);
 
-        $this->assertSame('https://saved-indexer.example.test:9200', Configuration::get('opensearch_host'));
+        $this->assertSame('https://temporary-indexer.example.test:9200', Configuration::get('opensearch_host'));
         $this->assertSame('saved-password', Configuration::get('opensearch_password'));
     }
 

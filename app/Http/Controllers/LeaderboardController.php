@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class LeaderboardController extends Controller
 {
@@ -30,11 +31,19 @@ class LeaderboardController extends Controller
 
     public function data(Request $request): JsonResponse
     {
-        $period   = $request->input('period', 'week');
-        $dateFrom = $request->input('date_from');
-        $dateTo   = $request->input('date_to');
+        $data = $request->validate([
+            'period' => ['sometimes', 'required', 'string', 'in:today,week,month,year,custom'],
+            'date_from' => ['nullable', 'required_if:period,custom', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'required_if:period,custom', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+        ]);
+        $period   = $data['period'] ?? 'week';
+        $dateFrom = $data['date_from'] ?? null;
+        $dateTo   = $data['date_to'] ?? null;
 
         [$start, $end] = $this->resolvePeriod($period, $dateFrom, $dateTo);
+        if ($period === 'custom' && $start->diffInDays($end->copy()->startOfDay()) > 365) {
+            throw ValidationException::withMessages(['date_to' => 'Rentang leaderboard maksimal 366 hari.']);
+        }
 
         return response()->json($this->computeRankings($period, $start, $end));
     }
@@ -166,8 +175,8 @@ class LeaderboardController extends Controller
             'month'  => [Carbon::now($tz)->startOfMonth(),  $now],
             'year'   => [Carbon::now($tz)->startOfYear(),   $now],
             'custom' => [
-                Carbon::parse($from ?? 'today', $tz)->startOfDay(),
-                Carbon::parse($to ?? $from ?? 'today', $tz)->endOfDay(),
+                Carbon::createFromFormat('!Y-m-d', $from, $tz)->startOfDay(),
+                Carbon::createFromFormat('!Y-m-d', $to, $tz)->endOfDay(),
             ],
             default  => [Carbon::now($tz)->startOfWeek(), $now],
         };

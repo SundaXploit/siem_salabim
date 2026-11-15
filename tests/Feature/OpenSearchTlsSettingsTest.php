@@ -97,6 +97,14 @@ class OpenSearchTlsSettingsTest extends TestCase
         $this->assertStringNotContainsString('private-host', $result['error']);
     }
 
+    public function test_an_unrelated_json_response_is_not_reported_as_a_working_opensearch_connection(): void
+    {
+        $result = $this->service([new Response(200, [], '{"message":"private-upstream-response"}')])->testConnection();
+        $this->assertFalse($result['success']);
+        $this->assertStringNotContainsString('private-upstream-response', $result['error']);
+        $this->assertStringContainsString('tidak valid', $result['error']);
+    }
+
     public function test_installer_tests_the_selected_ssl_mode_and_explains_a_certificate_failure(): void
     {
         $tester = new class extends InstallationConnectionTester

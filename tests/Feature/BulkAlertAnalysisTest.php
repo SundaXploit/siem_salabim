@@ -16,6 +16,7 @@ class BulkAlertAnalysisTest extends TestCase
 
     private function analyst(): User
     {
+        $this->fakeIntegrationDns();
         $user = User::factory()->forAgent('001', ['alerts.analyze', 'alerts.acknowledge'])->create();
         $this->actingAs($user);
         Configuration::set('ai_provider', 'custom');
