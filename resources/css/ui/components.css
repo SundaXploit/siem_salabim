@@ -208,6 +208,17 @@ select.form-select:-webkit-autofill {
 .toolbar .form-group, .filter-bar .form-group { margin-bottom: var(--spacing-0); }
 .filter-bar .form-input, .filter-bar .form-select { width: auto; }
 .filter-bar .search-input { width: 100%; }
+.activity-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: end; }
+.activity-filter-grid > div { min-width: 0; }
+.activity-filter-grid .form-input, .activity-filter-grid .form-select { width: 100%; min-width: 0; max-width: 100%; }
+.activity-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); grid-column: 1 / -1; }
+@media (min-width: 1440px) {
+    .activity-filter-grid { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) repeat(2, minmax(0, .85fr)) auto; }
+    .activity-filter-actions { grid-column: auto; }
+}
+@media (max-width: 640px) {
+    .activity-filter-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .toolbar-search { flex: 1 1 16rem; }
 .toolbar-actions { display: flex; align-items: center; gap: var(--space-2); }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
@@ -777,6 +788,20 @@ nav .pagination .page-item.disabled .page-link { color: var(--color-text-muted);
 .bulk-triage-error { color: var(--color-danger); font-size: var(--text-sm); line-height: var(--leading-sm); }
 .bulk-triage-dialog, .export-download-dialog { width: min(32rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); margin: auto; padding: var(--space-5); color: var(--color-text-primary); background: var(--color-surface-1); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); }
 .bulk-triage-dialog::backdrop, .export-download-dialog::backdrop { background: var(--color-overlay); }
+.notification-dialog { width: min(52rem, calc(100vw - 2rem)); max-width: none; }
+.notification-dialog form { min-width: 0; }
+.notification-help { margin: var(--space-3) 0 var(--space-5); }
+.notification-template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: var(--space-2); margin-bottom: var(--space-2); }
+.notification-template { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-start; text-align: left; white-space: normal; height: auto; padding: var(--space-3); overflow-wrap: anywhere; }
+.notification-dialog .active-template { border-color: var(--accent); color: var(--accent); background: var(--color-accent-soft); }
+.notification-message-label { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.notification-destinations, .notification-evidence-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
+.notification-evidence-list { display: grid; gap: var(--space-2); }
+.notification-evidence-row .form-input { min-width: 0; flex: 1; }
+.notification-template-list { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
+.notification-sent-message { margin-top: var(--space-2); }
+.notification-sent-message pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: var(--space-2); }
+.notification-template-item { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); overflow-wrap: anywhere; }
 .bulk-triage-help { margin: var(--space-2) var(--spacing-0) var(--space-4); line-height: var(--ina-line-height-body-small); }
 .bulk-triage-dialog .bulk-triage-error { margin-bottom: var(--space-3); }
 .data-table .triage-checkbox-cell { width: 2.75rem; padding-right: var(--space-2); text-align: center; }

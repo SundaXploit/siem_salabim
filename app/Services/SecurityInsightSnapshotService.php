@@ -93,11 +93,11 @@ class SecurityInsightSnapshotService
             ->where('agent_name', '!=', '')
             ->distinct()
             ->count('agent_name');
-        $uniqueSourceIps = (clone $base)
+        $uniqueSourceIps = (int) (clone $base)
             ->whereNotNull('src_ip')
             ->where('src_ip', '!=', '')
-            ->distinct()
-            ->count('src_ip');
+            ->selectRaw("COUNT(DISTINCT COALESCE(src_ip_hash, NULLIF(src_ip, ''))) AS unique_ips")
+            ->value('unique_ips');
 
         $responseOperations = $this->responseOperations($period, [
             'new' => (int) ($totals->total_count ?? 0)
@@ -142,13 +142,15 @@ class SecurityInsightSnapshotService
             ->all();
 
         // Aggregate queries below cover all records in the period. This limit
-        // applies only to raw Wazuh JSON decoded locally for MITRE extraction.
+        // applies to the small MITRE projection; the encrypted log payload is
+        // fetched only for rows waiting for the initial backfill.
         $sampleLimit = min(10_000, max(1_000, (int) Configuration::get('ai_snapshot_limit', config('services.ai.snapshot_limit', 10_000))));
 
         $sampledAlerts = (clone $base)
             ->orderByDesc('first_seen_at')
             ->limit($sampleLimit)
-            ->get(['rule_description', 'rule_level', 'agent_name', 'raw_data', 'first_seen_at']);
+            ->get(['rule_description', 'rule_level', 'agent_name', 'mitre_metadata', 'first_seen_at',
+                DB::raw('CASE WHEN mitre_metadata IS NULL THEN raw_data ELSE NULL END AS legacy_raw_data')]);
 
         $severity = [
             ['label' => 'Critical', 'count' => (int) ($totals->critical_count ?? 0)],
@@ -263,8 +265,10 @@ class SecurityInsightSnapshotService
         $counts = [];
 
         foreach ($alerts as $alert) {
-            $raw = is_array($alert->raw_data) ? $alert->raw_data : [];
-            $mitre = Arr::get($raw, 'rule.mitre', []);
+            $mitre = $alert->mitre_metadata;
+            if ($mitre === null) {
+                $mitre = Arr::get(SensitiveDataCipher::decryptJson($alert->legacy_raw_data) ?? [], 'rule.mitre', []);
+            }
             if (! is_array($mitre)) {
                 continue;
             }
@@ -347,8 +351,10 @@ class SecurityInsightSnapshotService
 
     private function responseOperations(array $period, array $currentAlertStatus, ?User $viewer): array
     {
-        $startUtc = $period['start_utc'];
-        $endUtc = $period['end_utc'];
+        // Native application activity timestamps use the application timezone;
+        // imported first_seen_at values use UTC and have their own query path.
+        $startUtc = $period['start_utc']->copy()->setTimezone(config('app.timezone'));
+        $endUtc = $period['end_utc']->copy()->setTimezone(config('app.timezone'));
 
         $triageQuery = AlertTriage::query()
             ->when($viewer && ! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
@@ -491,8 +497,8 @@ class SecurityInsightSnapshotService
 
         $triageRows = DB::table('alert_triages')
             ->when($viewer && ! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
-            ->where('created_at', '>=', $period['start_utc'])
-            ->where('created_at', '<', $period['end_utc'])
+            ->where('created_at', '>=', $period['start_utc']->copy()->setTimezone(config('app.timezone')))
+            ->where('created_at', '<', $period['end_utc']->copy()->setTimezone(config('app.timezone')))
             ->selectRaw("{$triageDay} AS day,
                 SUM(CASE WHEN action = 'acknowledge' THEN 1 ELSE 0 END) AS acknowledge_actions,
                 SUM(CASE WHEN action = 'ignore' THEN 1 ELSE 0 END) AS ignore_actions,
@@ -503,8 +509,8 @@ class SecurityInsightSnapshotService
 
         $notificationRows = DB::table('notification_logs')
             ->when($viewer && ! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
-            ->where('sent_at', '>=', $period['start_utc'])
-            ->where('sent_at', '<', $period['end_utc'])
+            ->where('sent_at', '>=', $period['start_utc']->copy()->setTimezone(config('app.timezone')))
+            ->where('sent_at', '<', $period['end_utc']->copy()->setTimezone(config('app.timezone')))
             ->selectRaw("{$notificationDay} AS day,
                 COUNT(*) AS attempts,
                 SUM(CASE WHEN response_status = 200 THEN 1 ELSE 0 END) AS delivered")
@@ -541,6 +547,10 @@ class SecurityInsightSnapshotService
 
     private function localDayExpression(string $column): string
     {
+        if (config('app.timezone') === self::TIMEZONE) {
+            return "DATE({$column})";
+        }
+
         return match (DB::connection()->getDriverName()) {
             'sqlite' => "DATE({$column}, '+7 hours')",
             'pgsql' => "DATE({$column} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')",

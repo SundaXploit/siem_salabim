@@ -11,12 +11,12 @@ class SettingsOrganizationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_settings_starts_with_six_collapsed_sections_and_inline_forms(): void
+    public function test_settings_starts_with_seven_collapsed_sections_and_inline_forms(): void
     {
         $response = $this->actingAs(User::factory()->create(['role' => 'admin']))
             ->get(route('settings.index'))->assertOk();
 
-        $this->assertSame(6, substr_count($response->getContent(), 'data-settings-section='));
+        $this->assertSame(7, substr_count($response->getContent(), 'data-settings-section='));
         $response->assertDontSee('Versi &amp; update aplikasi', false)
             ->assertDontSee('settings-directory-edit', false)
             ->assertDontSee('Semua pengaturan')
@@ -24,7 +24,8 @@ class SettingsOrganizationTest extends TestCase
         $document = new \DOMDocument;
         @$document->loadHTML($response->getContent());
         $xpath = new \DOMXPath($document);
-        $this->assertSame(6, $xpath->query('//details[@data-settings-section and not(@open)]')->length);
+        $this->assertSame(7, $xpath->query('//details[@data-settings-section and not(@open)]')->length);
+        $this->assertSame(1, $xpath->query('//details[@data-settings-section="templates"]/summary')->length);
         $this->assertSame(1, $xpath->query('//details[@data-settings-section="opensearch"]//form[@action="'.route('settings.opensearch').'"]//select[@name="min_alert_level"]')->length);
         $this->assertSame(1, $xpath->query('//details[@data-settings-section="opensearch"]//form[@action="'.route('settings.fetch-now').'"]')->length);
         foreach (['opensearch', 'permanent-ignore', 'ai', 'telegram', 'users', 'data'] as $section) {
@@ -36,14 +37,14 @@ class SettingsOrganizationTest extends TestCase
     public function test_section_links_expand_the_selected_section_with_the_directory_still_visible(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'admin']));
-        foreach (['opensearch', 'permanent-ignore', 'ai', 'telegram', 'users', 'data'] as $section) {
+        foreach (['opensearch', 'permanent-ignore', 'ai', 'telegram', 'templates', 'users', 'data'] as $section) {
             $response = $this->get(route('settings.index', ['section' => $section]))
                 ->assertOk()->assertViewHas('activeSettingsSection', $section)
                 ->assertSee('Daftar pengaturan');
             $document = new \DOMDocument;
             @$document->loadHTML($response->getContent());
             $xpath = new \DOMXPath($document);
-            $this->assertSame(6, $xpath->query('//details[@data-settings-section]')->length);
+            $this->assertSame(7, $xpath->query('//details[@data-settings-section]')->length);
             $this->assertSame(1, $xpath->query('//details[@data-settings-section and @open]')->length);
             $this->assertSame($section, $xpath->query('//details[@data-settings-section and @open]')->item(0)->getAttribute('data-settings-section'));
         }

@@ -98,6 +98,9 @@ $app->instance(OpenSearchService::class, new class extends OpenSearchService
 
 $admin = User::factory()->create(['name' => 'Nadia Putri', 'email' => 'admin@example.test', 'role' => 'admin']);
 $analyst = User::factory()->forAgent('001')->create(['name' => 'Raka Pratama', 'email' => 'analyst@example.test']);
+$otherAdmin = User::factory()->create(['name' => 'Admin lain', 'email' => 'other-admin@example.test', 'role' => 'admin']);
+$inactive = User::factory()->create(['name' => 'Akun nonaktif', 'email' => 'inactive@example.test']);
+$inactive->forceFill(['is_active' => false])->save();
 PermanentAlertIgnore::create(['rule_id' => '10001', 'created_by_user_id' => $admin->id, 'created_by_name' => $admin->name]);
 foreach (['login', 'logout', 'opensearch_updated', 'telegram_updated', 'ai_updated', 'password_changed', 'user_created', 'user_updated', 'user_deleted', 'opensearch_tested'] as $index => $action) {
     $activityActor = in_array($action, ['login', 'logout', 'password_changed'], true) ? $analyst : $admin;
@@ -113,9 +116,9 @@ foreach (['login', 'logout', 'opensearch_updated', 'telegram_updated', 'ai_updat
     ]);
 }
 Configuration::set('telegram_destinations', json_encode([
-    ['label' => 'Developer', 'chat_id' => '-100111', 'agents' => ['web-prod-02', 'staging']],
-    ['label' => 'Developer personal', 'chat_id' => '123456', 'agents' => ['web-prod-02', 'staging']],
-    ['label' => 'Organisasi B', 'chat_id' => '-100222', 'agents' => ['database-01']],
+    ['label' => 'Developer', 'chat_id' => '-100111', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001'), Alert::agentScopeKey('wazuh-primary', '002')]],
+    ['label' => 'Developer personal', 'chat_id' => '123456', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001'), Alert::agentScopeKey('wazuh-primary', '002')]],
+    ['label' => 'Organisasi B', 'chat_id' => '-100222', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '003'), Alert::agentScopeKey('wazuh-primary', '006')]],
 ]));
 if ($path === '/verify-email') {
     $admin->forceFill(['email_verified_at' => null])->save();
@@ -151,6 +154,7 @@ if (! isset($_GET['empty'])) {
         ]);
         if ($i % 3 === 0) {
             AlertTriage::create(['alert_id' => $alert->id, 'user_id' => $i % 2 ? $admin->id : $analyst->id, 'action' => 'acknowledge', 'created_at' => now()->subHours($i)]);
+            $alert->forceFill(['acknowledged_by_user_id' => $i % 2 ? $admin->id : $analyst->id, 'acknowledged_at' => now()->subHours($i)])->save();
         }
         if ($i % 5 === 0) {
             NotificationLog::create(['alert_id' => $alert->id, 'user_id' => $admin->id, 'chat_id' => '-100000000', 'message' => 'QA fixture: investigasi alert keamanan.', 'response_status' => $i === 10 ? 500 : 200, 'sent_at' => now()->subHours($i)]);
@@ -171,7 +175,11 @@ if (isset($_GET['automatic'])) {
     }
 }
 if (! in_array($path, ['/login', '/install', '/install/complete'], true)) {
-    Auth::setUser(($_GET['_role'] ?? '') === 'analyst' ? $analyst : $admin);
+    Auth::setUser(match ($_GET['_role'] ?? '') { 'analyst' => $analyst, 'other-admin' => $otherAdmin, default => $admin });
+    $app['session']->driver()->put('security', [
+        'version' => Auth::user()->session_version, 'activity_key' => 'ui-preview',
+        'started_at' => now()->timestamp, 'last_activity_at' => now()->timestamp,
+    ]);
 }
 if ($path === '/settings' && isset($_GET['_validation_user'])) {
     // Inject a validation redirect after StartSession for this isolated preview.

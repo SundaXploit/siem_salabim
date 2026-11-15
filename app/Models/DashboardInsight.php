@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedJson;
+use App\Casts\EncryptedString;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -26,10 +28,11 @@ class DashboardInsight extends Model
     ];
 
     protected $casts = [
-        'period_start'    => 'date',
-        'period_end'      => 'date',
-        'source_snapshot' => 'array',
-        'generated_at'    => 'datetime',
+        'period_start' => 'date',
+        'period_end' => 'date',
+        'summary' => EncryptedString::class,
+        'source_snapshot' => EncryptedJson::class,
+        'generated_at' => 'datetime',
         'next_refresh_at' => 'datetime',
     ];
 

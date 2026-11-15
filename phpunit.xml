@@ -19,6 +19,10 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="01234567890123456789012345678901"/>
+        <env name="APP_CIPHER" value="AES-256-GCM"/>
+        <env name="SIEM_BLIND_INDEX_KEY" value="12345678901234567890123456789012"/>
+        <env name="SIEM_ALLOW_LEGACY_PLAINTEXT" value="true"/>
         <env name="APP_INSTALLED" value="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

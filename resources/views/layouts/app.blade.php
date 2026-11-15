@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @include('partials.session-security')
     @include('partials.brand-head')
     <title>@yield('title', 'Dashboard') — SIEM Salabim</title>
     <meta name="description" content="@yield('description', 'Security Information and Event Management — SOC Subang')">
@@ -230,6 +231,7 @@
                     if (!res.ok) return;
                     const data = await res.json();
                     this.newAlertCount = data.count;
+                    window.dispatchEvent(new CustomEvent('siem-ingestion', { detail: data.ingestion ?? {} }));
                 } catch(e) {}
             }
         }

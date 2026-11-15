@@ -41,7 +41,7 @@ class OpenSearchService
         $this->username = (string) Configuration::get('opensearch_username', config('services.opensearch.username', ''));
         $this->password = (string) Configuration::get('opensearch_password', config('services.opensearch.password', ''));
         $this->index = (string) Configuration::get('opensearch_index', config('services.opensearch.index', 'wazuh-alerts-*'));
-        $this->verifySsl = filter_var(config('services.opensearch.verify_ssl', true), FILTER_VALIDATE_BOOL);
+        $this->verifySsl = filter_var(Configuration::get('opensearch_verify_ssl', config('services.opensearch.verify_ssl', true)), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true;
 
     }
 
@@ -51,6 +51,7 @@ class OpenSearchService
      */
     public function fetchAgents(): array
     {
+        $this->refreshConnectionSettings();
         $path = '/wazuh-monitoring-*/_search';
         $filter = ['bool' => ['must_not' => [['term' => ['id' => '000']]]]];
         $latest = $this->searchRequest($path, ['json' => [
@@ -291,10 +292,10 @@ class OpenSearchService
         } catch (RequestException $e) {
             $status = $e->hasResponse() ? $e->getResponse()->getStatusCode() : null;
 
-            throw new \RuntimeException(self::safeErrorMessage($status), $status ?? 0, $e);
+            throw new \RuntimeException($status ? self::safeErrorMessage($status) : OpenSearchConnectionError::message($e), $status ?? 0, $e);
         } catch (\Throwable $e) {
             throw new \RuntimeException(
-                'Tidak dapat membuka snapshot OpenSearch untuk fetch incremental.',
+                OpenSearchConnectionError::message($e),
                 0,
                 $e,
             );
@@ -511,6 +512,7 @@ class OpenSearchService
 
     protected function refreshAlertFilters(): void
     {
+        $this->refreshConnectionSettings();
         // This service lives across jobs in a queue worker. Refresh once per
         // fetch, then keep the source query stable for all pages in that scan.
         $this->ignoredRuleIds = PermanentAlertIgnore::ruleIds();
@@ -540,14 +542,14 @@ class OpenSearchService
                 'exception_class' => $e::class,
             ]);
 
-            throw new \RuntimeException($detail ?? self::safeErrorMessage($status), $status ?? 0, $e);
+            throw new \RuntimeException($detail ?? ($status ? self::safeErrorMessage($status) : OpenSearchConnectionError::message($e)), $status ?? 0, $e);
         } catch (\Throwable $e) {
             Log::error('[OpenSearch] fetchAlerts connection failure', [
                 'exception_class' => $e::class,
             ]);
 
             throw new \RuntimeException(
-                'Tidak dapat terhubung ke OpenSearch. Periksa host, port, sertifikat TLS, dan jaringan.',
+                OpenSearchConnectionError::message($e),
                 0,
                 $e
             );
@@ -668,11 +670,14 @@ class OpenSearchService
      */
     public function testConnection(): array
     {
+        $this->refreshConnectionSettings();
+
         return $this->testConfiguration([
             'opensearch_host' => $this->host,
             'opensearch_username' => $this->username,
             'opensearch_password' => $this->password,
             'opensearch_index' => $this->index,
+            'opensearch_verify_ssl' => $this->verifySsl,
         ]);
     }
 
@@ -688,6 +693,7 @@ class OpenSearchService
         $username = (string) ($configuration['opensearch_username'] ?? $this->username);
         $password = (string) ($configuration['opensearch_password'] ?? $this->password);
         $index = trim((string) ($configuration['opensearch_index'] ?? $this->index));
+        $verifySsl = filter_var($configuration['opensearch_verify_ssl'] ?? $this->verifySsl, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true;
 
         if (! $this->isValidEndpoint($host) || $username === '' || $password === '' || ! $this->isValidIndex($index)) {
             return [
@@ -697,7 +703,7 @@ class OpenSearchService
         }
 
         try {
-            $response = $this->makeClient($host, $username, $password)
+            $response = $this->makeClient($host, $username, $password, $verifySsl)
                 ->get("/{$index}/_count", ['http_errors' => false]);
 
             $status = $response->getStatusCode();
@@ -734,17 +740,17 @@ class OpenSearchService
 
             return [
                 'success' => false,
-                'error' => 'Tidak dapat terhubung ke OpenSearch. Periksa host, port, sertifikat TLS, dan jaringan.',
+                'error' => OpenSearchConnectionError::message($e),
             ];
         }
     }
 
-    private function makeClient(string $host, string $username, string $password): Client
+    protected function makeClient(string $host, string $username, string $password, ?bool $verifySsl = null): Client
     {
         return new Client([
             'base_uri' => rtrim($host, '/'),
             'auth' => [$username, $password],
-            'verify' => $this->verifySsl,
+            'verify' => $verifySsl ?? $this->verifySsl,
             'timeout' => 15,
             'headers' => [
                 'Content-Type' => 'application/json',
@@ -756,6 +762,19 @@ class OpenSearchService
     private function client(): Client
     {
         return $this->client ??= $this->makeClient($this->host, $this->username, $this->password);
+    }
+
+    protected function refreshConnectionSettings(): void
+    {
+        $host = (string) Configuration::get('opensearch_host', config('services.opensearch.host', 'https://localhost:9200'));
+        $username = (string) Configuration::get('opensearch_username', config('services.opensearch.username', ''));
+        $password = (string) Configuration::get('opensearch_password', config('services.opensearch.password', ''));
+        $index = (string) Configuration::get('opensearch_index', config('services.opensearch.index', 'wazuh-alerts-*'));
+        $verifySsl = filter_var(Configuration::get('opensearch_verify_ssl', config('services.opensearch.verify_ssl', true)), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true;
+        if ([$host, $username, $password, $index, $verifySsl] !== [$this->host, $this->username, $this->password, $this->index, $this->verifySsl]) {
+            [$this->host, $this->username, $this->password, $this->index, $this->verifySsl] = [$host, $username, $password, $index, $verifySsl];
+            $this->client = null;
+        }
     }
 
     private function isValidEndpoint(string $host): bool
@@ -792,13 +811,14 @@ class OpenSearchService
     /**
      * Parse a raw OpenSearch hit into our alert structure
      */
-    public static function parseHit(array $hit): array
+    public static function parseHit(array $hit, ?string $sourceTimezone = null): array
     {
         $src = $hit['_source'] ?? [];
         $data = $src['data'] ?? [];
         $sourceId = (string) ($hit['_id'] ?? '');
         $sourceIndex = (string) ($hit['_index'] ?? '');
         $sourceCluster = trim((string) config('services.opensearch.source_cluster', 'wazuh-primary'));
+        $eventTime = $src['@timestamp'] ?? $src['timestamp'] ?? null;
 
         if ($sourceId === '' || strlen($sourceId) > 512 || str_contains($sourceId, "\0")) {
             throw new \UnexpectedValueException('Hit OpenSearch harus memiliki _id sepanjang 1-512 byte tanpa null byte.');
@@ -824,8 +844,9 @@ class OpenSearchService
             'rule_id' => (string) ($src['rule']['id'] ?? null),
             'rule_level' => (int) ($src['rule']['level'] ?? 0),
             'raw_data' => $src,
-            'first_seen_at' => isset($src['@timestamp'])
-                ? Carbon::parse($src['@timestamp'])->utc()->toDateTimeString()
+            'first_seen_at' => filled($eventTime)
+                // An explicit Z/+07:00 in the event takes precedence over the fallback zone.
+                ? Carbon::parse($eventTime, $sourceTimezone ?? config('services.opensearch.timezone', 'UTC'))->utc()->toDateTimeString()
                 : now('UTC')->toDateTimeString(),
         ];
     }

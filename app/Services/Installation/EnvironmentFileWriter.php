@@ -95,6 +95,21 @@ final class EnvironmentFileWriter
         $this->prepare($values);
     }
 
+    /** Change runtime settings without generating or copying an APP_KEY from the process environment. */
+    public function updatePreservingAppKey(array $values): void
+    {
+        if (array_key_exists('APP_KEY', $values)) {
+            throw new RuntimeException('Pengaturan runtime tidak boleh mengubah APP_KEY.');
+        }
+        $this->withExclusiveLock(function () use ($values): void {
+            $contents = $this->environmentContents();
+            $updated = $this->replaceValues($contents, $values);
+            if ($contents !== $updated || ! is_file($this->environmentPath)) {
+                $this->atomicWrite($this->environmentPath, $updated);
+            }
+        });
+    }
+
     public function value(string $name): ?string
     {
         $this->assertValidName($name);

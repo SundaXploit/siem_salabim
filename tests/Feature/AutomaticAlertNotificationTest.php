@@ -35,9 +35,9 @@ class AutomaticAlertNotificationTest extends TestCase
         Configuration::set('telegram_auto_above_level', 13);
         Configuration::set('telegram_auto_base_url', 'https://soc.example.test:8443/siem');
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'Developer', 'chat_id' => '-100111', 'agents' => ['Agent-Demo-A']],
-            ['label' => 'Developer personal', 'chat_id' => '123456', 'agents' => ['Agent-Demo-A']],
-            ['label' => 'Organisasi lain', 'chat_id' => '-100222', 'agents' => ['Production']],
+            ['label' => 'Developer', 'chat_id' => '-100111', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '007')]],
+            ['label' => 'Developer personal', 'chat_id' => '123456', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '007')]],
+            ['label' => 'Organisasi lain', 'chat_id' => '-100222', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '008')]],
         ], JSON_THROW_ON_ERROR));
     }
 
@@ -47,6 +47,7 @@ class AutomaticAlertNotificationTest extends TestCase
         $source['id'] = $id;
         $source['rule']['level'] = $level;
         $source['agent']['name'] = $agent;
+        $source['agent']['id'] = match ($agent) { 'Agent-Demo-A' => '007', 'Production' => '008', default => '009' };
         $source['rule']['description'] = $description ?? $source['rule']['description'];
 
         return ['_id' => $id, '_index' => 'wazuh-alerts-4.x-2026.11.12', '_source' => $source];

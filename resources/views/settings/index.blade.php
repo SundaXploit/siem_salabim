@@ -95,6 +95,24 @@
                 </div>
 
                 <div class="form-group">
+                    <label class="form-label" for="opensearch-verify-ssl">Verifikasi SSL Wazuh/OpenSearch</label>
+                    <select id="opensearch-verify-ssl" name="opensearch_verify_ssl" class="form-select" required>
+                        <option value="1" @selected(filter_var(old('opensearch_verify_ssl', $configs['opensearch_verify_ssl']), FILTER_VALIDATE_BOOL))>true — Verifikasi sertifikat (disarankan)</option>
+                        <option value="0" @selected(!filter_var(old('opensearch_verify_ssl', $configs['opensearch_verify_ssl']), FILTER_VALIDATE_BOOL))>false — Lewati verifikasi sertifikat</option>
+                    </select>
+                    <p class="settings-field-help">Jika sertifikat internal belum dipercaya, false dapat dipakai sementara pada jaringan tepercaya. Perbaiki CA/nama host lalu aktifkan true kembali. Pilihan ini juga dipakai tombol Uji koneksi sebelum disimpan.</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="opensearch-timezone">Zona waktu Wazuh untuk timestamp tanpa offset</label>
+                    <select id="opensearch-timezone" name="opensearch_timezone" class="form-select" required>
+                        @foreach(DateTimeZone::listIdentifiers() as $timezone)
+                            <option value="{{ $timezone }}" @selected(old('opensearch_timezone', $configs['opensearch_timezone']) === $timezone)>{{ match ($timezone) { 'UTC' => 'UTC', 'Asia/Jakarta' => 'Asia/Jakarta — WIB (UTC+07:00)', 'Asia/Makassar' => 'Asia/Makassar — WITA (UTC+08:00)', 'Asia/Jayapura' => 'Asia/Jayapura — WIT (UTC+09:00)', default => $timezone } }}</option>
+                        @endforeach
+                    </select>
+                    <p class="settings-field-help">Jika waktu Wazuh sudah WIB tanpa offset, pilih Asia/Jakarta. Timestamp dengan Z atau +07:00 selalu mengikuti offset aslinya; waktu WIB tetap tampil pada jam yang sama. Berlaku untuk impor baru.</p>
+                </div>
+
+                <div class="form-group">
                     <label class="form-label" for="alert-min-alert-level">Ambang impor rule level alert</label>
                     <select id="alert-min-alert-level" name="min_alert_level" class="form-select" required>
                         @foreach($levelOptions as $lvl => $opt)
@@ -107,6 +125,9 @@
                 <button type="submit" class="btn settings-submit w-full">Simpan konfigurasi OpenSearch &amp; Alert</button>
             </form>
             <div class="settings-manual-actions">
+                @if($tlsError = Illuminate\Support\Facades\Cache::get('siem_fetch_tls_error'))
+                    <p class="alert-msg error" role="alert">{{ $tlsError }}</p>
+                @endif
                 <h3 class="settings-subheading">Fetch alert manual</h3>
                 <p class="text-muted text-sm" style="margin-bottom:var(--spacing-12);">Ambil alert hari ini mulai pukul 00:00 WIB (Asia/Jakarta), dengan level ≥ {{ $configs['min_alert_level'] ?? 12 }} sesuai konfigurasi yang sudah disimpan. Seluruh halaman hasil hari ini diperiksa dan alert yang sudah tersimpan dilewati.</p>
                 <form method="POST" action="{{ route('settings.fetch-now') }}" x-data="{ fetching: false }" @submit="fetching = true">
@@ -255,20 +276,20 @@
                                         <td data-label="Label tujuan"><input type="text" :name="`telegram_destinations[${idx}][label]`" x-model="destination.label" class="form-input" placeholder="Developer / Organisasi A" maxlength="100" required :disabled="testing" :aria-label="'Label tujuan ' + (idx + 1)"></td>
                                         <td data-label="Chat ID"><input type="text" :name="`telegram_destinations[${idx}][chat_id]`" x-model="destination.chat_id" class="form-input" placeholder="ID grup atau personal" pattern="-?[1-9][0-9]*" maxlength="100" required :disabled="testing" :aria-label="'Chat ID tujuan ' + (idx + 1)" @input="testResult = null"></td>
                                         <td data-label="Agent yang diizinkan">
-                                            <template x-for="name in destination.agents" :key="name"><input type="hidden" :name="`telegram_destinations[${idx}][agents][]`" :value="name"></template>
+                                            <template x-for="key in destination.agent_keys" :key="key"><input type="hidden" :name="`telegram_destinations[${idx}][agent_keys][]`" :value="key"></template>
                                             <div class="settings-agent-picker" x-data="{ open: false, search: '' }" @click.outside="open = false" @keydown.escape.stop.prevent="open = false; $refs.agentToggle.focus()">
                                                 <button type="button" class="form-select settings-agent-toggle" @click="open = !open; if (open) $nextTick(() => $refs.agentSearch.focus())" :disabled="testing" :aria-expanded="open" :aria-controls="'telegram-agent-options-' + idx" :aria-label="'Pilih agent untuk ' + (destination.label || 'tujuan ' + (idx + 1))" x-ref="agentToggle" data-telegram-agent-toggle>
-                                                    <span x-text="destination.agents.length ? destination.agents.length + ' agent dipilih' : 'Pilih agent'"></span>
+                                                    <span x-text="destination.agent_keys.length ? destination.agent_keys.length + ' agent dipilih' : 'Pilih agent'"></span>
                                                     <i data-lucide="chevron-right" aria-hidden="true"></i>
                                                 </button>
-                                                <div x-show="!open && destination.agents.length" class="settings-agent-selection" x-text="destination.agents.join(', ')"></div>
+                                                <div x-show="!open && destination.agent_keys.length" class="settings-agent-selection" x-text="selectedAgentLabels(destination)"></div>
                                                 <div x-show="open" :id="'telegram-agent-options-' + idx" class="settings-agent-options" x-cloak>
                                                     <input type="search" class="form-input" x-model="search" @keydown.enter.prevent placeholder="Cari nama atau ID agent" :aria-label="'Cari agent tujuan ' + (idx + 1)" x-ref="agentSearch" data-telegram-agent-search>
                                                     <div class="settings-agent-list">
-                                                        <template x-for="agent in agentOptions(destination, search)" :key="agent.name">
+                                                        <template x-for="agent in agentOptions(destination, search)" :key="agent.key">
                                                             <label class="settings-agent-option">
-                                                                <input type="checkbox" :value="agent.name" x-model="destination.agents" :disabled="testing" :data-agent-name="agent.name">
-                                                                <span class="settings-agent-option-copy"><span x-text="agent.name"></span><small x-text="agent.id ? 'ID ' + agent.id : (agentsLoaded ? 'Tidak ada di monitoring terbaru' : 'Pilihan tersimpan')"></small></span>
+                                                                <input type="checkbox" :value="agent.key" x-model="destination.agent_keys" :disabled="testing" :data-agent-name="agent.name">
+                                                                <span class="settings-agent-option-copy"><span x-text="agent.name"></span><small x-text="agent.id ? 'ID ' + agent.id + ' / ' + (agent.source_cluster || '') : (agentsLoaded ? 'Tidak ada di monitoring terbaru' : 'Pilihan tersimpan')"></small></span>
                                                                 <span class="settings-agent-status" :class="{ 'is-active': agent.status === 'active' }" x-show="agent.id" x-text="agent.status"></span>
                                                             </label>
                                                         </template>
@@ -276,7 +297,8 @@
                                                     </div>
                                                 </div>
                                             </div>
-                                            <p class="settings-field-help" x-show="!destination.agents.length">Pilih minimal satu agent.</p>
+                                            <p class="settings-field-help" x-show="!destination.agent_keys.length">Pilih minimal satu Agent ID.</p>
+                                            <p class="form-error" x-show="destination.unresolved_agents.length" x-text="'Pemetaan nama lama perlu ditinjau. Pilih ulang Agent ID untuk: '+destination.unresolved_agents.join(', ')"></p>
                                         </td>
                                         <td data-label="Aksi"><div class="settings-telegram-actions">
                                             <button type="button" @click="testChat(destination.chat_id, idx)" class="btn btn-secondary btn-sm settings-chat-test" :disabled="testing" :aria-busy="testing && testingChatIndex === idx" data-telegram-test-chat><span x-text="testing && testingChatIndex === idx ? 'Mengirim...' : 'Kirim pesan tes'"></span></button>
@@ -297,7 +319,7 @@
                         : 'Gagal: ' + testResult?.error"></span>
                 </div>
 
-                <button type="submit" :disabled="testing || destinations.some(destination => !destination.agents.length)" class="btn settings-submit w-full" style="margin-top:var(--spacing-16);">Simpan konfigurasi Telegram</button>
+                <button type="submit" :disabled="testing || destinations.some(destination => !destination.agent_keys.length)" class="btn settings-submit w-full" style="margin-top:var(--spacing-16);">Simpan konfigurasi Telegram</button>
             </form>
         </div>
     </div>
@@ -305,6 +327,9 @@
 
     {{-- ─── User Management ───────────────────────────────── --}}
     @include('settings.partials.automatic-notifications')
+    @endif
+    @if($key === 'templates')
+    @include('settings.partials.notification-templates')
     @endif
     @if($key === 'users')
     @include('settings.partials.users')
@@ -335,6 +360,7 @@
                 <span x-show="previewAiAnalyses !== null">, <strong x-text="previewAiAnalyses"></strong> analisis AI</span>
                 <span x-show="previewTriages !== null">, <strong x-text="previewTriages"></strong> triage</span>
                 <span x-show="previewLogs !== null">, <strong x-text="previewLogs"></strong> log notifikasi</span>
+                <span x-show="previewOperations !== null">, <strong x-text="previewOperations"></strong> penanda pengiriman</span>
             </div>
             <div x-show="previewError" class="alert-msg error" style="margin-bottom:var(--spacing-16);" x-cloak>
                 <span x-text="previewError"></span>
@@ -347,7 +373,7 @@
                     <label class="form-label">Isi arsip ZIP</label>
                     <select aria-label="Isi arsip ZIP" x-model="format" class="form-select">
                         <option value="json">JSON (universal)</option>
-                        <option value="sql">SQL (INSERT statements, reimportable ke MySQL)</option>
+                        <option value="sql">SQL INSERT ({{ match (DB::connection()->getDriverName()) { 'pgsql' => 'PostgreSQL', 'mysql' => 'MySQL', 'mariadb' => 'MariaDB', 'sqlite' => 'SQLite', default => 'driver belum didukung' } }})</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -668,6 +694,7 @@ function dataManagement() {
         previewAiAnalyses: null,
         previewTriages: null,
         previewLogs: null,
+        previewOperations: null,
         previewError: null,
 
         resetPreview() {
@@ -675,6 +702,7 @@ function dataManagement() {
             this.previewAiAnalyses = null;
             this.previewTriages = null;
             this.previewLogs = null;
+            this.previewOperations = null;
             this.previewError = null;
         },
 
@@ -720,6 +748,7 @@ function dataManagement() {
                 this.previewAiAnalyses = data.counts.alert_ai_analyses ?? null;
                 this.previewTriages     = data.counts.triages ?? null;
                 this.previewLogs        = data.counts.notif_logs ?? null;
+                this.previewOperations  = data.counts.notification_operations ?? null;
             } catch(e) {
                 this.previewError = e.message || 'Preview tidak dapat dijalankan.';
             }
@@ -745,7 +774,7 @@ function dataManagement() {
 
 function userManagement() {
     return {
-        records: @js($users->map(fn ($user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'role' => $user->role, 'agents' => $user->allowed_agents ?? [], 'privileges' => $user->privileges ?? [], 'updateUrl' => route('settings.users.update', $user, false), 'deleteUrl' => route('settings.users.delete', $user, false)])->values()),
+        records: @js($users->map(fn ($user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'role' => $user->role, 'isActive' => $user->is_active, 'canEdit' => !$user->isAdmin() || $user->id === auth()->id(), 'agents' => $user->allowed_agents ?? [], 'privileges' => $user->privileges ?? [], 'updateUrl' => route('settings.users.update', $user, false), 'statusUrl' => route('settings.users.status', $user, false)])->values()),
         menuUser: null, editingUserId: null, formName: '', formEmail: '',
         accessRole: 'analyst', selectedAgents: [], selectedPrivileges: [], savedAgents: [], agentSearch: '',
         inventoryAgents: [], inventoryLoading: false, inventoryLoaded: false, inventoryError: '',
@@ -784,6 +813,7 @@ function userManagement() {
             });
         },
         openUserEditor(id = null) {
+            if (id && !this.records.find(user => user.id === id)?.canEdit) return;
             const user = this.records.find(user => user.id === id);
             this.$refs.userMenu.hidePopover();
             this.editingUserId = user?.id ?? null; this.formName = user?.name ?? ''; this.formEmail = user?.email ?? '';
@@ -819,7 +849,9 @@ function telegramForm() {
     const saved = @js(old('telegram_destinations', $telegramDestinations));
     const destinations = Object.values(saved && typeof saved === 'object' ? saved : {}).map(destination => ({
         label: destination?.label || '', chat_id: destination?.chat_id || '',
-        agents: Array.isArray(destination?.agents) ? destination.agents : [],
+        agent_keys: Array.isArray(destination?.agent_keys) ? destination.agent_keys : [],
+        agent_details: Array.isArray(destination?.agent_details) ? destination.agent_details : [],
+        unresolved_agents: Array.isArray(destination?.unresolved_agents) ? destination.unresolved_agents : [],
     }));
     return {
         destinations,
@@ -831,7 +863,7 @@ function telegramForm() {
         testResult: null,
         testing: false,
         testingChatIndex: null,
-        addDestination() { this.destinations.push({ label: '', chat_id: '', agents: [] }); },
+        addDestination() { this.destinations.push({ label: '', chat_id: '', agent_keys: [], agent_details: [], unresolved_agents: [] }); },
         removeDestination(index) { this.destinations.splice(index, 1); this.testResult = null; },
         init() {
             const section = this.$el.closest('[data-settings-section]');
@@ -843,10 +875,15 @@ function telegramForm() {
             this.$el.closest('[data-settings-section]').removeEventListener('toggle', this.onSectionToggle);
         },
         agentOptions(destination, search) {
-            const known = new Set(this.availableAgents.map(agent => agent.name));
-            const selected = destination.agents.filter(name => !known.has(name)).map(name => ({ name, id: '', status: 'unknown' }));
+            const known = new Set(this.availableAgents.map(agent => agent.key));
+            const selected = destination.agent_keys.filter(key => !known.has(key)).map(key =>
+                destination.agent_details.find(agent => agent.key === key) || { key, name: 'Agent tersimpan', id: key.slice(0, 12), status: 'unknown' });
             const term = search.trim().toLocaleLowerCase();
             return [...this.availableAgents, ...selected].filter(agent => (agent.name + ' ' + agent.id).toLocaleLowerCase().includes(term));
+        },
+        selectedAgentLabels(destination) {
+            return this.agentOptions(destination, '').filter(agent => destination.agent_keys.includes(agent.key))
+                .map(agent => `${agent.name} (ID ${agent.id})`).join(', ');
         },
         snapshotTime() {
             return this.updatedAt ? new Date(this.updatedAt).toLocaleString('id-ID') : '';

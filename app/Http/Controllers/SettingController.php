@@ -4,14 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\AiAnalysisException;
 use App\Jobs\GenerateDataExport;
-use App\Jobs\PurgeDataExport;
 use App\Jobs\PrepareAutomaticAlertNotifications;
+use App\Jobs\PurgeDataExport;
 use App\Models\Alert;
 use App\Models\AlertAiAnalysis;
 use App\Models\AlertTriage;
 use App\Models\Configuration;
 use App\Models\DataExport;
 use App\Models\NotificationLog;
+use App\Models\NotificationTemplate;
 use App\Models\PermanentAlertIgnore;
 use App\Models\User;
 use App\Services\AiInsightService;
@@ -23,6 +24,7 @@ use App\Services\DataExportArchiveService;
 use App\Services\OpenSearchService;
 use App\Services\QueueExecutionPolicy;
 use App\Services\TelegramService;
+use App\Services\UserManagementService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -53,6 +55,7 @@ class SettingController extends Controller
             'permanent-ignore' => ['title' => 'Ignore permanen', 'description' => 'Hentikan impor alert baru berdasarkan Rule ID.', 'icon' => 'filter'],
             'ai' => ['title' => 'Konfigurasi AI', 'description' => 'Provider, endpoint, model, serta jadwal analisis AI.', 'icon' => 'sparkles'],
             'telegram' => ['title' => 'Konfigurasi Telegram', 'description' => 'Token bot, manajemen tujuan, dan aturan pengiriman berdasarkan agent.', 'icon' => 'send'],
+            'templates' => ['title' => 'Template notifikasi', 'description' => 'Tambah, edit, nonaktifkan, dan hapus template Telegram untuk notifikasi tunggal maupun massal.', 'icon' => 'clipboard-list'],
             'users' => ['title' => 'Manajemen user', 'description' => 'Akun, role, dan akses anggota tim SOC.', 'icon' => 'users'],
             'data' => ['title' => 'Manajemen data', 'description' => 'Ekspor ZIP, riwayat backup, dan retensi data.', 'icon' => 'archive'],
         ];
@@ -65,6 +68,8 @@ class SettingController extends Controller
             'opensearch_host',
             'opensearch_username',
             'opensearch_index',
+            'opensearch_timezone',
+            'opensearch_verify_ssl',
             'min_alert_level',
             'ai_provider',
             'ai_api_format',
@@ -77,6 +82,8 @@ class SettingController extends Controller
             'opensearch_host' => config('services.opensearch.host'),
             'opensearch_username' => config('services.opensearch.username'),
             'opensearch_index' => config('services.opensearch.index'),
+            'opensearch_timezone' => config('services.opensearch.timezone', 'UTC'),
+            'opensearch_verify_ssl' => config('services.opensearch.verify_ssl', true) ? 'true' : 'false',
             'min_alert_level' => config('services.opensearch.min_level'),
             'ai_base_url' => config('services.ai.base_url'),
             'ai_model' => config('services.ai.model'),
@@ -95,6 +102,7 @@ class SettingController extends Controller
         $telegramDestinations = Configuration::getTelegramDestinations();
         $automaticNotifications = app(AutomaticAlertNotifier::class)->settings();
         $users = User::orderBy('name')->get();
+        $notificationTemplates = NotificationTemplate::orderBy('category')->orderBy('name')->get();
         $permanentIgnores = PermanentAlertIgnore::whereNotNull('rule_id')->orderByDesc('id')->paginate(15, ['*'], 'ignored_page')->appends(['section' => 'permanent-ignore']);
         $legacyPermanentIgnores = PermanentAlertIgnore::whereNull('rule_id')->orderByDesc('id')->paginate(15, ['*'], 'legacy_ignored_page')->appends(['section' => 'permanent-ignore']);
         $dataExportsReady = Schema::hasTable('data_exports') && Schema::hasColumn('data_exports', 'archive_password');
@@ -108,6 +116,7 @@ class SettingController extends Controller
         return response()->view('settings.index', compact(
             'configs',
             'users',
+            'notificationTemplates',
             'permanentIgnores',
             'legacyPermanentIgnores',
             'dataExports',
@@ -130,12 +139,20 @@ class SettingController extends Controller
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['nullable', 'string', 'max:4096'],
             'opensearch_index' => ['required', 'string', 'max:255'],
+            'opensearch_timezone' => ['sometimes', 'required', 'timezone'],
+            'opensearch_verify_ssl' => ['sometimes', 'required', 'boolean'],
             'min_alert_level' => ['sometimes', 'required', 'integer', Rule::in([3, 5, 7, 10, 12, 13, 14, 15])],
         ]);
 
         Configuration::set('opensearch_host', trim($data['opensearch_host']));
         Configuration::set('opensearch_username', trim($data['opensearch_username']));
         Configuration::set('opensearch_index', trim($data['opensearch_index']));
+        if (array_key_exists('opensearch_verify_ssl', $data)) {
+            Configuration::set('opensearch_verify_ssl', $request->boolean('opensearch_verify_ssl') ? 'true' : 'false');
+        }
+        if (isset($data['opensearch_timezone'])) {
+            Configuration::set('opensearch_timezone', $data['opensearch_timezone']);
+        }
         if (filled($data['opensearch_password'] ?? null)) {
             Configuration::set('opensearch_password', $data['opensearch_password']);
         }
@@ -152,6 +169,10 @@ class SettingController extends Controller
         $this->adminOnly();
         try {
             $inventory = app(OpenSearchService::class)->fetchAgents();
+            $cluster = (string) config('services.opensearch.source_cluster', 'wazuh-primary');
+            $inventory['agents'] = array_map(fn ($agent) => $agent + [
+                'source_cluster' => $cluster, 'key' => Alert::agentScopeKey($cluster, $agent['id']),
+            ], $inventory['agents']);
 
             return response()->json(['success' => true, ...$inventory])
                 ->withHeaders(['Cache-Control' => 'no-store, private']);
@@ -231,17 +252,40 @@ class SettingController extends Controller
             'telegram_chat_ids.*' => 'nullable|string|max:100',
             'update_telegram_destinations' => ['sometimes', 'boolean'],
             'telegram_destinations' => ['sometimes', 'array', 'max:100'],
-            'telegram_destinations.*' => ['array:label,chat_id,agents'],
+            'telegram_destinations.*' => ['array:label,chat_id,agent_keys'],
             'telegram_destinations.*.label' => ['required', 'string', 'max:100'],
             'telegram_destinations.*.chat_id' => ['required', 'string', 'max:100', 'regex:/^-?[1-9][0-9]*$/', 'distinct:strict'],
-            'telegram_destinations.*.agents' => ['required', 'array', 'min:1', 'max:1000'],
-            'telegram_destinations.*.agents.*' => ['required', 'string', 'max:255'],
+            'telegram_destinations.*.agent_keys' => ['required', 'array', 'min:1', 'max:1000'],
+            'telegram_destinations.*.agent_keys.*' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
         ], [
-            'telegram_destinations.*.agents.required' => 'Pilih minimal satu agent untuk setiap tujuan Telegram.',
-            'telegram_destinations.*.agents.min' => 'Pilih minimal satu agent untuk setiap tujuan Telegram.',
+            'telegram_destinations.*.agent_keys.required' => 'Pilih minimal satu Agent ID untuk setiap tujuan Telegram.',
+            'telegram_destinations.*.agent_keys.min' => 'Pilih minimal satu Agent ID untuk setiap tujuan Telegram.',
             'telegram_destinations.*.chat_id.distinct' => 'Chat ID tidak boleh digunakan pada dua baris tujuan.',
             'telegram_destinations.*.chat_id.regex' => 'Chat ID harus berupa angka; ID grup boleh diawali tanda minus.',
         ]);
+
+        $destinations = null;
+        if ($request->boolean('update_telegram_destinations') || array_key_exists('telegram_destinations', $data)) {
+            $saved = collect(Configuration::getTelegramDestinations());
+            $knownKeys = $saved->flatMap(fn ($destination) => $destination['agent_keys'] ?? [])->unique()->all();
+            $keys = collect($data['telegram_destinations'] ?? [])->flatMap(fn ($destination) => $destination['agent_keys'])->unique()->all();
+            $inventory = $saved->flatMap(fn ($destination) => $destination['agent_details'] ?? [])->keyBy('key');
+            if (array_diff($keys, $knownKeys) !== []) {
+                try {
+                    $inventory = $inventory->merge(collect($this->userAgentInventory())->keyBy('key'));
+                } catch (\Throwable) {
+                    throw ValidationException::withMessages(['telegram_destinations' => 'Agent ID baru belum dapat diverifikasi. Muat ulang monitoring Wazuh terlebih dahulu.']);
+                }
+                if (array_diff($keys, $inventory->keys()->all()) !== []) {
+                    throw ValidationException::withMessages(['telegram_destinations' => 'Pilihan Agent ID tidak tersedia pada monitoring Wazuh.']);
+                }
+            }
+            $destinations = array_map(static fn (array $destination): array => [
+                'label' => trim($destination['label']), 'chat_id' => trim($destination['chat_id']),
+                'agent_keys' => array_values(array_unique($destination['agent_keys'])),
+                'agent_details' => $inventory->only($destination['agent_keys'])->values()->all(),
+            ], $data['telegram_destinations'] ?? []);
+        }
 
         if (filled($data['telegram_bot_token'] ?? null)) {
             Configuration::set('telegram_bot_token', trim($data['telegram_bot_token']));
@@ -251,12 +295,7 @@ class SettingController extends Controller
             ]);
         }
 
-        if ($request->boolean('update_telegram_destinations') || array_key_exists('telegram_destinations', $data)) {
-            $destinations = array_map(static fn (array $destination): array => [
-                'label' => trim($destination['label']),
-                'chat_id' => trim($destination['chat_id']),
-                'agents' => array_values(array_unique(array_map('trim', $destination['agents']))),
-            ], $data['telegram_destinations'] ?? []);
+        if ($destinations !== null) {
             Configuration::set('telegram_destinations', json_encode(array_values($destinations), JSON_THROW_ON_ERROR));
         } elseif (array_key_exists('telegram_chat_ids', $data)) {
             Configuration::set('telegram_chat_ids', json_encode(
@@ -277,7 +316,7 @@ class SettingController extends Controller
         ]);
         $enabled = $request->boolean('telegram_auto_enabled');
         if ($enabled && (blank(Configuration::get('telegram_bot_token', config('services.telegram.bot_token')))
-            || ! collect(Configuration::getTelegramDestinations())->contains(fn ($destination) => ! empty($destination['agents'])))) {
+            || ! collect(Configuration::getTelegramDestinations())->contains(fn ($destination) => ! empty($destination['agent_keys'])))) {
             throw ValidationException::withMessages([
                 'telegram_auto_enabled' => 'Simpan token bot dan minimal satu tujuan dengan pemetaan agent terlebih dahulu.',
             ]);
@@ -409,6 +448,7 @@ class SettingController extends Controller
             'opensearch_username' => ['required', 'string', 'max:255'],
             'opensearch_password' => ['nullable', 'string', 'max:4096'],
             'opensearch_index' => ['required', 'string', 'max:255'],
+            'opensearch_verify_ssl' => ['sometimes', 'required', 'boolean'],
         ]);
 
         $data['opensearch_password'] = filled($data['opensearch_password'] ?? null)
@@ -501,6 +541,7 @@ class SettingController extends Controller
     public function updateUser(Request $request, User $user)
     {
         $this->adminOnly();
+        abort_if($user->isAdmin() && $request->user()->id !== $user->id, 403, 'Profil admin lain tidak dapat diubah.');
         $request->validate([
             'name' => 'required|string|max:255',
             'role' => 'required|in:admin,analyst',
@@ -512,7 +553,8 @@ class SettingController extends Controller
             $data['password'] = Hash::make($request->password);
         }
 
-        $user->update($data);
+        app(UserManagementService::class)->update($request->user(), $user, $data);
+        $user->refresh();
 
         return back()->with('settings_section', 'users')->with('success', "User {$user->name} berhasil diupdate.");
     }
@@ -520,13 +562,21 @@ class SettingController extends Controller
     public function deleteUser(User $user)
     {
         $this->adminOnly();
-        if ($user->id === auth()->id()) {
-            return back()->with('settings_section', 'users')->with('error', 'Tidak bisa menghapus akun sendiri.');
-        }
+        // Legacy DELETE links deactivate instead of erasing incident history.
+        app(UserManagementService::class)->setActive(auth()->user(), $user, false);
 
-        $user->delete();
+        return back()->with('settings_section', 'users')->with('success', 'Akun dinonaktifkan. Riwayat penanganan tetap tersimpan.');
+    }
 
-        return back()->with('settings_section', 'users')->with('success', 'User berhasil dihapus.');
+    public function updateUserStatus(Request $request, User $user)
+    {
+        $this->adminOnly();
+        $data = $request->validate(['is_active' => ['required', 'boolean']]);
+        app(UserManagementService::class)->setActive($request->user(), $user, (bool) $data['is_active']);
+
+        return back()->with('settings_section', 'users')->with('success', $data['is_active']
+            ? 'Akun diaktifkan kembali. Pengguna perlu masuk ulang.'
+            : 'Akun dinonaktifkan; sesi dicabut dan alert ACK dikembalikan ke NEW. Riwayat tetap tersimpan.');
     }
 
     /**
@@ -590,6 +640,9 @@ class SettingController extends Controller
             )->count();
         }
         if (in_array($scope, ['alerts', 'notif_logs', 'all'], true)) {
+            $counts['notification_operations'] = DB::table('manual_notification_operations')->whereIn(
+                'alert_id', (clone $alerts)->select('id'),
+            )->count();
             $counts['notif_logs'] = NotificationLog::whereIn(
                 'alert_id',
                 (clone $alerts)->select('id'),

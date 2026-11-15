@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Alert;
+use App\Services\SensitiveDataCipher;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,7 @@ return new class extends Migration
         });
         DB::table('alerts')->select('id', 'source_cluster', 'raw_data')->orderBy('id')->chunkById(500, function ($rows): void {
             foreach ($rows as $row) {
-                $source = json_decode($row->raw_data ?? '{}', true);
+                $source = SensitiveDataCipher::decryptJson($row->raw_data);
                 DB::table('alerts')->where('id', $row->id)->update([
                     'agent_scope_key' => $row->source_cluster ? Alert::agentScopeKey($row->source_cluster, data_get($source, 'agent.id')) : null,
                 ]);

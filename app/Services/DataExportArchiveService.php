@@ -17,9 +17,9 @@ class DataExportArchiveService
     private const COLUMNS = [
         'alerts' => [
             'id', 'wazuh_alert_id', 'source_cluster', 'source_index', 'source_id', 'source_identity_hash',
-            'rule_description', 'src_ip', 'dst_ip', 'agent_name', 'rule_id',
-            'rule_level', 'status', 'first_seen_at', 'raw_data', 'created_at',
-            'updated_at',
+            'rule_description', 'src_ip', 'dst_ip', 'src_ip_hash', 'dst_ip_hash', 'agent_name', 'rule_id',
+            'rule_level', 'status', 'acknowledged_by_user_id', 'acknowledged_at', 'agent_scope_key', 'first_seen_at', 'raw_data', 'created_at',
+            'updated_at', 'mitre_metadata',
         ],
         'alert_ai_analyses' => [
             'id', 'alert_id', 'requested_by_user_id', 'verdict', 'confidence',
@@ -30,10 +30,14 @@ class DataExportArchiveService
         'alert_triages' => [
             'id', 'alert_id', 'user_id', 'action', 'reason', 'created_at',
         ],
+        'manual_notification_operations' => [
+            'id', 'alert_id', 'user_id', 'payload_hash', 'created_at',
+        ],
         'notification_logs' => [
             'id', 'alert_id', 'user_id', 'chat_id', 'message',
-            'response_status', 'sent_at',
+            'response_status', 'sent_at', 'automatic_key', 'delivery_state', 'manual_operation_id', 'delivery_details',
         ],
+        'encrypted_search_tokens' => ['id', 'alert_id', 'entity', 'record_id', 'token_hash'],
     ];
 
     /**
@@ -224,8 +228,12 @@ class DataExportArchiveService
                     throw new RuntimeException('Arsip lama tidak dapat dibaca.');
                 }
             } finally {
-                if (is_resource($source)) fclose($source);
-                if (is_resource($destination)) fclose($destination);
+                if (is_resource($source)) {
+                    fclose($source);
+                }
+                if (is_resource($destination)) {
+                    fclose($destination);
+                }
             }
             if (! hash_equals($export->checksum, (string) hash_file('sha256', $sourcePath))
                 || $zip->open($sourcePath, ZipArchive::RDONLY) !== true) {
@@ -243,8 +251,12 @@ class DataExportArchiveService
                         throw new RuntimeException('Isi arsip lama tidak dapat dibaca.');
                     }
                 } finally {
-                    if (is_resource($payload)) fclose($payload);
-                    if (is_resource($destination)) fclose($destination);
+                    if (is_resource($payload)) {
+                        fclose($payload);
+                    }
+                    if (is_resource($destination)) {
+                        fclose($destination);
+                    }
                 }
                 if (hash_file('crc32b', $payloadPath) !== sprintf('%08x', $stat['crc'])) {
                     throw new RuntimeException('Checksum isi arsip lama tidak cocok.');
@@ -401,9 +413,13 @@ class DataExportArchiveService
         }
 
         if (in_array($export->scope, ['alerts', 'all'], true)) {
-            foreach (['alert_ai_analyses', 'alert_triages', 'notification_logs'] as $entity) {
-                $boundary = (int) data_get($export->snapshot_boundaries, $entity, 0);
-                if ($this->entityQuery($export, $entity, false)->where('id', '>', $boundary)->exists()) {
+            foreach (['alert_ai_analyses', 'alert_triages', 'manual_notification_operations', 'notification_logs', 'encrypted_search_tokens'] as $entity) {
+                $boundary = data_get($export->snapshot_boundaries, $entity);
+                $newer = $this->entityQuery($export, $entity, false);
+                if ($boundary !== null) {
+                    $newer->where('id', '>', $boundary);
+                }
+                if ($newer->exists()) {
                     throw new RuntimeException(
                         'Ada record terkait yang dibuat setelah backup; buat backup baru sebelum purge.',
                     );
@@ -432,11 +448,11 @@ class DataExportArchiveService
     public function includedEntities(DataExport $export): array
     {
         return match ($export->scope) {
-            'triages' => ['alerts', 'alert_triages'],
-            'notif_logs' => ['alerts', 'notification_logs'],
+            'triages' => ['alerts', 'alert_triages', 'encrypted_search_tokens'],
+            'notif_logs' => ['alerts', 'manual_notification_operations', 'notification_logs', 'encrypted_search_tokens'],
             // Deleting an alert cascades all its children, so every dependency
             // must be in an archive that may later authorize that purge.
-            'alerts', 'all' => ['alerts', 'alert_ai_analyses', 'alert_triages', 'notification_logs'],
+            'alerts', 'all' => ['alerts', 'alert_ai_analyses', 'alert_triages', 'manual_notification_operations', 'notification_logs', 'encrypted_search_tokens'],
             default => throw new RuntimeException('Scope ekspor tidak didukung.'),
         };
     }
@@ -457,7 +473,13 @@ class DataExportArchiveService
         }
 
         if ($applyBoundary) {
-            $query->where('id', '<=', (int) data_get($export->snapshot_boundaries, $entity, 0));
+            $boundary = data_get($export->snapshot_boundaries, $entity);
+            $boundary === null ? $query->whereRaw('1 = 0') : $query->where('id', '<=', $boundary);
+        }
+
+        if ($entity === 'encrypted_search_tokens' && ! in_array($export->scope, ['alerts', 'all'], true)) {
+            $allowed = $export->scope === 'triages' ? ['alert', 'triage'] : ['alert', 'notification'];
+            $query->whereIn('entity', $allowed);
         }
 
         return $query;
@@ -498,6 +520,7 @@ class DataExportArchiveService
             'export_uuid' => $export->uuid,
             'generated_at' => now()->toIso8601String(),
             'generated_by' => $export->requested_by_name,
+            'database' => $this->databaseMetadata(),
             'scope' => $export->scope,
             'period_label' => $export->period_label,
             'period_start' => $export->period_start?->toIso8601String(),
@@ -551,28 +574,56 @@ class DataExportArchiveService
      */
     private function writeSqlArchive(DataExport $export, $handle): array
     {
-        $this->write($handle, "-- SIEM Salabim verified data export v2\n");
+        $driver = DB::connection()->getDriverName();
+        if (! in_array($driver, ['pgsql', 'mysql', 'mariadb', 'sqlite'], true)) {
+            throw new RuntimeException("Ekspor SQL belum mendukung driver {$driver}. Gunakan format JSON.");
+        }
+        $this->write($handle, "-- SIEM Salabim verified data export v3\n");
+        $this->write($handle, "-- Database driver: {$driver}\n");
+        $this->write($handle, '-- Schema migrations: '.json_encode($this->databaseMetadata()['schema_migrations'], JSON_THROW_ON_ERROR)."\n");
         $this->write($handle, '-- Export UUID: '.$export->uuid."\n");
         $this->write($handle, '-- Generated by: '.json_encode($export->requested_by_name, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)."\n");
-        $this->write($handle, '-- Period: '.$export->period_label."\n");
-        $this->write($handle, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n");
+        $this->write($handle, '-- Period: '.json_encode($export->period_label, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)."\n");
+        $this->write($handle, "-- Restore into the same database engine and matching application schema.\n");
+        $this->write($handle, "-- Referenced users must already exist with their original IDs. Stop writers during restore.\n");
+        $this->write($handle, "-- Existing conflicting IDs are errors; this file does not overwrite or silently skip data.\n");
+        $this->write($handle, match ($driver) {
+            'pgsql' => "BEGIN;\nSET LOCAL client_encoding = 'UTF8';\nSET LOCAL standard_conforming_strings = on;\n\n",
+            'sqlite' => "PRAGMA foreign_keys = ON;\nBEGIN TRANSACTION;\n\n",
+            default => "SET NAMES utf8mb4;\nSTART TRANSACTION;\n\n",
+        });
+        if ($driver === 'pgsql') {
+            $tables = array_map(fn ($entity) => DB::connection()->getQueryGrammar()->wrapTable($entity), $this->includedEntities($export));
+            $this->write($handle, 'LOCK TABLE '.implode(', ', $tables)." IN SHARE ROW EXCLUSIVE MODE;\n\n");
+        }
 
         $hash = hash_init('sha256');
         $counts = [];
         foreach ($this->includedEntities($export) as $entity) {
             $count = 0;
             $this->write($handle, "-- {$entity}\n");
-            $this->eachRecord($export, $entity, function (array $record) use ($handle, $entity, &$count, $hash): void {
+            $this->eachRecord($export, $entity, function (array $record) use ($handle, $entity, &$count, $hash, $driver): void {
                 $json = $this->canonicalJson($record);
                 hash_update($hash, $entity."\0".$json."\n");
-                $this->write($handle, $this->sqlInsert($entity, $record)."\n");
+                $this->write($handle, $this->sqlInsert($entity, $record, $driver)."\n");
                 $count++;
             });
             $counts[$entity] = $count;
             $this->write($handle, "\n");
         }
 
-        $this->write($handle, "SET FOREIGN_KEY_CHECKS=1;\n-- End of verified export\n");
+        if ($driver === 'pgsql') {
+            foreach ($counts as $entity => $count) {
+                if ($entity === 'manual_notification_operations' || $count === 0) {
+                    continue;
+                }
+                $table = DB::connection()->getQueryGrammar()->wrapTable($entity);
+                $sequence = 'pg_get_serial_sequence('.$this->sqlLiteral($table, $driver).", 'id')";
+                // Reserve nextval first so an older backup never rewinds a sequence.
+                $this->write($handle, "SELECT setval({$sequence}, GREATEST(COALESCE(MAX(\"id\"), 1), nextval({$sequence})), true) FROM {$table};\n");
+            }
+        }
+        $this->write($handle, "COMMIT;\n-- End of verified export\n");
 
         return [
             'record_counts' => $counts,
@@ -617,7 +668,7 @@ class DataExportArchiveService
         }
     }
 
-    /** @return array<string, int> */
+    /** @return array<string, int|string|null> */
     private function captureBoundaries(DataExport $export): array
     {
         $boundaries = [];
@@ -628,11 +679,11 @@ class DataExportArchiveService
             if ($entity === 'alerts') {
                 continue;
             }
-            $boundaries[$entity] = (int) ($this->entityQuery(
+            $boundaries[$entity] = $this->entityQuery(
                 $export->forceFill(['snapshot_boundaries' => ['alerts' => $alertMax]]),
                 $entity,
                 false,
-            )->max('id') ?? 0);
+            )->orderByDesc('id')->value('id');
         }
 
         return $boundaries;
@@ -702,16 +753,16 @@ class DataExportArchiveService
     }
 
     /** @param array<string, mixed> $record */
-    private function sqlInsert(string $table, array $record): string
+    private function sqlInsert(string $table, array $record, string $driver): string
     {
-        $columns = array_keys($record);
-        $names = '`'.implode('`,`', $columns).'`';
-        $values = array_map(fn (mixed $value): string => $this->sqlLiteral($value), array_values($record));
+        $grammar = DB::connection()->getQueryGrammar();
+        $names = implode(',', array_map(fn ($column) => $grammar->wrap($column), array_keys($record)));
+        $values = array_map(fn (mixed $value): string => $this->sqlLiteral($value, $driver), array_values($record));
 
-        return "INSERT IGNORE INTO `{$table}` ({$names}) VALUES (".implode(',', $values).');';
+        return 'INSERT INTO '.$grammar->wrapTable($table)." ({$names}) VALUES (".implode(',', $values).');';
     }
 
-    private function sqlLiteral(mixed $value): string
+    private function sqlLiteral(mixed $value, string $driver): string
     {
         if ($value === null) {
             return 'NULL';
@@ -719,8 +770,39 @@ class DataExportArchiveService
         if (is_int($value) || is_float($value)) {
             return (string) $value;
         }
+        if (is_bool($value)) {
+            return $driver === 'pgsql' ? ($value ? 'TRUE' : 'FALSE') : ($value ? '1' : '0');
+        }
+        if ($driver === 'pgsql') {
+            if (str_contains((string) $value, "\0") || ! mb_check_encoding((string) $value, 'UTF-8')) {
+                throw new RuntimeException('PostgreSQL memerlukan teks UTF-8 tanpa null byte. Ekspor dibatalkan.');
+            }
+
+            return "'".str_replace("'", "''", (string) $value)."'";
+        }
+        if ($driver === 'sqlite') {
+            return "CAST(X'".bin2hex((string) $value)."' AS TEXT)";
+        }
 
         return "_utf8mb4 X'".bin2hex((string) $value)."'";
+    }
+
+    private function databaseMetadata(): array
+    {
+        return [
+            'driver' => DB::connection()->getDriverName(),
+            'schema_migrations' => DB::table('migrations')->orderBy('migration')->pluck('migration')->all(),
+            'contents' => 'operational_data_only',
+            'requires_existing_users' => true,
+            'encryption' => [
+                'cipher' => config('app.cipher'),
+                'application_key_fingerprint' => substr(hash('sha256', app('encrypter')->getKey()), 0, 16),
+                'read_key_fingerprints' => array_map(fn ($key) => substr(hash('sha256', $key), 0, 16), app('encrypter')->getAllKeys()),
+                'blind_index_key_fingerprint' => substr(hash('sha256', EncryptedSearchIndex::key()), 0, 16),
+                'requires_original_or_previous_application_keys' => true,
+                'requires_original_blind_index_key' => true,
+            ],
+        ];
     }
 
     /** @param resource $handle */
@@ -869,6 +951,7 @@ class DataExportArchiveService
                 'boundaries' => $export->snapshot_boundaries,
             ],
             'source' => [
+                'database' => $this->databaseMetadata(),
                 'record_counts' => $snapshot['record_counts'],
                 'fingerprint' => $snapshot['source_fingerprint'],
             ],

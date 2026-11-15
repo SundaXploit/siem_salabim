@@ -3,6 +3,7 @@
 namespace App\Services\Installation;
 
 use App\Exceptions\InstallationException;
+use App\Services\OpenSearchConnectionError;
 use App\Services\TelegramService;
 use GuzzleHttp\Client;
 use Illuminate\Database\ConnectionInterface;
@@ -81,7 +82,7 @@ class InstallationConnectionTester
         $username = trim((string) ($input['opensearch_username'] ?? ''));
         $password = (string) ($input['opensearch_password'] ?? '');
         $index = trim((string) ($input['opensearch_index'] ?? ''));
-        $verifySsl = filter_var($input['opensearch_verify_ssl'] ?? true, FILTER_VALIDATE_BOOL);
+        $verifySsl = filter_var($input['opensearch_verify_ssl'] ?? true, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true;
 
         $parts = parse_url($host);
         if (! is_array($parts)
@@ -95,7 +96,7 @@ class InstallationConnectionTester
         }
 
         try {
-            $response = (new Client([
+            $response = $this->openSearchClient([
                 'base_uri' => $host,
                 'auth' => [$username, $password],
                 'verify' => $verifySsl,
@@ -103,7 +104,7 @@ class InstallationConnectionTester
                 'timeout' => 15,
                 'http_errors' => false,
                 'headers' => ['Accept' => 'application/json'],
-            ]))->get('/'.$index.'/_count');
+            ])->get('/'.$index.'/_count');
 
             if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
                 throw new InstallationException('OpenSearch/Wazuh menolak kredensial atau akses ke indeks yang dipilih.');
@@ -117,11 +118,16 @@ class InstallationConnectionTester
             ];
         } catch (InstallationException $exception) {
             throw $exception;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             throw new InstallationException(
-                'Tidak dapat terhubung ke OpenSearch/Wazuh. Periksa alamat, TLS, jaringan, dan kredensial.'
+                OpenSearchConnectionError::message($exception)
             );
         }
+    }
+
+    protected function openSearchClient(array $options): Client
+    {
+        return new Client($options);
     }
 
     /**

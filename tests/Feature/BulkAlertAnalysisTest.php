@@ -132,6 +132,7 @@ class BulkAlertAnalysisTest extends TestCase
         $this->actingAs(User::factory()->create(['role' => 'admin']));
         $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => $ids])->assertOk()->assertJsonPath('cached', false);
         $this->travel(25)->hours();
+        $this->actingAs(auth()->user()->fresh());
         $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => $ids])->assertOk()->assertJsonPath('cached', false);
         Http::assertSentCount(3);
     }
@@ -147,10 +148,10 @@ class BulkAlertAnalysisTest extends TestCase
         }
         $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => [$id], 'force' => 'invalid'])->assertUnprocessable();
         $viewer = User::factory()->create(['role' => 'analyst']);
-        $viewer->role = 'viewer';
+        $viewer->forceFill(['is_active' => false])->save();
         $this->actingAs($viewer);
-        $this->getJson(route('alerts.bulk-detail', ['alert_ids' => [$id]]))->assertForbidden();
-        $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => [$id]])->assertForbidden();
+        $this->getJson(route('alerts.bulk-detail', ['alert_ids' => [$id]]))->assertUnauthorized();
+        $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => [$id]])->assertUnauthorized();
         $this->assertDatabaseCount('alert_triages', 0);
         Http::assertNothingSent();
     }

@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\ActivityLog;
 use App\Models\DataExport;
+use App\Models\NotificationTemplate;
 use App\Models\PermanentAlertIgnore;
 use App\Models\User;
 use Closure;
@@ -21,6 +22,10 @@ class RecordSettingsActivity
         'settings.permanent-ignores.destroy' => 'permanent_ignore_removed',
         'settings.opensearch' => 'opensearch_updated',
         'settings.telegram' => 'telegram_updated',
+        'settings.templates.save' => 'notification_template_saved',
+        'settings.templates.delete' => 'notification_template_deleted',
+        'templates.save' => 'notification_template_saved',
+        'templates.delete' => 'notification_template_deleted',
         'settings.telegram.automatic' => 'automatic_notifications_updated',
         'settings.ai' => 'ai_updated',
         'settings.alerts' => 'alerts_updated',
@@ -32,7 +37,8 @@ class RecordSettingsActivity
         'settings.users.create' => 'user_created',
         'settings.users.agents' => 'agents_loaded',
         'settings.users.update' => 'user_updated',
-        'settings.users.delete' => 'user_deleted',
+        'settings.users.delete' => 'user_status_changed',
+        'settings.users.status' => 'user_status_changed',
         'settings.fetch-now' => 'fetch_requested',
         'settings.data.preview' => 'data_previewed',
         'settings.data.backup' => 'export_requested',
@@ -47,7 +53,7 @@ class RecordSettingsActivity
     {
         $actor = $request->user();
         // Export status is polled in the background; it is not a user action.
-        if (! $actor || ! $request->routeIs('settings.*', 'profile.update', 'password.update') || $request->routeIs('settings.data.exports.status')) {
+        if (! $actor || ! $request->routeIs('settings.*', 'profile.update', 'password.update', 'templates.save', 'templates.delete') || $request->routeIs('settings.data.exports.status')) {
             return $next($request);
         }
         $route = $request->route()->getName();
@@ -55,14 +61,20 @@ class RecordSettingsActivity
         // Record field names only. Request values and response bodies may hold
         // credentials, tokens, passwords, or signed download URLs.
         $context = ['route' => $route, 'fields' => array_values(array_intersect([
-            'opensearch_host', 'opensearch_username', 'opensearch_password', 'opensearch_index', 'min_alert_level',
+            'opensearch_host', 'opensearch_username', 'opensearch_password', 'opensearch_index', 'opensearch_timezone', 'opensearch_verify_ssl', 'min_alert_level',
             'telegram_bot_token', 'telegram_destinations', 'telegram_chat_ids',
             'telegram_auto_enabled', 'telegram_auto_above_level', 'telegram_auto_daily_limit',
             'ai_provider', 'ai_api_format', 'ai_base_url', 'ai_api_key', 'ai_model', 'ai_snapshot_limit', 'ai_refresh_days',
-            'name', 'email', 'role', 'agent_keys', 'privileges', 'password', 'current_password', 'rule_id', 'format', 'scope', 'period_mode', 'period_value', 'period_unit', 'date_from', 'date_to',
+            'name', 'email', 'role', 'is_active', 'agent_keys', 'privileges', 'password', 'current_password', 'rule_id', 'format', 'scope', 'period_mode', 'period_value', 'period_unit', 'date_from', 'date_to', 'category', 'body',
         ], array_keys($request->all())))];
         if ($request->routeIs('settings.users.create', 'settings.users.update') && $request->has('_access_settings')) {
             $context['fields'] = array_values(array_unique([...$context['fields'], 'agent_keys', 'privileges']));
+        }
+        if ($request->routeIs('settings.users.status', 'settings.users.delete')) {
+            $context['is_active'] = $request->routeIs('settings.users.delete') ? false : $request->boolean('is_active');
+        }
+        if ($request->routeIs('settings.templates.save', 'templates.save') && $request->has('is_active')) {
+            $context['is_active'] = $request->boolean('is_active');
         }
         try {
             $response = $next($request);
@@ -76,6 +88,9 @@ class RecordSettingsActivity
             $failed = $failed || (($response->getData(true)['success'] ?? null) === false);
         }
         $subject = $this->subject($request, $actor);
+        if (! $failed && $request->routeIs('settings.templates.save', 'templates.save') && $response instanceof JsonResponse) {
+            $subject = 'Template notifikasi #'.(int) $response->getData(true)['template']['id'];
+        }
         if (! $failed && $route === 'settings.users.create') {
             $created = User::where('email', $request->input('email'))->first();
             $subject = $created ? 'User #'.$created->id.' · '.$created->name : null;
@@ -94,6 +109,11 @@ class RecordSettingsActivity
         // request can still contain unbound IDs; never resolve those for logging.
         $target = $request->route('user');
         $subject = $target instanceof User ? 'User #'.$target->id.' · '.$target->name : null;
+        if (($template = $request->route('template')) instanceof NotificationTemplate) {
+            $subject = 'Template notifikasi #'.$template->id;
+        } elseif ($request->routeIs('settings.templates.save', 'templates.save') && filter_var($request->input('id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false) {
+            $subject = 'Template notifikasi #'.(int) $request->input('id');
+        }
         if ($request->routeIs('profile.update', 'password.update')) {
             $subject = 'Akun sendiri · User #'.$actor->id;
         }

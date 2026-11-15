@@ -164,7 +164,13 @@ class PermanentAlertIgnoreTest extends TestCase
         $stack->push(Middleware::history($history));
         $service = new class(new Client(['base_uri' => 'https://indexer.example.test:9200', 'handler' => $stack])) extends OpenSearchService
         {
-            public function __construct(Client $client) { $this->client = $client; $this->index = 'wazuh-alerts-*'; }
+            public function __construct(Client $client)
+            {
+                $this->client = $client;
+                $this->index = 'wazuh-alerts-*';
+            }
+
+            protected function refreshConnectionSettings(): void {}
         };
         $service->fetchAlerts(5, 10);
         $rule = $this->rule();

@@ -5,6 +5,7 @@ export function alertTable(bulkUrl) {
         refreshTimer: null,
         isRefreshing: false,
         pageIds: [],
+        pageOwnership: {},
         selectedIds: [],
         bulkMode: false,
         bulkAction: null,
@@ -17,9 +18,15 @@ export function alertTable(bulkUrl) {
         get allSelected() {
             return this.pageIds.length > 0 && this.pageIds.every(id => this.selectedIds.includes(id));
         },
+        get allSelectedOwned() {
+            return this.selectedIds.length > 0 && this.selectedIds.every(id => this.pageOwnership[id]?.owned);
+        },
+        get selectedAckable() {
+            return this.selectedIds.some(id => this.pageOwnership[id]?.ackable);
+        },
         get refreshPaused() {
             return this.bulkMode || this.selectedIds.length > 0 || this.bulkAction !== null || this.submitting
-                || [...this.$root.querySelectorAll('.modal-backdrop')]
+                || [...this.$root.querySelectorAll('.modal-backdrop, dialog[open]')]
                     .some(modal => modal.getClientRects().length > 0);
         },
         init() {
@@ -40,8 +47,11 @@ export function alertTable(bulkUrl) {
             clearInterval(this.refreshTimer);
         },
         readPageIds() {
-            this.pageIds = [...this.$root.querySelectorAll('[data-triage-id]')]
-                .map(input => input.dataset.triageId);
+            const inputs = [...this.$root.querySelectorAll('[data-triage-id]')];
+            this.pageIds = inputs.map(input => input.dataset.triageId);
+            this.pageOwnership = Object.fromEntries(inputs.map(input => [input.dataset.triageId, {
+                owned: input.dataset.ackOwned === '1', ackable: input.dataset.ackable === '1',
+            }]));
         },
         startBulkMode() {
             if (this.submitting || this.isRefreshing) return;
@@ -69,10 +79,15 @@ export function alertTable(bulkUrl) {
         },
         openBulk(action) {
             if (!this.bulkMode || !this.selectedIds.length || this.submitting || this.isRefreshing || this.bulkAction !== null) return;
+            if (['ignore', 'notify'].includes(action) && !this.allSelectedOwned) return;
             this.bulkAction = action;
             this.bulkReason = '';
             this.bulkError = '';
             this.bulkMessage = '';
+            if (action === 'notify') {
+                this.$dispatch('open-bulk-notification', { alertIds: [...this.selectedIds] });
+                return;
+            }
             this.$nextTick(() => {
                 if (this.bulkAction !== action) return;
                 this.$refs.bulkDialog.showModal();
@@ -86,7 +101,8 @@ export function alertTable(bulkUrl) {
             this.bulkError = '';
         },
         async submitBulk() {
-            if (this.submitting || !this.selectedIds.length || !this.bulkAction) return;
+            if (this.submitting || !this.selectedIds.length || !this.bulkAction || this.bulkAction === 'notify') return;
+            const action = this.bulkAction;
             const reason = this.bulkReason.trim();
             if (this.bulkAction === 'ignore' && (reason.length < 5 || reason.length > 1000)) {
                 this.bulkError = 'Alasan harus berisi 5 sampai 1000 karakter.';
@@ -111,24 +127,29 @@ export function alertTable(bulkUrl) {
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok || !payload.success) {
                     const validation = Object.values(payload.errors || {}).flat()[0];
-                    throw new Error(validation || (response.status === 419
+                    throw new Error(validation || payload.message || (response.status === 419
                         ? 'Sesi kedaluwarsa. Muat ulang halaman sebelum mencoba lagi.'
                         : 'Triage belum berhasil. Coba kembali atau refresh daftar alert.'));
                 }
                 this.bulkMessage = payload.message;
-                this.selectedIds = [];
-                this.bulkMode = false;
+                this.selectedIds = action === 'acknowledge' ? (payload.owned_ids || []).map(String) : [];
+                this.bulkMode = this.selectedIds.length > 0;
+                if (action === 'acknowledge') {
+                    for (const id of this.selectedIds) this.pageOwnership[id] = { owned: true, ackable: false };
+                }
                 this.submitting = false;
                 this.closeBulk();
-                await this.refreshData();
+                await this.refreshData(action === 'acknowledge' ? [...this.selectedIds] : null);
             } catch (error) {
                 this.bulkError = error.message || 'Triage belum berhasil. Coba kembali.';
             } finally {
                 this.submitting = false;
             }
         },
-        async refreshData() {
-            if (this.isRefreshing || this.refreshPaused) return;
+        async refreshData(ownedSelection = null) {
+            const afterAck = Array.isArray(ownedSelection);
+            if (this.isRefreshing || (!afterAck && this.refreshPaused)) return;
+            const selectionAtStart = JSON.stringify(this.selectedIds);
             this.isRefreshing = true;
             this.refreshText = 'Sedang update...';
             this.refreshError = '';
@@ -139,11 +160,18 @@ export function alertTable(bulkUrl) {
                 const newBody = doc.getElementById('alert-table-card-body');
                 if (!newBody) throw new Error('Daftar alert tidak tersedia');
                 // A dialog or selection may have opened while the request was in flight.
-                if (this.refreshPaused) return;
+                const rowDialogOpen = [...this.$root.querySelectorAll('.modal-backdrop, dialog[open]')].some(modal => modal.getClientRects().length > 0);
+                if ((!afterAck && this.refreshPaused) || (afterAck && (rowDialogOpen || this.bulkAction !== null || JSON.stringify(this.selectedIds) !== selectionAtStart))) return;
                 const body = this.$root.querySelector('#alert-table-card-body');
                 const previousIds = new Set(this.pageIds);
                 body.innerHTML = newBody.innerHTML;
                 this.readPageIds();
+                if (afterAck) {
+                    // Keep the winning selection even when a NEW-only filter hides ACK rows.
+                    for (const id of ownedSelection) {
+                        if (!this.pageOwnership[id]) this.pageOwnership[id] = { owned: true, ackable: false };
+                    }
+                }
                 this.$root.querySelectorAll('[data-triage-id]').forEach(input => {
                     if (!previousIds.has(input.dataset.triageId)) {
                         input.closest?.('tr')?.classList.add('is-new-alert');

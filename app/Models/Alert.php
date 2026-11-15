@@ -2,13 +2,31 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Casts\EncryptedIp;
+use App\Casts\EncryptedJson;
+use App\Casts\UtcDateTime;
+use App\Services\EncryptedSearchIndex;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 class Alert extends Model
 {
+    public const LIST_COLUMNS = ['id', 'wazuh_alert_id', 'source_cluster', 'source_index', 'source_id', 'source_identity_hash',
+        'rule_description', 'src_ip', 'dst_ip', 'agent_name', 'agent_scope_key', 'rule_id', 'rule_level', 'status',
+        'first_seen_at', 'acknowledged_by_user_id', 'acknowledged_at', 'created_at', 'updated_at'];
+
+    use Concerns\IndexesEncryptedSearch;
+
+    protected string $encryptedSearchEntity = 'alert';
+
+    protected array $encryptedSearchFields = ['raw_data', 'src_ip', 'dst_ip'];
+
+    protected $hidden = ['src_ip_hash', 'dst_ip_hash'];
+
     protected $fillable = [
         'wazuh_alert_id',
         'source_cluster',
@@ -28,13 +46,21 @@ class Alert extends Model
     ];
 
     protected $casts = [
-        'raw_data' => 'array',
+        'raw_data' => EncryptedJson::class,
+        'mitre_metadata' => 'array',
+        'src_ip' => EncryptedIp::class,
+        'dst_ip' => EncryptedIp::class,
         'rule_level' => 'integer',
-        'first_seen_at' => 'datetime',
+        'first_seen_at' => UtcDateTime::class,
     ];
 
     protected static function booted(): void
     {
+        static::saving(function (Alert $alert): void {
+            if (! $alert->exists || $alert->isDirty('raw_data')) {
+                $alert->mitre_metadata = self::mitreMetadata($alert->raw_data);
+            }
+        });
         static::creating(function (Alert $alert): void {
             // Keep legacy factories, seeders and integrations compatible while
             // every OpenSearch import supplies the concrete source identity.
@@ -59,6 +85,18 @@ class Alert extends Model
         return hash('sha256', $payload);
     }
 
+    public static function mitreMetadata(?array $raw): array
+    {
+        $mitre = data_get($raw, 'rule.mitre', []);
+        if (! is_array($mitre)) {
+            return [];
+        }
+        $list = fn ($value) => array_slice(array_values(array_filter(is_array($value) ? $value : [$value], 'is_string')), 0, 128);
+
+        return ['id' => array_values(array_filter($list($mitre['id'] ?? []), fn ($id) => preg_match('/\AT\d{4}(?:\.\d{3})?\z/', $id))),
+            'technique' => array_map(fn ($name) => mb_substr($name, 0, 256), $list($mitre['technique'] ?? []))];
+    }
+
     public static function agentScopeKey(string $cluster, mixed $agentId): ?string
     {
         if ((! is_string($agentId) && ! is_int($agentId)) || (string) $agentId === '') {
@@ -70,10 +108,24 @@ class Alert extends Model
 
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
+        if (! $user->hasPrivilege('alerts.view')) {
+            return $query->whereRaw('1 = 0');
+        }
+
         return $user->isAdmin() ? $query : $query->whereIn(
             $query->getModel()->qualifyColumn('agent_scope_key'),
             $user->hasPrivilege('alerts.view') ? $user->agentAccessKeys() : [],
         );
+    }
+
+    public function acknowledgedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'acknowledged_by_user_id');
+    }
+
+    public function isAcknowledgedBy(User $user): bool
+    {
+        return $this->status === 'acknowledged' && (int) $this->acknowledged_by_user_id === (int) $user->id;
     }
 
     public function resolveRouteBindingQuery($query, $value, $field = null)
@@ -110,6 +162,56 @@ class Alert extends Model
     public function scopeActive($query)
     {
         return $query->where('status', '!=', 'ignored');
+    }
+
+    public function scopeSearchTerms(Builder $query, string $search): Builder
+    {
+        $terms = array_slice(preg_split('/\s+/u', trim($search), -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 8);
+        foreach ($terms as $term) {
+            if (filter_var($term, FILTER_VALIDATE_IP)) {
+                $ip = EncryptedSearchIndex::ip($term);
+                $hash = EncryptedSearchIndex::hash('ip', $ip);
+                $query->where(function (Builder $match) use ($ip, $hash): void {
+                    $lookups = DB::table('alerts')->select('id')->where('src_ip_hash', $hash)
+                        ->union(DB::table('alerts')->select('id')->where('dst_ip_hash', $hash))
+                        ->union(DB::table('encrypted_search_tokens')->select('record_id')
+                            ->where('entity', 'alert')->where('token_hash', EncryptedSearchIndex::hash('search', $ip)));
+                    // Materialize the UNION once. MySQL otherwise rewrites it
+                    // as a dependent lookup for every alert and misses the hash indexes.
+                    $match->whereIn('alerts.id', DB::query()->fromSub($lookups, 'sensitive_ip_matches')->select('id'));
+                    if (config('data_security.allow_legacy_plaintext', true)) {
+                        $match->orWhere(fn ($legacy) => $legacy->whereNull('src_ip_hash')->where('src_ip', $ip))
+                            ->orWhere(fn ($legacy) => $legacy->whereNull('dst_ip_hash')->where('dst_ip', $ip));
+                    }
+                });
+
+                continue;
+            }
+            $query->where(function (Builder $match) use ($term): void {
+                $like = '%'.$term.'%';
+                foreach (['rule_description', 'agent_name', 'rule_id', 'wazuh_alert_id', 'status'] as $column) {
+                    $match->orWhere($column, 'like', $like);
+                }
+                $ip = EncryptedSearchIndex::ip($term);
+                $hash = EncryptedSearchIndex::hash('ip', $ip);
+                $match->orWhere('src_ip_hash', $hash)->orWhere('dst_ip_hash', $hash)
+                    ->orWhereExists(fn ($tokens) => EncryptedSearchIndex::match($tokens, 'alert', 'alerts.id', $term));
+                if (ctype_digit($term)) {
+                    $match->orWhere('id', (int) $term);
+                }
+                // Transitional reads only; strict mode removes the old JSON scan.
+                if (config('data_security.allow_legacy_plaintext', true)) {
+                    $raw = in_array($match->getConnection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
+                    $match->orWhere(fn ($legacy) => $legacy->whereNull('src_ip_hash')->where('src_ip', $ip))
+                        ->orWhere(fn ($legacy) => $legacy->whereNull('dst_ip_hash')->where('dst_ip', $ip))
+                        ->orWhere(fn ($legacy) => $legacy
+                            ->whereRaw("(LTRIM(CAST(raw_data AS {$raw})) LIKE '{%' OR LTRIM(CAST(raw_data AS {$raw})) LIKE '[%')")
+                            ->whereRaw('CAST(raw_data AS '.$raw.') LIKE ?', [$like]));
+                }
+            });
+        }
+
+        return $query;
     }
 
     public function scopeNew($query)

@@ -8,8 +8,8 @@
 @section('content')
 @php
     $ids = $alerts->modelKeys();
-    $newCount = $alerts->where('status', 'new')->count();
-    $ignoreCount = $alerts->whereIn('status', ['new', 'acknowledged'])->count();
+    $newCount = $alerts->filter(fn ($alert) => $alert->status === 'new' || ($alert->status === 'acknowledged' && !$alert->acknowledged_by_user_id))->count();
+    $ignoreCount = $alerts->filter(fn ($alert) => $alert->isAcknowledgedBy(auth()->user()))->count();
     $agents = $alerts->groupBy(fn ($alert) => $alert->agent_name ?: 'Tidak diketahui');
     $ips = $alerts->pluck('src_ip')->merge($alerts->pluck('dst_ip'))->filter()->unique()->values();
     $evidence = $alerts->mapWithKeys(fn ($alert) => ['alert_'.$alert->id => $alert->raw_data ?? []])->all();
@@ -54,6 +54,7 @@
                     </div>
                     <h3>{{ $alert->rule_description ?? 'Tanpa deskripsi' }}</h3>
                     <p><strong>{{ $alert->agent_name ?? '-' }}</strong><span>Rule {{ $alert->rule_id ?? '-' }}</span></p>
+                    @if($alert->acknowledgedBy)<p class="text-muted text-sm">Pemilik ACK: {{ $alert->acknowledgedBy->name }}</p>@endif
                     <p class="bulk-alert-event-network"><span>Source: {{ $alert->src_ip ?? '-' }}</span><span>Destination: {{ $alert->dst_ip ?? '-' }}</span></p>
                 </li>
                 @endforeach
@@ -67,8 +68,11 @@
             <div class="card-body bulk-alert-actions">
                 <p class="text-muted text-sm">{{ $newCount }} NEW · {{ $alerts->where('status', 'acknowledged')->count() }} ACK · {{ $alerts->where('status', 'ignored')->count() }} diabaikan</p>
                 @can('alerts.acknowledge')<button type="button" class="btn btn-primary w-full" @click="action = 'acknowledge'; $refs.triageDialog.showModal()" @disabled($newCount === 0) data-bulk-detail-ack>ACK {{ $newCount }} alert baru</button>@endcan
-                @can('alerts.ignore')<button type="button" class="btn btn-danger w-full" @click="action = 'ignore'; $refs.triageDialog.showModal(); $nextTick(() => $refs.ignoreReason.focus())" @disabled($ignoreCount === 0) data-bulk-detail-ignore>Abaikan massal</button>@endcan
-                <p class="text-muted text-xs">Tindakan berlaku untuk pilihan ini. Alert yang sudah ditangani akan dilewati sesuai statusnya.</p>
+                @can('alerts.ignore')<button type="button" class="btn btn-danger w-full" @click="action = 'ignore'; $refs.triageDialog.showModal(); $nextTick(() => $refs.ignoreReason.focus())" @disabled($ignoreCount !== $alerts->count()) data-bulk-detail-ignore>Abaikan massal</button>@endcan
+                @can('alerts.notify')<button type="button" class="btn btn-secondary w-full" @click="$dispatch('open-bulk-detail-notification')" @disabled($ignoreCount !== $alerts->count()) data-bulk-detail-notify>Notifikasi massal</button>@endcan
+                @if($ignoreCount > 0 && $ignoreCount !== $alerts->count())
+                    <a href="{{ route('alerts.bulk-detail', ['alert_ids' => $alerts->filter(fn ($alert) => $alert->isAcknowledgedBy(auth()->user()))->modelKeys()]) }}" class="btn btn-secondary w-full" data-bulk-own-selection>Tampilkan {{ $ignoreCount }} alert ACK milik saya</a>
+                @endif
             </div>
         </div>
         <div class="card">
@@ -79,12 +83,12 @@
         <div class="card"><div class="card-header"><span class="card-title">IP dalam pilihan</span></div><div class="card-body bulk-alert-ips">@foreach($ips as $ip)<span>{{ $ip }}</span>@endforeach</div></div>
         @endif
         <dialog class="bulk-triage-dialog" x-ref="triageDialog" aria-labelledby="bulk-detail-triage-title" @cancel.prevent="if (!submitting) $refs.triageDialog.close()">
-            <form method="POST" action="{{ route('alerts.bulk-triage') }}" @submit="submitting = true" :aria-busy="submitting.toString()">
+            <form method="POST" action="{{ route('alerts.bulk-triage') }}" @submit="if (submitting) $event.preventDefault(); else submitting = true" :aria-busy="submitting.toString()">
                 @csrf
                 @foreach($ids as $id)<input type="hidden" name="alert_ids[]" value="{{ $id }}">@endforeach
                 <input type="hidden" name="action" :value="action">
                 <h2 class="modal-title" id="bulk-detail-triage-title" x-text="action === 'ignore' ? 'Abaikan alert terpilih' : 'ACK alert terpilih'"></h2>
-                <p class="text-muted text-sm bulk-triage-help" x-text="action === 'ignore' ? 'Alasan yang sama dicatat untuk setiap alert. Alert yang sudah diabaikan akan dilewati.' : 'Hanya alert berstatus NEW yang di-ACK. Pilihan tetap dapat ditinjau setelah tindakan selesai.'"></p>
+                <p class="text-muted text-sm bulk-triage-help" x-text="action === 'ignore' ? 'Semua alert yang diabaikan harus sudah Anda ACK. Alasan yang sama dicatat untuk setiap alert.' : 'ACK pertama menentukan pemilik. Alert milik pengguna lain akan dilewati.'"></p>
                 <div class="form-group" :hidden="action !== 'ignore'">
                     <label class="form-label" for="bulk-detail-ignore-reason">Alasan mengabaikan *</label>
                     <textarea id="bulk-detail-ignore-reason" name="reason" x-ref="ignoreReason" class="form-textarea" rows="4" minlength="5" maxlength="1000" :required="action === 'ignore'" :disabled="action !== 'ignore'" placeholder="Tuliskan hasil validasi aktivitas normal."></textarea>
@@ -95,6 +99,12 @@
                 </div>
             </form>
         </dialog>
+        @can('alerts.notify')
+        <div x-data="notificationComposer(@js(['bulk' => true, 'templateUrl' => route('alerts.bulk-notify-preview'), 'sendUrl' => route('alerts.bulk-notify'), 'operationId' => (string) Illuminate\Support\Str::uuid()]))"
+             @open-bulk-detail-notification.window="openNotifModal(@js($ids))">
+            @include('partials.notification-dialog', ['notificationAction' => route('alerts.bulk-notify'), 'notificationTitle' => 'Kirim notifikasi Telegram — '.count($ids).' alert terpilih', 'bulkNotification' => true])
+        </div>
+        @endcan
     </aside>
 </div>
 @endsection

@@ -77,13 +77,14 @@
     </div>
 
     {{-- ─── Right: Actions + History ───────────────────────────────────── --}}
-    <div x-data="detailNotifModal({{ $alert->id }})">
+    <div x-data="notificationComposer(@js(['templateUrl' => route('alerts.template', $alert), 'sendUrl' => route('alerts.notify', $alert), 'operationId' => (string) Illuminate\Support\Str::uuid()]))">
 
         {{-- Actions --}}
         <div class="card" style="margin-bottom:var(--spacing-24);">
             <div class="card-header"><span class="card-title">Triage actions</span></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:var(--spacing-12);">
-                @if($alert->status === 'new' && auth()->user()->can('acknowledge', $alert))
+                <p class="text-muted text-sm">{{ $alert->acknowledgedBy ? 'Pemilik ACK: '.$alert->acknowledgedBy->name : 'ACK terlebih dahulu untuk ignore/notifikasi alert' }}.</p>
+                @if(($alert->status === 'new' || ($alert->status === 'acknowledged' && !$alert->acknowledged_by_user_id)) && auth()->user()->can('acknowledge', $alert))
                 <form method="POST" action="{{ route('alerts.acknowledge', $alert) }}">
                     @csrf
                     <button type="submit" class="btn btn-warning w-full" style="width:100%; justify-content:center;">Acknowledge alert</button>
@@ -135,6 +136,19 @@
                         <span class="text-muted text-sm ml-auto">{{ $log->sent_at?->setTimezone('Asia/Jakarta')->diffForHumans() }}</span>
                     </div>
                     <div style="font-size:var(--text-xs); color:var(--text-muted); line-height:var(--leading-xs);">oleh {{ $log->automatic_key ? 'Sistem (otomatis)' : ($log->user->name ?? 'Unknown') }}</div>
+                    <details class="notification-sent-message"><summary class="text-sm">Lihat pesan yang dikirim</summary><pre class="text-sm">{{ $log->visibleMessage(auth()->user()) }}</pre></details>
+                    @if($log->manual_operation_id)
+                        @if(isset($log->delivery_details['bulk_group']))
+                            <div class="text-muted text-sm">Bagian dari satu notifikasi gabungan ke tujuan ini.</div>
+                        @endif
+                        <div class="text-muted text-sm" style="overflow-wrap:anywhere;">Operasi {{ $log->manual_operation_id }}</div>
+                        @foreach($log->delivery_details['evidence'] ?? [] as $evidence)
+                            <div class="text-sm" style="margin-top:var(--spacing-8); overflow-wrap:anywhere;">
+                                {{ $evidence['name'] }}
+                                @include('partials.notification-result', ['state' => $evidence['state'], 'status' => $evidence['status'] ?? null])
+                            </div>
+                        @endforeach
+                    @endif
                 </div>
                 @empty
                 <div style="padding:var(--spacing-24); text-align:center; color:var(--text-muted); font-size:var(--text-sm); line-height:var(--leading-sm);">Belum ada notifikasi dikirim</div>
@@ -164,135 +178,10 @@
         {{-- ── NOTIFY MODAL ── --}}
         @endcan
         @can('notify', $alert)
-        <div class="modal-backdrop" x-show="showNotifModal" x-cloak @click.self="showNotifModal=false" @keydown.escape.window="showNotifModal=false" role="dialog" aria-modal="true" aria-label="Kirim notifikasi">
-            <div class="modal-box" style="max-width:700px;" @click.stop>
-                <div class="modal-title"><i data-lucide="send" aria-hidden="true"></i> Kirim notifikasi Telegram — alert #{{ $alert->id }}</div>
-
-                <div x-show="loading" style="text-align:center; padding:var(--spacing-32); color:var(--text-muted);">
-                    <i class="loading-state-icon" data-lucide="clock-3" aria-hidden="true"></i>Memuat template...
-                </div>
-
-                <form method="POST" action="{{ route('alerts.notify', $alert) }}" x-show="!loading" enctype="multipart/form-data">
-                    @csrf
-                    <div class="form-group">
-                        <span class="form-label">Tujuan otomatis</span>
-                        <p class="text-sm" x-show="destinations.length" x-text="destinations.join(', ')"></p>
-                        <p class="form-error" x-show="!destinations.length" x-text="notificationError || 'Belum ada tujuan untuk agent ini. Hubungi admin untuk mengatur Settings → Telegram.'"></p>
-                    </div>
-
-
-                    {{-- Template selector --}}
-                    <div class="form-group">
-                        <label class="form-label">Pilih template</label>
-                        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:var(--spacing-8);">
-                            <template x-for="tpl in templates" :key="tpl.id">
-                                <button type="button"
-                                    class="btn btn-ghost btn-sm"
-                                    :style="selectedTplId === tpl.id ? 'border-color:var(--accent); background:var(--color-accent-soft); color:var(--accent);' : ''"
-                                    @click="selectTemplate(tpl)"
-                                    style="justify-content:flex-start; text-align:left; white-space:normal; height:auto; padding:var(--spacing-8) var(--spacing-12); line-height:var(--ina-line-height-body-small);">
-                                    <span x-text="tpl.name" style="font-size:var(--text-sm);line-height:var(--leading-sm);"></span>
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-
-                    {{-- Message --}}
-                    <div class="form-group">
-                        <label class="form-label" style="display:flex; justify-content:space-between;">
-                            <span>Pesan (dapat diedit bebas)</span>
-                            <span style="font-size:var(--text-xs); color:var(--text-muted); line-height:var(--leading-xs);" x-text="message.length + ' karakter'"></span>
-                        </label>
-                        <textarea name="message" class="form-textarea" rows="16"
-                            x-model="message"
-                            placeholder="Pilih template di atas..."
-                            required style="font-size:var(--text-sm); line-height:var(--leading-sm);"></textarea>
-                        <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">
-                            Mendukung HTML Telegram: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a href&gt;
-                        </div>
-                    </div>
-
-                    {{-- Evidence --}}
-                    <div class="form-group" style="margin-top:calc(-1 * var(--spacing-8)); margin-bottom:var(--spacing-24);">
-                        <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
-                            <span>Lampirkan evidence (opsional)</span>
-                            <button type="button" class="btn btn-ghost btn-sm" @click="addEvidence()" style="color:var(--accent);">+ Tambah</button>
-                        </label>
-                        <div style="display:flex; flex-direction:column; gap:var(--spacing-8);">
-                            <template x-for="(ev, index) in evidences" :key="ev.id">
-                                <div style="display:flex; gap:var(--spacing-8); align-items:center;">
-                                    <input type="file" name="evidence[]" class="form-input" style="padding:var(--spacing-8); background:var(--bg-body); border-style:dashed; flex:1;" accept="image/*">
-                                    <button type="button" class="btn btn-danger btn-sm" x-show="evidences.length > 1" @click="removeEvidence(index)" title="Hapus" aria-label="Hapus evidence"><i data-lucide="x" aria-hidden="true"></i></button>
-                                </div>
-                            </template>
-                        </div>
-                        <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">
-                            Gambar akan dikirim secara berurutan setelah pesan notifikasi.
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2" style="justify-content:flex-end;">
-                        <button type="button" class="btn btn-ghost" @click="showNotifModal=false">Batal</button>
-                        <button type="submit" class="btn btn-primary" :disabled="destinations.length === 0 || loading">Kirim ke Telegram</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        @include('partials.notification-dialog', ['notificationAction' => route('alerts.notify', $alert), 'notificationTitle' => 'Kirim notifikasi Telegram — alert #'.$alert->id])
         @endcan
     </div>
 
 </div>
 
 @endsection
-
-@push('scripts')
-<script>
-function detailNotifModal(alertId) {
-    return {
-        showIgnoreModal: false,
-        showNotifModal:  false,
-        loading:         false,
-        destinations: [],
-        notificationError: '',
-        templates:       [],
-        selectedTplId:   null,
-        message:         '',
-        evidences:       [{id: Date.now()}],
-
-        async openNotifModal() {
-            this.showNotifModal = true;
-            this.destinations = [];
-            this.notificationError = '';
-            this.loading = true;
-            try {
-                const res  = await fetch(`/alerts/${alertId}/template`);
-                if (!res.ok || res.redirected) throw new Error('Tidak dapat memuat tujuan notifikasi.');
-                const data = await res.json();
-                this.templates = data.templates || [];
-                this.destinations = data.destinations || [];
-                if (!this.message) {
-                    if (this.templates.length) this.selectTemplate(this.templates[0]);
-                    else this.message = data.default_message || '';
-                }
-            } catch(e) { this.notificationError = 'Tujuan notifikasi belum dapat dimuat. Coba buka kembali.'; }
-            this.loading = false;
-        },
-
-        selectTemplate(tpl) {
-            this.selectedTplId = tpl.id;
-            this.message       = tpl.body;
-        },
-
-        addEvidence() {
-            this.evidences.push({id: Date.now()});
-        },
-
-        removeEvidence(index) {
-            this.evidences.splice(index, 1);
-        }
-    }
-}
-
-// ── Raw Alert Data Viewer ──────────────────────────────────────────────────
-</script>
-@endpush

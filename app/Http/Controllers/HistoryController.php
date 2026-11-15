@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Alert;
 use App\Models\ActivityLog;
+use App\Models\Alert;
+use App\Models\NotificationLog;
+use App\Services\AlertDateFilter;
+use App\Services\EncryptedSearchIndex;
+use App\Services\SensitiveDataCipher;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +17,7 @@ class HistoryController extends Controller
 {
     public function alerts(Request $request)
     {
-        $query = Alert::visibleTo($request->user());
+        $query = Alert::visibleTo($request->user())->select(Alert::LIST_COLUMNS);
 
         if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
@@ -23,21 +27,10 @@ class HistoryController extends Controller
             $query->where('rule_level', '>=', (int) $request->level);
         }
 
-        if ($request->filled('date_from')) {
-            $query->where('first_seen_at', '>=', $request->date_from . ' 00:00:00');
-        }
-        if ($request->filled('date_to')) {
-            $query->where('first_seen_at', '<=', $request->date_to . ' 23:59:59');
-        }
+        AlertDateFilter::apply($query, $request);
 
         if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('rule_description', 'like', "%{$search}%")
-                  ->orWhere('src_ip', 'like', "%{$search}%")
-                  ->orWhere('agent_name', 'like', "%{$search}%")
-                  ->orWhere('rule_id', 'like', "%{$search}%");
-            });
+            $query->searchTerms((string) $request->search);
         }
 
         $alerts = $query->orderBy('first_seen_at', 'desc')->paginate(25)->withQueryString();
@@ -68,17 +61,35 @@ class HistoryController extends Controller
             $query->whereIn('entries.alert_id', Alert::visibleTo($request->user())->select('alerts.id'));
         }
         if (filled($filters['search'] ?? null)) {
-            $like = '%'.$filters['search'].'%';
-            $query->where(function ($query) use ($like) {
-                foreach (['users.name', 'alerts.rule_description', 'alerts.agent_name', 'entries.chat_id', 'entries.note'] as $field) {
-                    $query->orWhere($field, 'like', $like);
-                }
-                $query->orWhereRaw("CASE WHEN entries.automatic_key IS NOT NULL THEN 'Sistem (otomatis)' ELSE '' END LIKE ?", [$like]);
-            });
+            foreach (array_slice(preg_split('/\s+/u', trim($filters['search']), -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 8) as $term) {
+                $like = '%'.$term.'%';
+                $query->where(function ($query) use ($like, $term) {
+                    foreach (['users.name', 'alerts.rule_description', 'alerts.agent_name', 'entries.chat_id'] as $field) {
+                        $query->orWhere($field, 'like', $like);
+                    }
+                    $query->orWhere(fn ($notes) => $notes->where('entries.entry_type', 'notification')->whereExists(
+                        fn ($tokens) => EncryptedSearchIndex::match($tokens, 'notification', 'entries.id', $term)))
+                        ->orWhere(fn ($notes) => $notes->where('entries.entry_type', 'triage')->whereExists(
+                            fn ($tokens) => EncryptedSearchIndex::match($tokens, 'triage', 'entries.id', $term)));
+                    if (config('data_security.allow_legacy_plaintext', true)) {
+                        $query->orWhere(fn ($legacy) => $legacy->where('entries.note', 'not like', SensitiveDataCipher::PREFIX.'%')->where('entries.note', 'like', $like));
+                    }
+                    $query->orWhereRaw("CASE WHEN entries.automatic_key IS NOT NULL THEN 'Sistem (otomatis)' ELSE '' END LIKE ?", [$like]);
+                });
+            }
         }
         $this->applyFilters($query, $filters, 'entries.action', 'entries.occurred_at');
         $logs = $query->orderByDesc('entries.occurred_at')->orderBy('entries.entry_type')->orderByDesc('entries.id')
             ->paginate(25)->withQueryString();
+        $deliverySnapshots = NotificationLog::whereIn('id', collect($logs->items())->where('entry_type', 'notification')->pluck('id'))
+            ->get(['id', 'message', 'delivery_details'])->keyBy('id');
+        $logs->through(function ($row) use ($request, $deliverySnapshots) {
+            $row->note = $row->entry_type === 'notification'
+                ? $deliverySnapshots[$row->id]->visibleMessage($request->user())
+                : SensitiveDataCipher::decryptString($row->note);
+
+            return $row;
+        });
 
         return response()->view('history.analyst-log', compact('logs'))
             ->withHeaders(['Cache-Control' => 'no-store, private']);

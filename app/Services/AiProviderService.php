@@ -82,6 +82,32 @@ class AiProviderService
             throw new AiAnalysisException('Lengkapi endpoint, model, dan API key provider AI. API key boleh kosong untuk LLM lokal.');
         }
 
+        $key = 'ai-provider:'.hash('sha256', $settings['provider'].'|'.$settings['base_url']);
+        $slot = null;
+        for ($index = 0; $index < max(1, min(20, (int) config('services.ai.max_concurrent_requests', 3))); $index++) {
+            $candidate = \Illuminate\Support\Facades\Cache::lock($key.':slot:'.$index, max(30, $timeout + 15));
+            if ($candidate->get()) { $slot = $candidate; break; }
+        }
+        if (! $slot) throw new AiAnalysisException('Kapasitas permintaan AI sedang penuh. Coba kembali setelah analisis lain selesai.');
+        try {
+            \Illuminate\Support\Facades\Cache::lock($key.':budget', 3)->block(1, function () use ($key): void {
+                $maximum = max(1, (int) config('services.ai.requests_per_minute', 20));
+                if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, $maximum)) {
+                    throw new AiAnalysisException('Batas permintaan provider AI per menit tercapai. Tunggu sebelum mencoba kembali.');
+                }
+                // An attempted provider request remains counted even if it times out or fails.
+                \Illuminate\Support\Facades\RateLimiter::hit($key, 60);
+            });
+
+            return $this->generateRequest($system, $prompt, $maxTokens, $timeout, $model, $reasoningEffort, $settings);
+        } finally {
+            $slot->release();
+        }
+    }
+
+    private function generateRequest(string $system, string $prompt, int $maxTokens, int $timeout, ?string $model, ?string $reasoningEffort, array $settings): string
+    {
+
         $payload = ['model' => $model ?: $settings['model'], 'stream' => false];
         $messages = [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $prompt]];
         $path = match ($settings['api_format']) {

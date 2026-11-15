@@ -28,8 +28,9 @@ class BulkTriageTest extends TestCase
         $user = User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create();
         $first = $this->alert();
         $second = $this->alert();
-        $ack = $this->alert('acknowledged');
+        $ack = $this->assignAckOwner($this->alert('acknowledged'), $user);
         $ignored = $this->alert('ignored');
+        $ignored->forceFill(['acknowledged_by_user_id' => $user->id])->save();
         $unselected = $this->alert();
         $payload = ['action' => 'acknowledge', 'alert_ids' => [$first->id, $second->id, $ack->id, $ignored->id]];
 
@@ -55,9 +56,10 @@ class BulkTriageTest extends TestCase
     public function test_bulk_ignore_records_one_reason_per_changed_alert_and_invalidates_metrics(): void
     {
         $user = User::factory()->create(['role' => 'admin']);
-        $new = $this->alert();
-        $ack = $this->alert('acknowledged');
+        $new = $this->assignAckOwner($this->alert(), $user);
+        $ack = $this->assignAckOwner($this->alert('acknowledged'), $user);
         $ignored = $this->alert('ignored');
+        $ignored->forceFill(['acknowledged_by_user_id' => $user->id])->save();
         $cacheKey = 'security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m');
         Cache::put($cacheKey, ['stale' => true], 60);
 
@@ -70,12 +72,38 @@ class BulkTriageTest extends TestCase
             $this->assertSame('ignored', $alert->fresh()->status);
             $this->assertDatabaseHas('alert_triages', [
                 'alert_id' => $alert->id, 'user_id' => $user->id, 'action' => 'ignore',
-                'reason' => 'Pemeliharaan terjadwal telah dikonfirmasi.',
             ]);
+            $record = $alert->triages()->where('action', 'ignore')->sole();
+            $this->assertSame('Pemeliharaan terjadwal telah dikonfirmasi.', $record->reason);
+            $this->assertStringNotContainsString('Pemeliharaan', $record->getRawOriginal('reason'));
         }
         $this->assertDatabaseCount('alert_triages', 2);
         $this->assertNull(Cache::get($cacheKey));
         Http::assertNothingSent();
+    }
+
+    public function test_bulk_ack_returns_only_owned_alerts_and_mixed_owner_ignore_changes_nothing(): void
+    {
+        $user = User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore', 'alerts.notify'])->create();
+        $other = User::factory()->create(['role' => 'admin']);
+        $first = $this->alert();
+        $claimed = $this->assignAckOwner($this->alert(), $other);
+        $owned = $this->assignAckOwner($this->alert(), $user);
+        $ids = [$first->id, $claimed->id, $owned->id];
+        $this->actingAs($user)->postJson(route('alerts.bulk-triage'), ['action' => 'ignore', 'alert_ids' => $ids, 'reason' => 'Confirmed valid activity'])
+            ->assertUnprocessable()->assertJsonValidationErrors('alert_ids');
+        $this->assertSame('new', $first->fresh()->status);
+        $this->postJson(route('alerts.bulk-triage'), ['action' => 'acknowledge', 'alert_ids' => array_reverse($ids)])
+            ->assertOk()->assertJsonPath('processed', 1)->assertJsonPath('skipped', 2)
+            ->assertJsonPath('processed_ids', [$first->id])->assertJsonPath('owned_ids', [$first->id, $owned->id]);
+        $this->assertSame($other->id, $claimed->fresh()->acknowledged_by_user_id);
+        $this->postJson(route('alerts.bulk-triage'), ['action' => 'ignore', 'alert_ids' => $ids, 'reason' => 'Confirmed valid activity'])
+            ->assertUnprocessable();
+        $this->assertSame('acknowledged', $first->fresh()->status);
+        $this->postJson(route('alerts.bulk-triage'), ['action' => 'ignore', 'alert_ids' => [$first->id, $owned->id], 'reason' => 'Confirmed valid activity'])
+            ->assertOk()->assertJsonPath('processed', 2);
+        $this->assertSame('acknowledged', $claimed->fresh()->status);
+        $this->assertDatabaseCount('alert_triages', 3);
     }
 
     #[DataProvider('invalidBatches')]
@@ -153,7 +181,7 @@ class BulkTriageTest extends TestCase
             ->assertOk()->assertJsonPath('processed', 0);
         $this->post(route('alerts.ignore', $alert), ['reason' => 'Aktivitas valid.'])->assertSessionHas('success');
         $this->post(route('alerts.acknowledge', $alert))->assertSessionHas('error');
-        $this->post(route('alerts.ignore', $alert), ['reason' => 'Aktivitas valid.'])->assertSessionHas('error');
+        $this->post(route('alerts.ignore', $alert), ['reason' => 'Aktivitas valid.'])->assertForbidden();
         $this->assertSame('ignored', $alert->fresh()->status);
         $this->assertDatabaseCount('alert_triages', 2);
     }

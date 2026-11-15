@@ -36,7 +36,7 @@ class AutomaticAlertNotifier
             if ($alert->rule_level <= $settings['above_level'] || $alert->status !== 'new') {
                 continue;
             }
-            foreach (Configuration::telegramDestinationsForAgent($alert->agent_name, $destinations) as $destination) {
+            foreach (Configuration::telegramDestinationsForAgent($alert->agent_scope_key, $destinations) as $destination) {
                 $delivery = NotificationLog::firstOrCreate([
                     'automatic_key' => hash('sha256', $alert->id.':'.$destination['chat_id']),
                 ], [
@@ -88,7 +88,7 @@ class AutomaticAlertNotifier
 
             // Hash exact values so case-insensitive database collations cannot combine different agents/rules.
             $groupKey = hash('sha256', json_encode([
-                $alert->source_cluster, $alert->rule_id, $alert->agent_name,
+                $alert->source_cluster, $alert->rule_id, $alert->agent_scope_key,
             ], JSON_THROW_ON_ERROR));
             $day = CarbonImmutable::now('Asia/Jakarta')->toDateString();
             $quotas = DB::table('automatic_notification_quotas');
@@ -133,6 +133,7 @@ class AutomaticAlertNotifier
             'Rule ID' => $alert->rule_id ?: '-',
             'Rule level' => (string) $alert->rule_level,
             'Agent' => $alert->agent_name ?: '-',
+            'Agent ID' => (string) data_get($alert->raw_data, 'agent.id', '-'),
             'Waktu' => $timestamp ?: '-',
             'Detail alert' => $url,
         ];

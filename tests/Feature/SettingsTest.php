@@ -312,7 +312,7 @@ class SettingsTest extends TestCase
             ->from(route('settings.index'))
             ->delete(route('settings.users.delete', $admin))
             ->assertRedirect(route('settings.index'))
-            ->assertSessionHas('error', 'Tidak bisa menghapus akun sendiri.');
+            ->assertSessionHasErrors('is_active');
 
         $this->assertDatabaseHas('users', ['id' => $admin->id]);
     }
@@ -346,7 +346,7 @@ class SettingsTest extends TestCase
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('settings.index'));
 
-        $this->assertDatabaseMissing('users', ['id' => $target->id]);
+        $this->assertDatabaseHas('users', ['id' => $target->id, 'is_active' => false]);
     }
 
     public function test_preview_range_honors_both_start_and_end_dates(): void
@@ -382,6 +382,10 @@ class SettingsTest extends TestCase
         $this->makeAiAnalysis($outside, $admin);
 
         foreach ([$inside, $inside, $outside] as $index => $alert) {
+            \App\Models\ManualNotificationOperation::create([
+                'id' => (string) \Illuminate\Support\Str::uuid(), 'alert_id' => $alert->id,
+                'user_id' => $admin->id, 'payload_hash' => hash('sha256', (string) $index),
+            ]);
             AlertTriage::create([
                 'alert_id' => $alert->id,
                 'user_id' => $admin->id,
@@ -405,12 +409,14 @@ class SettingsTest extends TestCase
                 'alerts' => 1,
                 'alert_ai_analyses' => 2,
                 'triages' => 2,
+                'notification_operations' => 2,
                 'notif_logs' => 2,
             ],
             'all' => [
                 'alerts' => 1,
                 'alert_ai_analyses' => 2,
                 'triages' => 2,
+                'notification_operations' => 2,
                 'notif_logs' => 2,
             ],
             'triages' => [
@@ -419,6 +425,7 @@ class SettingsTest extends TestCase
             ],
             'notif_logs' => [
                 'alerts' => 1,
+                'notification_operations' => 2,
                 'notif_logs' => 2,
             ],
         ];

@@ -2,7 +2,7 @@
     <div class="card-header settings-user-heading">
         <div>
             <h3 class="card-title">Manajemen user</h3>
-            <p class="settings-field-help">{{ $users->count() }} pengguna · Kelola role, agent, dan privilege akun.</p>
+            <p class="settings-field-help">{{ $users->count() }} pengguna · {{ $users->where('is_active', true)->count() }} aktif · Kelola role, agent, dan privilege akun.</p>
         </div>
         <button type="button" class="btn btn-primary btn-sm" @click="openUserEditor()" data-user-create><i data-lucide="plus" aria-hidden="true"></i> Tambah pengguna</button>
     </div>
@@ -14,13 +14,13 @@
     <div class="settings-user-list">
         <table class="data-table settings-user-table">
             <caption class="sr-only">Daftar pengguna dan akses agent</caption>
-            <thead><tr><th scope="col">Nama</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Akses</th><th scope="col" class="settings-user-actions">Aksi</th></tr></thead>
+            <thead><tr><th scope="col">Nama</th><th scope="col">Email</th><th scope="col">Role / status</th><th scope="col">Akses</th><th scope="col" class="settings-user-actions">Aksi</th></tr></thead>
             <tbody>
                 @foreach($users as $user)
                 <tr data-user-row="{{ $user->id }}">
                     <td class="settings-user-name">{{ $user->name }} @if($user->id === auth()->id())<span class="settings-field-help">(Anda)</span>@endif</td>
                     <td class="settings-user-email">{{ $user->email }}</td>
-                    <td class="settings-user-role-cell"><span class="settings-role">{{ $user->isAdmin() ? 'Admin' : 'Analyst' }}</span></td>
+                    <td class="settings-user-role-cell"><span class="settings-role">{{ $user->isAdmin() ? 'Admin' : 'Analyst' }}</span><div class="settings-field-help">{{ $user->is_active ? 'Aktif' : 'Nonaktif' }}</div></td>
                     <td class="settings-user-access-cell">
                         <span>{{ $user->isAdmin() ? 'Semua agent' : count($user->allowed_agents ?? []).' agent' }}</span>
                         <small class="settings-field-help">{{ $user->isAdmin() ? 'Akses penuh' : (count($user->privileges ?? []) ? count($user->privileges).' privilege tambahan' : 'Hanya baca') }}</small>
@@ -35,11 +35,13 @@
     </div>
 
     <div id="user-actions-menu" x-ref="userMenu" class="settings-user-menu" popover @toggle="if ($event.newState === 'closed' && !$el.matches(':popover-open')) menuUser = null" role="group" aria-label="Aksi pengguna">
-        <button type="button" class="settings-user-menu-action" @click="openUserEditor(menuUser.id)" data-user-edit><i data-lucide="pencil" aria-hidden="true"></i> Edit</button>
-        <form method="POST" :action="menuUser?.deleteUrl" x-show="menuUser && menuUser.id !== {{ auth()->id() }}" @submit="if (!confirm('Hapus pengguna ' + menuUser.name + '?')) $event.preventDefault(); $refs.userMenu.hidePopover()">
-            @csrf @method('DELETE')
+        <button type="button" class="settings-user-menu-action" x-show="menuUser?.canEdit" @click="openUserEditor(menuUser.id)" data-user-edit><i data-lucide="pencil" aria-hidden="true"></i> Edit</button>
+        <p class="settings-field-help" x-show="menuUser && !menuUser.canEdit">Profil admin lain dilindungi.</p>
+        <form method="POST" :action="menuUser?.statusUrl" x-show="menuUser && menuUser.id !== {{ auth()->id() }}" @submit="if (!confirm((menuUser.isActive ? 'Nonaktifkan akun dan cabut seluruh sesinya? Alert ACK akan kembali ke NEW. ' : 'Aktifkan kembali akun? ') + menuUser.name)) $event.preventDefault(); $refs.userMenu.hidePopover()">
+            @csrf @method('PATCH')
+            <input type="hidden" name="is_active" :value="menuUser?.isActive ? '0' : '1'">
             <input type="hidden" name="_section" value="users">
-            <button type="submit" class="settings-user-menu-action is-danger" data-user-delete><i data-lucide="trash-2" aria-hidden="true"></i> Hapus</button>
+            <button type="submit" class="settings-user-menu-action" :class="menuUser?.isActive ? 'is-danger' : ''" data-user-status><i data-lucide="power" aria-hidden="true"></i><span x-text="menuUser?.isActive ? 'Nonaktifkan akun' : 'Aktifkan akun'"></span></button>
         </form>
     </div>
 

@@ -46,6 +46,17 @@ class EnvironmentFileWriterTest extends TestCase
         $this->assertFileDoesNotExist($this->directory.'/.env.install.lock');
     }
 
+    public function test_runtime_updates_preserve_an_empty_file_key_for_external_secret_managers(): void
+    {
+        file_put_contents($this->directory.'/.env.example', "APP_KEY=\nAPP_DEBUG=false\n");
+        $writer = new EnvironmentFileWriter($this->directory);
+        $writer->updatePreservingAppKey(['SIEM_BLIND_INDEX_KEY' => 'base64:'.base64_encode(str_repeat('s', 32))]);
+        $this->assertSame('', $writer->value('APP_KEY'));
+        $this->assertStringNotContainsString((string) config('app.key'), file_get_contents($this->directory.'/.env'));
+        $this->expectException(RuntimeException::class);
+        $writer->updatePreservingAppKey(['APP_KEY' => 'must-not-replace-current-key']);
+    }
+
     public function test_it_round_trips_special_characters_without_duplicate_assignments(): void
     {
         file_put_contents(

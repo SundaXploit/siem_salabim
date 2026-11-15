@@ -6,8 +6,10 @@ use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\IngestionCheckpoint;
 use App\Models\PermanentAlertIgnore;
-use App\Services\AutomaticAlertNotifier;
 use App\Services\ApplicationUpdateRuntimeGuard;
+use App\Services\AutomaticAlertNotifier;
+use App\Services\EncryptedSearchIndex;
+use App\Services\OpenSearchConnectionError;
 use App\Services\OpenSearchService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -185,7 +187,9 @@ class FetchWazuhAlerts extends Command
                 // Settings so no batch commits after an exclusion was saved.
                 [$inserted, $skipped, $ignored, $notificationIds] = Cache::lock(PermanentAlertIgnore::WRITE_LOCK, 60)->block(10, function () use ($hits, $isDryRun, &$dryRunIdentities): array {
                     $rules = PermanentAlertIgnore::ruleIds();
-                    $parsedRows = array_map(static fn (array $hit): array => OpenSearchService::parseHit($hit), $hits);
+                    // Resolve once per batch, including in long-running workers after Settings changes.
+                    $sourceTimezone = (string) Configuration::get('opensearch_timezone', config('services.opensearch.timezone', 'UTC'));
+                    $parsedRows = array_map(static fn (array $hit): array => OpenSearchService::parseHit($hit, $sourceTimezone), $hits);
                     $allowed = array_values(array_filter($parsedRows, static fn (array $row): bool => ! in_array($row['rule_id'], $rules, true)));
                     $ignored = count($parsedRows) - count($allowed);
                     if ($isDryRun) {
@@ -210,6 +214,10 @@ class FetchWazuhAlerts extends Command
                 $this->advanceCheckpoint($checkpointDefinition, $checkpointTarget);
             }
         } catch (\Throwable $e) {
+            $connectionHint = OpenSearchConnectionError::message($e);
+            if (str_starts_with($connectionHint, 'Verifikasi sertifikat SSL/TLS')) {
+                Cache::put('siem_fetch_tls_error', $connectionHint, now()->addHour());
+            }
             $message = $e instanceof QueryException
                 ? 'Gagal menyimpan alert ke database. Periksa log aplikasi.'
                 : $e->getMessage();
@@ -238,6 +246,7 @@ class FetchWazuhAlerts extends Command
         }
 
         $this->info("[SIEM] Retrieved {$retrievedCount} hits from OpenSearch across {$pageCount} batches.");
+        Cache::forget('siem_fetch_tls_error');
 
         if ($retrievedCount === 0) {
             $period = match (true) {
@@ -382,7 +391,7 @@ class FetchWazuhAlerts extends Command
     }
 
     /** @param list<array<string, mixed>> $rows
-     *  @return array{int, list<int>}
+     * @return array{int, list<int>}
      */
     private function insertAlertBatch(array $rows): array
     {
@@ -407,17 +416,14 @@ class FetchWazuhAlerts extends Command
 
         $timestamp = now()->toDateTimeString();
         $prepared = array_map(static function (array $row) use ($timestamp): array {
-            $row['raw_data'] = $row['raw_data'] === null
-                ? null
-                : json_encode(
-                    $row['raw_data'],
-                    JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES,
-                );
+            $row['mitre_metadata'] = Alert::mitreMetadata($row['raw_data']);
             $row['status'] ??= 'new';
             $row['created_at'] = $timestamp;
             $row['updated_at'] = $timestamp;
 
-            return $row;
+            // Upsert bypasses casts/events. Encode each sensitive value once,
+            // while retaining the existing multi-row INSERT and source identity.
+            return (new Alert)->forceFill($row)->getAttributes();
         }, array_values($novel));
 
         $batchSize = max(1, min(
@@ -432,6 +438,23 @@ class FetchWazuhAlerts extends Command
                     // Preserve status, triage and the originally stored event on replay.
                     ['source_identity_hash'],
                 );
+            }
+
+            $index = app(EncryptedSearchIndex::class);
+            $tokenRows = [];
+            foreach (Alert::whereIn('source_identity_hash', array_keys($novel))->get(['id', 'source_identity_hash']) as $inserted) {
+                $source = $novel[$inserted->source_identity_hash];
+                foreach ($index->rows('alert', $inserted->id, $inserted->id,
+                    [$source['raw_data'], $source['src_ip'] ?? null, $source['dst_ip'] ?? null]) as $token) {
+                    $tokenRows[] = $token;
+                    if (count($tokenRows) >= 250) {
+                        DB::table('encrypted_search_tokens')->upsert($tokenRows, ['entity', 'record_id', 'token_hash'], ['token_hash']);
+                        $tokenRows = [];
+                    }
+                }
+            }
+            if ($tokenRows !== []) {
+                DB::table('encrypted_search_tokens')->upsert($tokenRows, ['entity', 'record_id', 'token_hash'], ['token_hash']);
             }
 
             return app(AutomaticAlertNotifier::class)->prepare(

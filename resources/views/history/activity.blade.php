@@ -9,8 +9,8 @@
 <div class="card" style="margin-bottom:var(--spacing-16);">
     <div class="card-body">
         <form method="GET" action="{{ route('history.activity') }}">
-            <div class="filter-bar">
-                <div style="flex:1; min-width:200px;">
+            <div class="activity-filter-grid">
+                <div>
                     <label class="form-label" for="activity-search">Cari pelaku, objek, atau IP</label>
                     <input id="activity-search" type="search" name="search" class="form-input" maxlength="200" value="{{ request('search') }}" placeholder="Cari aktivitas akun atau Settings…">
                 </div>
@@ -23,7 +23,7 @@
                 </div>
                 <div><label class="form-label" for="activity-from">Dari (WIB)</label><input id="activity-from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}"></div>
                 <div><label class="form-label" for="activity-to">Sampai (WIB)</label><input id="activity-to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}"></div>
-                <div class="flex gap-2 items-center"><button type="submit" class="btn btn-primary">Filter</button><a href="{{ route('history.activity') }}" class="btn btn-ghost">Reset</a></div>
+                <div class="activity-filter-actions"><button type="submit" class="btn btn-primary">Filter</button><a href="{{ route('history.activity') }}" class="btn btn-ghost">Reset</a></div>
             </div>
         </form>
     </div>
@@ -40,6 +40,7 @@
                     <td>{{ $log->action_label }}</td>
                     <td style="min-width:180px; max-width:360px;">
                         <span>{{ $log->subject ?? '—' }}</span>
+                        @if(array_key_exists('is_active', $log->context ?? []))<div class="text-muted text-xs">Status aktif: {{ $log->context['is_active'] ? 'Aktif' : 'Nonaktif' }}</div>@endif
                         @if(!empty($log->context['fields']))<div class="text-muted text-xs" style="overflow-wrap:anywhere;">Bidang formulir: {{ implode(', ', $log->context['fields']) }}</div>@endif
                     </td>
                     <td><span class="badge {{ $log->result === 'success' ? 'badge-sent' : 'badge-failed' }}">{{ $log->result === 'success' ? 'BERHASIL' : 'GAGAL' }}</span></td>

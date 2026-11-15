@@ -29,8 +29,8 @@ class AutomaticNotificationQuotaTest extends TestCase
         Configuration::set('telegram_auto_enabled', '1');
         Configuration::set('telegram_bot_token', 'test-token');
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'SOC', 'chat_id' => '-100111', 'agents' => ['Staging', 'Production', 'staging']],
-            ['label' => 'SOC personal', 'chat_id' => '123456', 'agents' => ['Staging', 'Production', 'staging']],
+            ['label' => 'SOC', 'chat_id' => '-100111', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001'), Alert::agentScopeKey('wazuh-primary', '002'), Alert::agentScopeKey('wazuh-primary', '003'), Alert::agentScopeKey('wazuh-secondary', '001')]],
+            ['label' => 'SOC personal', 'chat_id' => '123456', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001'), Alert::agentScopeKey('wazuh-primary', '002'), Alert::agentScopeKey('wazuh-primary', '003'), Alert::agentScopeKey('wazuh-secondary', '001')]],
         ]));
     }
 
@@ -40,7 +40,7 @@ class AutomaticNotificationQuotaTest extends TestCase
             'wazuh_alert_id' => $sourceId, 'source_cluster' => $cluster,
             'rule_id' => $rule, 'agent_name' => $agent, 'rule_description' => $description,
             'rule_level' => 14, 'status' => 'new', 'first_seen_at' => now(),
-            'raw_data' => ['rule' => ['id' => $rule, 'description' => $description], 'agent' => ['id' => '001', 'name' => $agent], '@timestamp' => '2026-11-01T05:00:00Z'],
+            'raw_data' => ['rule' => ['id' => $rule, 'description' => $description], 'agent' => ['id' => match ($agent) { 'Staging' => '001', 'Production' => '002', default => '003' }, 'name' => $agent], '@timestamp' => '2026-11-01T05:00:00Z'],
         ])->refresh();
     }
 
@@ -152,8 +152,10 @@ class AutomaticNotificationQuotaTest extends TestCase
         $this->deliver($notifier->prepare([$this->alert('first'), $this->alert('second')]), $telegram);
         $third = $this->alert('manual-escalation');
         $this->deliver($notifier->prepare([$third]), $telegram);
-        $this->actingAs(User::factory()->forAgent('001', ['alerts.notify'])->create())
-            ->post(route('alerts.notify', $third), ['message' => 'Escalate repeated alert manually.'])->assertSessionHas('success');
+        $owner = User::factory()->forAgent('001', ['alerts.notify'])->create();
+        $this->assignAckOwner($third, $owner);
+        $this->actingAs($owner)
+            ->post(route('alerts.notify', $third), ['operation_id' => (string) \Illuminate\Support\Str::uuid(), 'message' => 'Escalate repeated alert manually.'])->assertSessionHas('success');
         $this->assertSame(2, NotificationLog::whereNull('automatic_key')->count());
         $this->assertSame(2, count(json_decode(DB::table('automatic_notification_quotas')->sole()->event_keys, true)));
     }

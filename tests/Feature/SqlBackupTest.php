@@ -79,7 +79,7 @@ class SqlBackupTest extends TestCase
             'generated_at' => '2026-09-17 04:03:00',
         ]);
 
-        $tables = ['alerts', 'alert_triages', 'notification_logs', 'alert_ai_analyses'];
+        $tables = ['alerts', 'alert_triages', 'notification_logs', 'alert_ai_analyses', 'manual_notification_operations', 'encrypted_search_tokens'];
         $expected = [];
         foreach ($tables as $table) {
             $expected[$table] = DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
@@ -105,20 +105,22 @@ class SqlBackupTest extends TestCase
         $zip->close();
         $this->assertIsString($sql);
 
-        // Restore into a separate in-memory database using its actual SQL
-        // parser. Translate only MySQL syntax, not the exported string data.
+        // Execute the generated SQLite SQL directly with FK checks enabled.
+        // Account records are prerequisites, rather than part of this operational-data backup.
         $restored = new PDO('sqlite::memory:');
         $restored->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $restored->exec('CREATE TABLE export_guard (id INTEGER PRIMARY KEY)');
         $restored->exec('INSERT INTO export_guard VALUES (1)');
+        $restored->exec(DB::table('sqlite_master')->where('type', 'table')->where('name', 'users')->value('sql'));
+        $user = (array) DB::table('users')->where('id', $admin->id)->first();
+        $columns = '"'.implode('","', array_keys($user)).'"';
+        $restored->prepare('INSERT INTO users ('.$columns.') VALUES ('.implode(',', array_fill(0, count($user), '?')).')')
+            ->execute(array_values($user));
         foreach ($tables as $table) {
             $schema = DB::table('sqlite_master')->where('type', 'table')->where('name', $table)->value('sql');
             $restored->exec($schema);
         }
-        $sqlite = preg_replace('/^SET [^\r\n]*;$/m', '', $sql);
-        $sqlite = str_replace('INSERT IGNORE INTO', 'INSERT OR IGNORE INTO', $sqlite);
-        $sqlite = preg_replace("/_utf8mb4 (X'[0-9a-f]*')/", 'CAST($1 AS TEXT)', $sqlite);
-        $restored->exec($sqlite);
+        $restored->exec($sql);
 
         $this->assertSame(1, (int) $restored->query('SELECT COUNT(*) FROM export_guard')->fetchColumn());
         foreach ($tables as $table) {

@@ -37,7 +37,8 @@ class DataExportSafetyTest extends TestCase
         $this->assertSame('verified', $export->status);
         $this->assertNotNull($export->verified_at);
         $this->assertSame(64, strlen((string) $export->checksum));
-        $this->assertSame(['alerts' => 1, 'alert_ai_analyses' => 0, 'alert_triages' => 0, 'notification_logs' => 0], $export->record_counts);
+        $this->assertSame(['alerts' => 1, 'alert_ai_analyses' => 0, 'alert_triages' => 0, 'manual_notification_operations' => 0, 'notification_logs' => 0,
+            'encrypted_search_tokens' => DB::table('encrypted_search_tokens')->count()], $export->record_counts);
 
         $manifest = json_decode(
             Storage::disk('local')->get($export->manifest_path),
@@ -73,6 +74,8 @@ class DataExportSafetyTest extends TestCase
             JSON_THROW_ON_ERROR,
         );
         $manifest['source']['record_counts'] = [
+            'encrypted_search_tokens' => $export->record_counts['encrypted_search_tokens'],
+            'manual_notification_operations' => 0,
             'alert_triages' => 0,
             'notification_logs' => 0,
             'alerts' => 1,
@@ -88,6 +91,8 @@ class DataExportSafetyTest extends TestCase
         // different order and numeric values as integer strings.
         $export->forceFill([
             'record_counts' => [
+                'encrypted_search_tokens' => (string) $export->record_counts['encrypted_search_tokens'],
+                'manual_notification_operations' => '0',
                 'notification_logs' => '0',
                 'alert_ai_analyses' => '0',
                 'alert_triages' => '0',

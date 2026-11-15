@@ -21,7 +21,7 @@ class NotificationDeliveryTest extends TestCase
     {
         [$user, $alert] = $this->notificationFixture();
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'SOC Diskominfo', 'chat_id' => '-1001234567890', 'agents' => ['endpoint-test']],
+            ['label' => 'SOC Diskominfo', 'chat_id' => '-1001234567890', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001')]],
         ]));
         $log = NotificationLog::create([
             'alert_id' => $alert->id, 'user_id' => $user->id, 'chat_id' => '-1001234567890',
@@ -52,7 +52,7 @@ class NotificationDeliveryTest extends TestCase
         ]);
         $this->actingAs($user)->get(route('alerts.show', $alert))->assertOk()->assertSee('SOC');
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'SOC Diskominfo baru', 'chat_id' => '-1001234567890', 'agents' => ['endpoint-test']],
+            ['label' => 'SOC Diskominfo baru', 'chat_id' => '-1001234567890', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001')]],
         ]));
         $this->get(route('alerts.show', $alert))->assertOk()->assertSee('SOC Diskominfo baru')->assertDontSee('-1001234567890');
         Configuration::set('telegram_destinations', '[]');
@@ -77,13 +77,14 @@ class NotificationDeliveryTest extends TestCase
         $this->actingAs($user)
             ->from(route('alerts.show', $alert))
             ->post(route('alerts.notify', $alert), [
+                'operation_id' => (string) \Illuminate\Support\Str::uuid(),
                 'chat_id' => ' -1001234567890 ',
                 'message' => 'SOC notification test',
             ])
             ->assertRedirect(route('alerts.show', $alert))
             ->assertSessionHas('error');
 
-        $this->assertSame('new', $alert->fresh()->status);
+        $this->assertSame('acknowledged', $alert->fresh()->status);
         $this->assertDatabaseMissing('alert_triages', [
             'alert_id' => $alert->id,
             'action' => 'notify',
@@ -111,6 +112,7 @@ class NotificationDeliveryTest extends TestCase
         $this->actingAs($user)
             ->from(route('alerts.show', $alert))
             ->post(route('alerts.notify', $alert), [
+                'operation_id' => (string) \Illuminate\Support\Str::uuid(),
                 'chat_id' => '-1001234567890',
                 'message' => 'SOC notification test',
             ])
@@ -134,7 +136,7 @@ class NotificationDeliveryTest extends TestCase
     private function notificationFixture(): array
     {
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'SOC', 'chat_id' => '-1001234567890', 'agents' => ['endpoint-test']],
+            ['label' => 'SOC', 'chat_id' => '-1001234567890', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001')]],
         ]));
         $user = User::factory()->forAgent('001', ['alerts.notify', 'alerts.acknowledge'])->create();
         $alert = Alert::create([
@@ -148,6 +150,6 @@ class NotificationDeliveryTest extends TestCase
             'raw_data' => ['agent' => ['id' => '001'], 'test' => true],
         ]);
 
-        return [$user, $alert];
+        return [$user, $this->assignAckOwner($alert, $user)];
     }
 }

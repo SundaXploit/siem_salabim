@@ -3,10 +3,12 @@
     $success = $state === 'sent' || ($state === null && (int) $status === 200);
     $label = match ($state) {
         'pending' => 'Menunggu pengiriman',
+        'not_sent' => 'Belum dikirim',
         'sending', 'unconfirmed' => 'Belum dikonfirmasi',
         'cancelled' => 'Dibatalkan',
         'daily_limited' => 'Batas harian tercapai',
         'sent' => 'SENT',
+        'partial' => 'Sebagian evidence gagal',
         default => $success ? 'SENT' : 'FAILED ('.($status ?? 'tanpa respons').')',
     };
 @endphp

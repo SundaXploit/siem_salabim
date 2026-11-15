@@ -140,8 +140,6 @@ class DashboardController extends Controller
                 ],
             ]);
         } catch (Throwable $exception) {
-            RateLimiter::clear($rateKey);
-
             Log::error('[Dashboard Insight] Direct generation failed', [
                 'period' => $period['key'],
                 'user_id' => $user->id,

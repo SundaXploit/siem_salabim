@@ -32,7 +32,7 @@ class UserManagementAccessTest extends TestCase
         }
         $this->assertSame($before, User::orderBy('id')->get()->toJson());
         $this->assertSame(5, ActivityLog::where('action', 'user_updated')->where('result', 'failed')->where('actor_id', $analyst->id)->count());
-        $this->assertSame(5, ActivityLog::where('action', 'user_deleted')->where('result', 'failed')->where('actor_id', $analyst->id)->count());
+        $this->assertSame(5, ActivityLog::where('action', 'user_status_changed')->where('result', 'failed')->where('actor_id', $analyst->id)->count());
         $this->assertStringNotContainsString('secret-forged-password', ActivityLog::all()->toJson());
     }
 
@@ -66,7 +66,7 @@ class UserManagementAccessTest extends TestCase
         $this->assertSame([], $target->agentAccessKeys());
         $this->assertSame(['alerts.acknowledge'], $target->privileges);
         $this->assertDatabaseHas('activity_logs', ['action' => 'user_updated', 'actor_id' => $admin->id, 'subject' => 'User #'.$target->id.' · Updated target', 'result' => 'success']);
-        $this->delete(route('settings.users.delete', $admin))->assertSessionHas('error');
+        $this->delete(route('settings.users.delete', $admin))->assertSessionHasErrors('is_active');
         $this->assertDatabaseHas('users', ['id' => $admin->id, 'role' => 'admin']);
     }
 

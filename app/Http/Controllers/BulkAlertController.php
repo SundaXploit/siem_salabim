@@ -6,6 +6,7 @@ use App\Exceptions\AiAnalysisException;
 use App\Models\Alert;
 use App\Services\AlertAiAnalysisService;
 use App\Services\AlertTriageService;
+use App\Services\SensitiveDataCipher;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +19,7 @@ class BulkAlertController extends Controller
     public function show(Request $request)
     {
         $alerts = $this->selection($request);
-        $storedAnalysis = Cache::get($this->analysisKey($request, $alerts));
+        $storedAnalysis = $this->cachedAnalysis($this->analysisKey($request, $alerts));
 
         return response()->view('alerts.bulk', compact('alerts', 'storedAnalysis'))
             ->withHeaders(['Cache-Control' => 'no-store, private']);
@@ -30,7 +31,7 @@ class BulkAlertController extends Controller
         $data = $request->validate(['force' => ['sometimes', 'boolean']]);
         $key = $this->analysisKey($request, $alerts);
         $force = (bool) ($data['force'] ?? false);
-        if (! $force && ($stored = Cache::get($key))) {
+        if (! $force && ($stored = $this->cachedAnalysis($key))) {
             return response()->json(['success' => true, 'cached' => true, 'analysis' => $stored]);
         }
         if (! $analysis->isConfigured()) {
@@ -45,14 +46,14 @@ class BulkAlertController extends Controller
             return response()->json(['success' => false, 'error' => 'Analisis untuk pilihan alert ini sedang berjalan.'], 409);
         }
         try {
-            if (! $force && ($stored = Cache::get($key))) {
+            if (! $force && ($stored = $this->cachedAnalysis($key))) {
                 return response()->json(['success' => true, 'cached' => true, 'analysis' => $stored]);
             }
             RateLimiter::hit($rateKey, 600);
             $startedAt = hrtime(true);
             $result = $analysis->analyseBatch($alerts);
             $result['duration_ms'] = (int) round((hrtime(true) - $startedAt) / 1_000_000);
-            Cache::put($key, $result, now()->addDay());
+            Cache::put($key, SensitiveDataCipher::encryptJson($result), now()->addDay());
             Log::info('[Bulk alert AI] Analysis completed', [
                 'user_id' => $request->user()->id, 'alert_ids' => $alerts->modelKeys(),
                 'verdict' => $result['verdict'], 'duration_ms' => $result['duration_ms'],
@@ -78,7 +79,7 @@ class BulkAlertController extends Controller
             'alert_ids' => ['required', 'array', 'min:1', 'max:'.AlertTriageService::MAX_BATCH_SIZE],
             'alert_ids.*' => ['required', 'integer', 'min:1', 'distinct'],
         ]);
-        $alerts = Alert::visibleTo($request->user())->whereIn('id', $data['alert_ids'])->orderBy('first_seen_at')->orderBy('id')->get();
+        $alerts = Alert::visibleTo($request->user())->with('acknowledgedBy')->whereIn('id', $data['alert_ids'])->orderBy('first_seen_at')->orderBy('id')->get();
         if ($alerts->count() !== count($data['alert_ids'])) {
             throw ValidationException::withMessages(['alert_ids' => 'Sebagian alert tidak tersedia atau tidak termasuk akses Anda. Kembali ke Live Alerts dan pilih ulang.']);
         }
@@ -95,5 +96,18 @@ class BulkAlertController extends Controller
         ]))->values()->all();
 
         return 'bulk-alert-ai:v1:'.$request->user()->id.':'.hash('sha256', json_encode($evidence, JSON_THROW_ON_ERROR));
+    }
+
+    private function cachedAnalysis(string $key): ?array
+    {
+        $value = Cache::get($key);
+        if ($value === null) {
+            return null;
+        }
+        if (is_array($value) && config('data_security.allow_legacy_plaintext', true)) {
+            return $value;
+        }
+
+        return SensitiveDataCipher::decryptJson($value);
     }
 }

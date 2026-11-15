@@ -19,12 +19,12 @@ class AlertPolicy
 
     public function ignore(User $user, Alert $alert): bool
     {
-        return $user->canAccessAlert($alert) && $user->hasPrivilege('alerts.ignore');
+        return $user->canAccessAlert($alert) && $user->hasPrivilege('alerts.ignore') && $alert->isAcknowledgedBy($user);
     }
 
     public function notify(User $user, Alert $alert): bool
     {
-        return $user->canAccessAlert($alert) && $user->hasPrivilege('alerts.notify');
+        return $user->canAccessAlert($alert) && $user->hasPrivilege('alerts.notify') && $alert->isAcknowledgedBy($user);
     }
 
     public function analyze(User $user, Alert $alert): bool

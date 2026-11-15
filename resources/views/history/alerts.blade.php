@@ -34,11 +34,11 @@
                     </select>
                 </div>
                 <div>
-                    <label class="form-label" for="history-alerts-date_from">Dari</label>
+                    <label class="form-label" for="history-alerts-date_from">Dari (WIB)</label>
                     <input id="history-alerts-date_from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.submit()">
                 </div>
                 <div>
-                    <label class="form-label" for="history-alerts-date_to">Sampai</label>
+                    <label class="form-label" for="history-alerts-date_to">Sampai (WIB)</label>
                     <input id="history-alerts-date_to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.submit()">
                 </div>
                 <div class="flex gap-2 items-center">

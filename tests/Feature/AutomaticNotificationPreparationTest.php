@@ -26,8 +26,8 @@ class AutomaticNotificationPreparationTest extends TestCase
         Configuration::set('telegram_auto_above_level', 6);
         Configuration::set('telegram_auto_daily_limit', 1);
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'Developer', 'chat_id' => '-100111', 'agents' => ['Staging']],
-            ['label' => 'Developer personal', 'chat_id' => '123456', 'agents' => ['Staging']],
+            ['label' => 'Developer', 'chat_id' => '-100111', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001')]],
+            ['label' => 'Developer personal', 'chat_id' => '123456', 'agent_keys' => [Alert::agentScopeKey('wazuh-primary', '001')]],
         ]));
     }
 
@@ -35,7 +35,7 @@ class AutomaticNotificationPreparationTest extends TestCase
     {
         return ['_id' => $id, '_index' => 'wazuh-alerts-4.x-2026.11.12', '_source' => [
             'id' => $id, 'rule' => ['id' => '533', 'level' => 7, 'description' => 'Wazuh alert'],
-            'agent' => ['name' => 'Staging'], '@timestamp' => now('UTC')->toIso8601String(),
+            'agent' => ['id' => '001', 'name' => 'Staging'], '@timestamp' => now('UTC')->toIso8601String(),
             'full_log' => 'Original source evidence',
         ]];
     }

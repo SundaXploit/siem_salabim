@@ -130,6 +130,8 @@ class AnalystAgentAccessTest extends TestCase
         $this->actingAs($user)->getJson('/api/alerts/new-count')->assertJsonPath('count', 1);
         $this->get('/dashboard')->assertOk()->assertViewHas('dashboard', fn ($d) => $d['metrics']['total'] === 1);
         $user->update(['allowed_agents' => []]);
+        $this->getJson('/api/alerts/latest')->assertUnauthorized();
+        $this->actingAs($user->fresh());
         $this->getJson('/api/alerts/new-count')->assertJsonPath('count', 0);
         $this->get('/dashboard')->assertOk()->assertViewHas('dashboard', fn ($d) => $d['metrics']['total'] === 0);
         $this->get(route('alerts.show', $alert))->assertNotFound();
@@ -235,6 +237,8 @@ class AnalystAgentAccessTest extends TestCase
         $this->assertSame(3, $inputs[1]['metrics']['total']);
         $this->actingAs($analyst)->get('/dashboard')->assertOk()->assertSee('KESIMPULAN TERBATAS OPD A')->assertDontSee('KESIMPULAN GLOBAL SOC');
         $analyst->update(['allowed_agents' => []]);
+        $this->getJson('/api/alerts/latest')->assertUnauthorized();
+        $this->actingAs($analyst->fresh());
         $this->get('/dashboard')->assertOk()->assertViewHas('dashboard', fn ($d) => $d['metrics']['total'] === 0)
             ->assertDontSee('KESIMPULAN TERBATAS OPD A')->assertDontSee('KESIMPULAN GLOBAL SOC');
         $this->postJson(route('dashboard.insight.refresh'))->assertOk();
@@ -270,12 +274,13 @@ class AnalystAgentAccessTest extends TestCase
         $user = $this->analyst(['alerts.notify']);
         $alert = $this->event('allowed', 'Allowed');
         Configuration::set('telegram_destinations', json_encode([
-            ['label' => 'OPD A', 'chat_id' => '-1001', 'agents' => ['Same agent name']],
+            ['label' => 'OPD A', 'chat_id' => '-1001', 'agent_keys' => [$alert->agent_scope_key]],
         ]));
+        $this->assignAckOwner($alert, $user);
         $this->mock(TelegramService::class)->shouldReceive('sendMessage')->once()
             ->with('-1001', 'Investigasi alert diperlukan.')->andReturn(['success' => true, 'status' => 200]);
-        $this->actingAs($user)->post(route('alerts.notify', $alert), ['message' => 'Investigasi alert diperlukan.'])->assertRedirect();
-        $this->assertSame('new', $alert->fresh()->status);
+        $this->actingAs($user)->post(route('alerts.notify', $alert), ['operation_id' => (string) \Illuminate\Support\Str::uuid(), 'message' => 'Investigasi alert diperlukan.'])->assertRedirect();
+        $this->assertSame('acknowledged', $alert->fresh()->status);
         $this->assertDatabaseHas('notification_logs', ['alert_id' => $alert->id, 'user_id' => $user->id]);
         $this->assertDatabaseMissing('alert_triages', ['alert_id' => $alert->id, 'action' => 'acknowledge']);
         $this->postJson(route('alerts.acknowledge', $alert))->assertForbidden();

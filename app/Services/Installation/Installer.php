@@ -75,6 +75,7 @@ class Installer
                 Configuration::set('opensearch_username', $data['opensearch_username'] ?? '');
                 Configuration::set('opensearch_password', $data['opensearch_password'] ?? '');
                 Configuration::set('opensearch_index', $data['opensearch_index'] ?? 'wazuh-alerts-*');
+                Configuration::set('opensearch_verify_ssl', ($data['opensearch_verify_ssl'] ?? true) ? 'true' : 'false');
                 Configuration::set('telegram_bot_token', $data['telegram_bot_token'] ?? '');
                 Configuration::set('telegram_chat_ids', json_encode(
                     array_values(array_unique($data['telegram_chat_ids'] ?? [])), JSON_THROW_ON_ERROR,
@@ -134,8 +135,9 @@ class Installer
         $input['telegram_enabled'] = filter_var($input['telegram_enabled'] ?? filled($input['telegram_bot_token'] ?? null), FILTER_VALIDATE_BOOL);
         $input['smtp_enabled'] = filter_var($input['smtp_enabled'] ?? false, FILTER_VALIDATE_BOOL);
         $input['opensearch_verify_ssl'] = filter_var(
-            $input['opensearch_verify_ssl'] ?? false,
+            $input['opensearch_verify_ssl'] ?? true,
             FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE,
         );
 
         $rules = [
@@ -217,6 +219,9 @@ class Installer
             'APP_TIMEZONE' => $data['app_timezone'],
             'APP_LOCALE' => 'id',
             'APP_FALLBACK_LOCALE' => 'id',
+            'APP_CIPHER' => 'AES-256-GCM',
+            'SIEM_BLIND_INDEX_KEY' => $this->environment->value('SIEM_BLIND_INDEX_KEY') ?: 'base64:'.base64_encode(random_bytes(32)),
+            'SIEM_ALLOW_LEGACY_PLAINTEXT' => 'false',
             'SESSION_ENCRYPT' => 'true',
             'SESSION_SECURE_COOKIE' => $secureSessionCookie ? 'true' : 'false',
             'DB_CONNECTION' => $data['db_connection'],
@@ -252,6 +257,9 @@ class Installer
             'app.name' => $data['app_name'],
             'app.url' => rtrim($data['app_url'], '/'),
             'app.timezone' => $data['app_timezone'],
+            'app.cipher' => 'AES-256-GCM',
+            'data_security.blind_index_key' => $this->environment->value('SIEM_BLIND_INDEX_KEY'),
+            'data_security.allow_legacy_plaintext' => false,
             'services.opensearch.host' => $data['opensearch_host'] ?? '',
             'services.opensearch.source_cluster' => $data['opensearch_source_cluster'] ?? 'wazuh-primary',
             'services.opensearch.verify_ssl' => $data['opensearch_verify_ssl'] ?? true,

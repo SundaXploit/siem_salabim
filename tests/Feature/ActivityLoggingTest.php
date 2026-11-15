@@ -28,6 +28,35 @@ class ActivityLoggingTest extends TestCase
         return ['opensearch_host' => 'https://indexer.example.test:9200', 'opensearch_username' => 'service-user', 'opensearch_password' => 'private-opensearch-password', 'opensearch_index' => 'wazuh-alerts-*', 'min_alert_level' => 5];
     }
 
+    public function test_template_changes_on_both_routes_are_audited_with_target_status_and_safe_fields(): void
+    {
+        $admin = $this->admin();
+        $payload = ['name' => 'Template audit', 'category' => 'SOC', 'body' => 'private-template-evidence', 'is_active' => true];
+        $id = $this->postJson(route('templates.save'), $payload)->assertOk()->json('template.id');
+        $this->postJson(route('settings.templates.save'), [...$payload, 'id' => $id, 'is_active' => false])->assertOk();
+        $this->postJson(route('settings.templates.save'), ['id' => $id, 'body' => 'short'])->assertUnprocessable();
+        $this->deleteJson(route('templates.delete', $id))->assertOk();
+        $logs = ActivityLog::orderBy('id')->get();
+        $this->assertSame(['notification_template_saved', 'notification_template_saved', 'notification_template_saved', 'notification_template_deleted'], $logs->pluck('action')->all());
+        $this->assertSame(['success', 'success', 'failed', 'success'], $logs->pluck('result')->all());
+        $this->assertSame(['Template notifikasi #'.$id], $logs->pluck('subject')->unique()->values()->all());
+        $this->assertSame(false, $logs[1]->context['is_active']);
+        $this->assertSame($admin->id, $logs[0]->actor_id);
+        $this->assertStringNotContainsString('private-template-evidence', $logs->toJson());
+        $this->get(route('history.activity', ['action' => 'notification_template_saved']))->assertOk()
+            ->assertSee('Simpan template notifikasi')->assertSee('Template notifikasi #'.$id)
+            ->assertSee('3 aktivitas tercatat')->assertSee('Status aktif: Nonaktif');
+    }
+
+    public function test_ssl_verification_change_is_included_in_the_activity_fields(): void
+    {
+        $this->admin();
+        $this->postJson(route('settings.opensearch'), [...$this->configuration(), 'opensearch_verify_ssl' => false])->assertRedirect()->assertSessionHasNoErrors();
+        $log = ActivityLog::where('action', 'opensearch_updated')->sole();
+        $this->assertContains('opensearch_verify_ssl', $log->context['fields']);
+        $this->assertSame('success', $log->result);
+    }
+
     public function test_login_logout_and_rejected_login_are_logged_without_credentials(): void
     {
         $user = User::factory()->create(['name' => 'Analyst SOC', 'role' => 'analyst']);
@@ -86,8 +115,8 @@ class ActivityLoggingTest extends TestCase
     public function test_failed_user_delete_is_not_reported_as_success_and_does_not_taint_the_next_request(): void
     {
         $admin = $this->admin();
-        $this->delete(route('settings.users.delete', $admin))->assertSessionHas('error');
-        $this->assertDatabaseHas('activity_logs', ['action' => 'user_deleted', 'result' => 'failed']);
+        $this->delete(route('settings.users.delete', $admin))->assertSessionHasErrors('is_active');
+        $this->assertDatabaseHas('activity_logs', ['action' => 'user_status_changed', 'result' => 'failed']);
         $this->post(route('settings.opensearch'), $this->configuration())->assertSessionHasNoErrors();
         $this->assertDatabaseHas('activity_logs', ['action' => 'opensearch_updated', 'result' => 'success']);
         $this->assertNotNull($admin->fresh());
@@ -103,7 +132,7 @@ class ActivityLoggingTest extends TestCase
         $this->assertDatabaseHas('activity_logs', ['action' => 'user_updated', 'actor_id' => $admin->id]);
         $this->assertDatabaseHas('activity_logs', ['action' => 'password_changed', 'actor_id' => $admin->id]);
         $this->delete(route('settings.users.delete', $target))->assertSessionHas('success');
-        $this->assertDatabaseHas('activity_logs', ['action' => 'user_deleted', 'subject' => 'User #'.$target->id.' · Updated analyst', 'result' => 'success']);
+        $this->assertDatabaseHas('activity_logs', ['action' => 'user_status_changed', 'subject' => 'User #'.$target->id.' · Updated analyst', 'result' => 'success']);
         $this->assertStringNotContainsString('private-updated-password', ActivityLog::all()->toJson());
         $admin->delete();
         $this->assertSame(0, ActivityLog::whereNotNull('actor_id')->count());
@@ -174,6 +203,9 @@ class ActivityLoggingTest extends TestCase
     public function test_other_settings_changes_are_logged_once_without_credentials(string $route, array $payload, string $action): void
     {
         $admin = $this->admin();
+        if ($route === 'settings.telegram') {
+            $this->mock(OpenSearchService::class)->shouldReceive('fetchAgents')->once()->andReturn(['agents' => [['id' => '001', 'name' => 'staging']]]);
+        }
         $this->post(route($route), $payload)->assertSessionHasNoErrors();
 
         $log = ActivityLog::query()->sole();
@@ -190,7 +222,7 @@ class ActivityLoggingTest extends TestCase
         return [
             'telegram destinations' => ['settings.telegram', [
                 'telegram_bot_token' => 'private-settings-secret',
-                'telegram_destinations' => [['label' => 'Developer', 'chat_id' => '-100123', 'agents' => ['staging']]],
+                'telegram_destinations' => [['label' => 'Developer', 'chat_id' => '-100123', 'agent_keys' => [\App\Models\Alert::agentScopeKey('wazuh-primary', '001')]]],
             ], 'telegram_updated'],
             'ai configuration' => ['settings.ai', [
                 'ai_provider' => 'ollama', 'ai_api_format' => 'chat_completions', 'ai_base_url' => 'http://localhost:11434/v1',

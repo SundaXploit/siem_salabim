@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureApplicationInstalled;
+use App\Http\Middleware\EnforceSessionSecurity;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\RecordSettingsActivity;
 use App\Http\Middleware\RedirectIfInstalled;
@@ -21,7 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [RecordSettingsActivity::class]);
+        $middleware->web(append: [EnforceSessionSecurity::class, RecordSettingsActivity::class]);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, EnforceSessionSecurity::class);
+        $middleware->prependToPriorityList(EnforceSessionSecurity::class, EnsureApplicationInstalled::class);
         $middleware->alias([
             'install.pending' => RedirectIfInstalled::class,
             'installed.only' => EnsureApplicationInstalled::class,

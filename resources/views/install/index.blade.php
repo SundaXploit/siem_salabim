@@ -334,8 +334,8 @@
                                     <input type="hidden" name="opensearch_verify_ssl" value="0">
                                     <input id="opensearch_verify_ssl" name="opensearch_verify_ssl" type="checkbox" value="1" @checked((bool) old('opensearch_verify_ssl', true))>
                                     <div>
-                                        <label for="opensearch_verify_ssl">Verifikasi sertifikat TLS</label>
-                                        <p>Direkomendasikan. Nonaktifkan hanya sementara pada lingkungan terisolasi dengan sertifikat internal.</p>
+                                        <label for="opensearch_verify_ssl">Verifikasi SSL Wazuh/OpenSearch (aktif = true; nonaktif = false)</label>
+                                        <p>Direkomendasikan true. Jika uji koneksi gagal karena sertifikat internal, false dapat dipakai sementara pada jaringan tepercaya. Perbaiki CA/nama host lalu aktifkan true kembali.</p>
                                     </div>
                                 </div>
                                 @error('opensearch_verify_ssl')<div class="field-error">{{ $message }}</div>@enderror

@@ -63,6 +63,8 @@ class AlertRawEvidenceTest extends TestCase
                 $this->client = $client;
                 $this->index = 'wazuh-source-alias';
             }
+
+            protected function refreshConnectionSettings(): void {}
         });
 
         $this->artisan('siem:fetch-alerts', ['--today' => true])->assertSuccessful();

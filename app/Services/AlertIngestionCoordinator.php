@@ -189,6 +189,7 @@ class AlertIngestionCoordinator
 
             return [
                 'state' => $state,
+                'tls_error' => Cache::get('siem_fetch_tls_error'),
                 'mode' => is_string($stored['mode'] ?? null) ? $stored['mode'] : null,
                 'trigger' => is_string($stored['trigger'] ?? null) ? $stored['trigger'] : null,
                 'updated_at' => $this->asIso8601($updatedAt),

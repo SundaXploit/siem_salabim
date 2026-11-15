@@ -35,13 +35,15 @@ class DataExportPurgeService
             if (in_array($lockedExport->scope, ['alerts', 'all'], true)) {
                 // Explicit child deletion lets us compare every affected row
                 // with the verified manifest before deleting parent alerts.
-                foreach (['alert_ai_analyses', 'alert_triages', 'notification_logs'] as $entity) {
+                foreach (['encrypted_search_tokens', 'alert_ai_analyses', 'alert_triages', 'notification_logs', 'manual_notification_operations'] as $entity) {
                     $counts[$entity] = $this->archives->entityQuery($lockedExport, $entity)->delete();
                 }
                 $counts['alerts'] = $this->archives->entityQuery($lockedExport, 'alerts')->delete();
             } elseif ($lockedExport->scope === 'triages') {
+                $this->archives->entityQuery($lockedExport, 'encrypted_search_tokens')->where('entity', 'triage')->delete();
                 $counts['alert_triages'] = $this->archives->entityQuery($lockedExport, 'alert_triages')->delete();
             } elseif ($lockedExport->scope === 'notif_logs') {
+                $this->archives->entityQuery($lockedExport, 'encrypted_search_tokens')->where('entity', 'notification')->delete();
                 $counts['notification_logs'] = $this->archives->entityQuery($lockedExport, 'notification_logs')->delete();
             } else {
                 throw new RuntimeException('Scope purge tidak didukung.');

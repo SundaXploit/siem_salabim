@@ -42,7 +42,7 @@ class SendAutomaticAlertNotification implements ShouldBeUnique, ShouldQueue
         }
         $settings = $notifier->settings();
         $alert = $delivery->alert;
-        $routes = $alert ? Configuration::telegramDestinationsForAgent($alert->agent_name) : [];
+        $routes = $alert ? Configuration::telegramDestinationsForAgent($alert->agent_scope_key) : [];
         // Recheck the saved policy at send time, including removed organization mappings.
         if (! $settings['enabled'] || ! $alert || $alert->status !== 'new'
             || $alert->rule_level <= $settings['above_level']

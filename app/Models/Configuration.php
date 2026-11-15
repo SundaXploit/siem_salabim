@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\SensitiveDataCipher;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Crypt;
 
 class Configuration extends Model
@@ -15,6 +15,7 @@ class Configuration extends Model
     ];
 
     public $timestamps = false;
+
     const UPDATED_AT = 'updated_at';
 
     protected $fillable = ['key', 'value'];
@@ -28,7 +29,7 @@ class Configuration extends Model
     {
         $config = static::where('key', $key)->first();
 
-        if (!$config) {
+        if (! $config) {
             return $default;
         }
 
@@ -69,7 +70,7 @@ class Configuration extends Model
         $destinations = [];
         foreach (is_array($legacyIds) ? $legacyIds : [] as $chatId) {
             if (is_string($chatId) && trim($chatId) !== '') {
-                $destinations[] = ['label' => 'Tujuan '.(count($destinations) + 1), 'chat_id' => trim($chatId), 'agents' => []];
+                $destinations[] = ['label' => 'Tujuan '.(count($destinations) + 1), 'chat_id' => trim($chatId), 'agent_keys' => []];
             }
         }
 
@@ -78,7 +79,7 @@ class Configuration extends Model
 
     public static function telegramDestinationsForAgent(?string $agent, ?array $destinations = null): array
     {
-        if ($agent === null || $agent === '') {
+        if ($agent === null || ! preg_match('/\A[a-f0-9]{64}\z/', $agent)) {
             return [];
         }
 
@@ -86,7 +87,7 @@ class Configuration extends Model
         foreach ($destinations ?? static::getTelegramDestinations() as $destination) {
             if (is_array($destination) && is_string($destination['label'] ?? null)
                 && is_string($destination['chat_id'] ?? null) && $destination['chat_id'] !== ''
-                && is_array($destination['agents'] ?? null) && in_array($agent, $destination['agents'], true)) {
+                && is_array($destination['agent_keys'] ?? null) && in_array($agent, $destination['agent_keys'], true)) {
                 $matched[$destination['chat_id']] = $destination;
             }
         }
@@ -101,7 +102,7 @@ class Configuration extends Model
 
     private static function encryptIfSecret(string $key, mixed $value): mixed
     {
-        if (!static::isSecret($key) || $value === null || $value === '') {
+        if (! static::isSecret($key) || $value === null || $value === '') {
             return $value;
         }
 
@@ -110,16 +111,10 @@ class Configuration extends Model
 
     private static function decryptIfSecret(string $key, mixed $value): mixed
     {
-        if (!static::isSecret($key) || !is_string($value) || $value === '') {
+        if (! static::isSecret($key) || ! is_string($value) || $value === '') {
             return $value;
         }
 
-        try {
-            return Crypt::decryptString($value);
-        } catch (DecryptException) {
-            // Existing installations may still contain plaintext values. They
-            // remain readable and will be encrypted the next time they are saved.
-            return $value;
-        }
+        return SensitiveDataCipher::decryptString($value);
     }
 }

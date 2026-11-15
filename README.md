@@ -2,15 +2,15 @@
 
 <div align="center">
 
-<img src="docs/assets/readme-hero.svg" width="100%" alt="SIEM Salabim — dari alert ke tindakan. Platform operasi SOC berbasis Wazuh dan OpenSearch.">
+<img src="public/images/brand/siem-salabim-logo.png" width="100%" alt="SIEM Salabim — dashboard SIEM Wazuh dan OpenSearch untuk monitoring keamanan serta operasi SOC.">
 
-# SIEM Salabim
+# SIEM Salabim — Dashboard SIEM Wazuh untuk SOC
 
 **Pantau alert. Selidiki keterkaitan. Dokumentasikan respons.**
 
-Ruang kerja SOC untuk monitoring Wazuh, triage, analisis AI, dan notifikasi Telegram, dengan pembatasan akses analis per agent.
+Dashboard SIEM untuk monitoring alert Wazuh, investigasi insiden keamanan, triage, analisis AI, dan notifikasi Telegram.
 
-[Galeri aplikasi](#galeri) · [Fitur](#fitur) · [Instalasi](#instalasi) · [Role dan akses](#akses) · [Operasional](#operasional) · [Panduan](#panduan)
+[Tentang aplikasi](#tentang) · [Cakupan](#cakupan) · [Untuk siapa](#pengguna) · [Galeri](#galeri) · [Fitur](#fitur) · [Keamanan](#keamanan) · [Instalasi](#instalasi) · [Perubahan 1.2](docs/README.md) · [Kontribusi](#kontribusi)
 
 <p>
   <img src="https://img.shields.io/badge/PHP-8.3%2B-777BB4?style=flat-square" alt="PHP 8.3 atau lebih baru">
@@ -21,16 +21,50 @@ Ruang kerja SOC untuk monitoring Wazuh, triage, analisis AI, dan notifikasi Tele
 
 </div>
 
-SIEM Salabim mengambil alert dari OpenSearch/Wazuh Indexer dan menyimpannya ke database lokal untuk investigasi serta tindak lanjut SOC. Deteksi awal tetap dilakukan Wazuh; Salabim membantu analis membaca bukti, menentukan prioritas, mencatat ACK/ignore, dan mengomunikasikan temuan.
+<a id="tentang"></a>
 
-Satu instalasi dapat melayani beberapa organisasi. Admin mengelola cakupan akses, sedangkan analis hanya melihat data agent yang diizinkan, termasuk pada dashboard, riwayat, API, dan analisis AI.
+## Tentang SIEM Salabim
+
+**SIEM Salabim adalah aplikasi dashboard Security Information and Event Management (SIEM) dan ruang kerja Security Operations Center (SOC)** untuk membantu tim keamanan memantau alert, menyelidiki kejadian, membagi tanggung jawab penanganan, dan mendokumentasikan tindak lanjut. Aplikasi berbasis Laravel ini dapat dijalankan pada server sendiri (*self-hosted*) dan terhubung ke **Wazuh Indexer atau OpenSearch**.
+
+Alert dikumpulkan dari indeks Wazuh lalu disimpan pada database aplikasi. Analis dapat membuka bukti JSON/tabel, menghubungkan beberapa alert dalam satu investigasi, meminta analisis AI, melakukan ACK atau ignore dengan alasan, serta mengirim hasil pemeriksaan melalui Telegram. Dashboard dan riwayat membantu tim menelusuri kondisi monitoring keamanan dan pekerjaan yang sudah dilakukan.
+
+Deteksi awal dan pengumpulan log dilakukan oleh Wazuh. Cakupan SIEM Salabim adalah pengelolaan alert setelah tersedia di indexer, sampai pencatatan tindakan dan komunikasi temuan. Keputusan insiden serta tindakan pada endpoint, firewall, atau akun terkait tetap dilakukan dan divalidasi oleh operator. Hasil AI merupakan bahan pendukung investigasi.
+
+<a id="cakupan"></a>
+
+## Tujuan dan cakupan penggunaan
+
+| Kebutuhan | Penggunaan SIEM Salabim |
+| :--- | :--- |
+| **Monitoring keamanan harian** | Meninjau dashboard SOC, alert terbaru, severity, tren, dan pola MITRE yang tersedia dari evidence. |
+| **Investigasi dan triage alert** | Memeriksa log asli, mengurutkan kronologi, menganalisis satu atau beberapa alert, lalu menentukan tindak lanjut. |
+| **Pembagian pekerjaan analis** | Menetapkan pemilik melalui ACK pertama dan membatasi ignore/notifikasi kepada pemilik tersebut. |
+| **Komunikasi temuan keamanan** | Menyusun pesan Telegram dari template atau pesan bebas; mengirim ringkasan massal sesuai tujuan agent. |
+| **Audit dan evaluasi operasi SOC** | Menelusuri Log analis, Log aktivitas administrasi, serta statistik penanganan pada leaderboard. |
+| **Administrasi dan retensi** | Mengatur akses, integrasi, template, backup JSON/SQL, serta penghapusan data dari backup yang terverifikasi. |
+
+Satu instalasi dapat melayani beberapa tim atau organisasi dengan pembatasan akses **per identitas agent**. Analis hanya melihat agent yang diizinkan pada dashboard, detail, riwayat, API, dan analisis AI. Konfigurasi sistem tetap dikelola admin pada tingkat instalasi; kebutuhan pemisahan infrastruktur dan database antarorganisasi perlu disesuaikan dengan kebijakan masing-masing.
+
+<a id="pengguna"></a>
+
+## Pengguna yang dituju
+
+- **Analis SOC dan tim CSIRT:** memantau alert Wazuh, mengumpulkan konteks investigasi, mencatat hasil validasi, dan mengomunikasikan temuan.
+- **Administrator keamanan dan pengelola TI:** mengatur integrasi SIEM, akun, privilege, cakupan agent, serta retensi data.
+- **Koordinator atau pengelola layanan SOC:** membagi cakupan pemantauan antaranggota, meninjau kepemilikan penanganan, dan mengevaluasi pekerjaan tim.
+- **Pengajar, mahasiswa, dan peserta laboratorium keamanan:** berlatih monitoring log, pembacaan evidence, dan alur triage menggunakan lingkungan uji serta data yang diizinkan.
+
+Untuk memantau kejadian keamanan nyata, siapkan Wazuh/Indexer yang dapat diakses dan menghasilkan alert. Integrasi AI serta Telegram dapat ditambahkan sesuai kebutuhan operasional.
+
+**Pembaruan versi 1.2:** kepemilikan ACK, keamanan sesi, penonaktifan akun, enkripsi payload, routing Agent ID, editor notifikasi tunggal/massal, dan pengelolaan template. Lihat [catatan lengkap perubahan SIEM Salabim 1.1 → 1.2](docs/README.md).
 
 <a id="demo"></a>
 <a id="galeri"></a>
 
 ## Galeri aplikasi
 
-Jelajahi **49 screenshot asli** sesuai alur penggunaan: masuk, monitoring, investigasi, tindak lanjut, lalu administrasi. Setiap gambar ditampilkan satu kolom selebar area baca, dilengkapi nama halaman dan kegunaannya. Klik gambar untuk membuka PNG asli dan memperbesar detail; gunakan **Sebelumnya / Berikutnya** untuk berpindah antarpreview.
+Jelajahi **49 Tampilan Aplikasi** sesuai alur penggunaan: masuk, monitoring, investigasi, tindak lanjut, lalu administrasi. Setiap gambar ditampilkan satu kolom selebar area baca, dilengkapi nama halaman dan kegunaannya. Klik gambar untuk membuka PNG asli dan memperbesar detail; gunakan **Sebelumnya / Berikutnya** untuk berpindah antarpreview.
 
 Contoh admin mencakup seluruh agent, sedangkan contoh analis hanya satu agent dengan privilege yang ditentukan admin. Perbedaan angka, menu, dan hasil analisis mengikuti hak akses akun.
 
@@ -48,8 +82,8 @@ Contoh admin mencakup seluruh agent, sedangkan contoh analis hanya satu agent de
 [Mulai dari preview 01 →](#preview-01) · [Langsung ke fitur](#fitur) · [Langsung ke instalasi](#instalasi)
 
 <a id="preview-login"></a>
-
-### 1. Masuk ke aplikasi
+<details>
+<summary><strong>1. Masuk ke aplikasi</strong></summary>
 
 Mengenali pintu masuk aplikasi dan pilihan tema sebelum mulai bekerja.
 
@@ -78,12 +112,12 @@ Mengenali pintu masuk aplikasi dan pilihan tema sebelum mulai bekerja.
 [![Login dalam mode terang](docs/asset/login-light.png)](docs/asset/login-light.png)
 
 [← Sebelumnya](#preview-01) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-03)
-
+</details>
 ---
 
 <a id="preview-dashboard"></a>
-
-### 2. Dashboard, ringkasan AI, dan pilihan tema
+<details>
+<summary><strong>2. Dashboard, ringkasan AI, dan pilihan tema</strong></summary>
 
 Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin serta analis.
 
@@ -196,12 +230,12 @@ Memahami kondisi SOC, prioritas penanganan, grafik, dan perbedaan cakupan admin 
 [![Dashboard analis dalam mode terang](docs/asset/analis-dashboard-light.png)](docs/asset/analis-dashboard-light.png)
 
 [← Sebelumnya](#preview-09) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-11)
-
+</details>
 ---
 
 <a id="preview-investigasi"></a>
-
-### 3. Monitoring dan investigasi satu alert
+<details>
+<summary><strong>3. Monitoring dan investigasi satu alert</strong></summary>
 
 Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum mengambil tindakan.
 
@@ -314,12 +348,12 @@ Menemukan alert, memeriksa bukti asli, lalu membaca hasil analisis sebelum menga
 [![Analisis AI satu alert untuk analis](docs/asset/analis-alert-ai.png)](docs/asset/analis-alert-ai.png)
 
 [← Sebelumnya](#preview-17) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-19)
-
+</details>
 ---
 
 <a id="preview-triage"></a>
-
-### 4. Triage massal, kronologi, dan notifikasi
+<details>
+<summary><strong>4. Triage massal, kronologi, dan notifikasi</strong></summary>
 
 Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan temuan.
 
@@ -404,12 +438,12 @@ Meninjau hubungan beberapa alert dan memeriksa pesan sebelum mengomunikasikan te
 [![Pratinjau notifikasi Telegram untuk analis](docs/asset/analis-telegram-preview.png)](docs/asset/analis-telegram-preview.png)
 
 [← Sebelumnya](#preview-23) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-25)
-
+</details>
 ---
 
 <a id="preview-riwayat"></a>
-
-### 5. Riwayat, kinerja SOC, dan audit
+<details>
+<summary><strong>5. Riwayat, kinerja SOC, dan audit</strong></summary>
 
 Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas administrasi.
 
@@ -508,12 +542,12 @@ Menelusuri penanganan alert, mengevaluasi pekerjaan SOC, dan memeriksa aktivitas
 [![Audit Log aktivitas khusus admin](docs/asset/admin-activity-log.png)](docs/asset/admin-activity-log.png)
 
 [← Sebelumnya](#preview-30) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-32)
-
+</details>
 ---
 
 <a id="preview-settings"></a>
-
-### 6. Settings dan integrasi
+<details>
+<summary><strong>6. Settings dan integrasi</strong></summary>
 
 Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola data aplikasi.
 
@@ -626,12 +660,13 @@ Menghubungkan sumber alert, mengatur analisis dan notifikasi, serta mengelola da
 [![Daftar akun dan akses pengguna](docs/asset/admin-settings-users.png)](docs/asset/admin-settings-users.png)
 
 [← Sebelumnya](#preview-38) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-40)
-
+</details>
 ---
 
 <a id="preview-akses"></a>
 
-### 7. Manajemen pengguna dan pembatasan akses
+<details>
+<summary><strong>7. Manajemen pengguna dan pembatasan akses</strong></summary>
 
 Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan setiap pengguna.
 
@@ -641,7 +676,7 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 
 **Bagian:** Settings → Manajemen user · **Akses:** Admin · **Halaman:** `/settings?section=users → menu ⋮`.
 
-**Untuk apa:** Menu pada baris pengguna untuk membuka pengeditan atau penghapusan akun. Admin memilih tindakan pada akun yang tepat dari daftar pengguna.
+**Untuk apa:** Menu pada baris pengguna untuk mengedit akun atau mengaktifkan/menonaktifkannya. Penonaktifan mempertahankan riwayat penanganan; screenshot ini diambil sebelum menu Hapus diganti dengan Nonaktifkan akun.
 
 [![Menu tindakan pada akun pengguna](docs/asset/admin-user-actions.png)](docs/asset/admin-user-actions.png)
 
@@ -655,7 +690,7 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 
 **Bagian:** Settings → Manajemen user · **Akses:** Admin · **Halaman:** `/settings?section=users → Tambah pengguna`.
 
-**Untuk apa:** Formulir pembuatan akun baru dengan identitas, kata sandi, role, pilihan agent, dan privilege. Admin menyiapkan akses analis sesuai tugasnya sebelum akun digunakan.
+**Untuk apa:** Formulir pembuatan akun baru dengan identitas, kata sandi, role, pilihan Wazuh Agent ID, dan privilege. Admin menyiapkan akses analis sesuai tugasnya sebelum akun digunakan.
 
 [![Dialog tambah pengguna](docs/asset/admin-user-create.png)](docs/asset/admin-user-create.png)
 
@@ -688,12 +723,13 @@ Membuat akun, menentukan agent yang boleh dilihat, dan mengatur hak tindakan set
 [![Penolakan akses Settings untuk analis](docs/asset/analis-admin-access-denied.png)](docs/asset/analis-admin-access-denied.png)
 
 [← Sebelumnya](#preview-42) · [Daftar bagian](#galeri) · [Berikutnya →](#preview-44)
-
+</details>
 ---
 
 <a id="preview-akun"></a>
 
-### 8. Profil dan keamanan akun
+<details>
+<summary><strong>8. Profil dan keamanan akun</strong></summary>
 
 Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi serta verifikasi email.
 
@@ -778,6 +814,7 @@ Memperbarui identitas, mengganti kata sandi, dan mengenali halaman konfirmasi se
 [![Verifikasi email akun analis](docs/asset/analis-verify-email.png)](docs/asset/analis-verify-email.png)
 
 [← Sebelumnya](#preview-48) · [Daftar bagian](#galeri) · [Lanjut ke fitur →](#fitur)
+</details>
 
 <details>
 <summary><strong>Informasi pengambilan screenshot dan penyamaran data</strong></summary>
@@ -803,14 +840,16 @@ Seluruh gambar tersedia di [`docs/asset`](docs/asset). Daftar file, route, role,
 | **Dashboard SOC** | Tren bulan berjalan, severity, pola MITRE, tindak lanjut, dan kesimpulan AI sesuai cakupan agent akun. |
 | **Live Alerts** | Pencarian, filter agent/level/status/tanggal, pembaruan otomatis, serta pilihan 25/50/100 baris. |
 | **Detail alert** | Metadata asli `_source` Wazuh dalam JSON dan tabel; nama field, termasuk `rule.description`, tetap dipertahankan. |
-| **Triage massal** | Pilih hingga 100 alert, tinjau detail gabungan dan kronologi, lalu ACK atau abaikan dengan alasan. |
+| **Triage massal** | Pilih hingga 100 alert, tinjau kronologi, lalu ACK; pemilik ACK dapat ignore atau mengirim satu pesan teks gabungan per tujuan Telegram. |
 | **Analisis AI** | Analisis satu alert, korelasi beberapa log, indikator aktivitas normal/mencurigakan, keterbatasan bukti, dan rekomendasi tindakan. |
 | **RBAC per agent** | Role admin/analis, checklist agent, dan privilege ACK, ignore, Telegram, serta analisis AI yang terpisah. |
 | **Ignore permanen** | Kelola **Rule ID** yang dikecualikan dari impor baru. Alert dan metadata yang sudah tersimpan tetap tersedia. |
 | **Telegram multi-tujuan** | Label tujuan, grup/chat pribadi, dan pemetaan agent; tujuan pengiriman dipilih otomatis dari Settings. |
+| **Template notifikasi** | Editor yang sama untuk tunggal/massal, pesan bebas, evidence, serta tambah/edit/nonaktifkan/hapus template melalui Settings. |
 | **Notifikasi otomatis** | Alert baru di atas ambang level, ringkasan dan tautan detail dari domain aplikasi, serta batas harian per pasangan Rule ID dan agent. |
 | **Log analis** | Riwayat notifikasi, ACK, dan ignore di `/analyst-log`, sesuai cakupan agent akun. |
-| **Log aktivitas** | Audit login/logout, perubahan Profile/password, manajemen user, dan kegiatan Settings; khusus admin. |
+| **Log aktivitas** | Audit akun, perubahan akses/status, pelepasan ACK, template, SSL, dan kegiatan Settings; khusus admin dengan filter responsif. |
+| **Keamanan sesi dan data** | Idle timeout 15 menit, pencabutan sesi saat akses berubah, enkripsi selektif AES-256-GCM, serta pencarian berindeks HMAC. |
 | **Leaderboard** | Statistik kinerja SOC; analis hanya melihat statistik akunnya sendiri. |
 | **Manajemen data** | Preview periode, ekspor ZIP standar berisi JSON/SQL, verifikasi password akun sebelum unduh, dan purge dari backup terverifikasi. |
 | **Profile** | Perbarui nama/email dan ubah password dengan password saat ini. Penghapusan akun sendiri dan lupa/reset password melalui email tidak tersedia. |
@@ -822,11 +861,21 @@ Analisis AI merupakan bantuan investigasi. Analis tetap memvalidasi bukti sebelu
 
 ## Role dan akses agent
 
+Kebijakan terbaru mencakup penonaktifan akun, sesi idle 15 menit, perlindungan admin, kepemilikan ACK sebelum ignore/notifikasi manual, serta perlindungan klik ganda/retry pengiriman Telegram. Zona sumber timestamp Wazuh tanpa offset dapat diatur di Settings → OpenSearch agar waktu WIB tetap tampil pada jam aslinya. Lihat [kebijakan keamanan dan alur penanganan alert](docs/README.md#akun-sesi-dan-kepemilikan-ack).
+
+Triage massal mempertahankan pilihan alert yang berhasil di-ACK pengguna. Ignore dan notifikasi massal hanya tersedia untuk pilihan ACK milik sendiri. Dialog notifikasi tunggal dan massal menyediakan tombol template yang sama, editor pesan bebas, penghitung karakter, dan lampiran evidence. **Custom / Pesan Bebas** menyediakan isian manual kosong. Admin mengelola template melalui **Settings → Template notifikasi**; edit atau hapus template tidak mengubah riwayat maupun pesan dalam antrean. Notifikasi massal menghasilkan **satu pesan teks gabungan per tujuan Telegram**, sedangkan gambar dikirim terpisah. Pesan dapat diedit per tujuan dan hanya memuat alert agent yang dipetakan kepadanya. Worker memeriksa kembali kepemilikan dan mencegah pengiriman ganda; riwayat tetap tercatat per alert.
+
+Ekspor SQL baru mengikuti database aktif: PostgreSQL menghasilkan SQL PostgreSQL, sedangkan MySQL/MariaDB menghasilkan SQL yang sesuai. File menyertakan transaksi dan, untuk PostgreSQL, penyesuaian sequence ID. Lihat [cara memulihkan backup SQL dan prasyaratnya](docs/README.md#backup-sql-dan-pemulihan).
+
+Payload log, IP, evidence/hasil AI, serta salinan sensitif dalam notifikasi dan catatan triage memakai **AES-256-GCM**. Metadata operasional tetap tersedia untuk agregasi SQL; pencarian IP/kata memakai blind index HMAC. Pembacaan CBC lama, migrasi plaintext, rotasi `APP_PREVIOUS_KEYS`, biaya indeks, dan batas perlindungan disk/hosting dijelaskan pada [panduan enkripsi data](docs/README.md#enkripsi-data-dan-pencarian). Verifikasi SSL Wazuh/OpenSearch dapat diatur true/false melalui installer dan Settings → OpenSearch & Alert.
+
 | Akses | Admin | Analis |
 | :--- | :--- | :--- |
 | Alert, dashboard, dan riwayat | Seluruh agent | Agent yang dipilih admin |
 | Data untuk analisis AI | Seluruh agent | Cakupan agent yang diizinkan |
-| ACK, ignore, Telegram, dan AI | Akses penuh | Sesuai checklist privilege |
+| Mengambil ACK | Alert yang belum dimiliki | Sesuai privilege dan cakupan agent |
+| Ignore dan Telegram manual | Hanya alert ACK milik sendiri | Hanya alert ACK milik sendiri, sesuai privilege |
+| Analisis AI | Seluruh agent | Sesuai privilege dan cakupan agent |
 | Settings, manajemen user, dan ekspor global | Ya | Tidak |
 | Log aktivitas sistem | Ya | Tidak |
 | Ubah Profile/password sendiri | Ya | Ya |
@@ -835,7 +884,7 @@ Di **Settings → Manajemen user**, klik **Tambah pengguna** atau menu **⋮ →
 
 Akun analis baru secara default hanya membaca data. **Tanpa pilihan agent, tidak ada alert yang dapat dilihat.** Identitas akses memakai source cluster dan Agent ID agar nama agent yang sama tidak menyamakan izin antar sumber. Pembatasan diperiksa di server untuk detail, API, operasi massal, dashboard, dan AI; cache serta ringkasan AI dipisahkan menurut kumpulan agent yang diizinkan.
 
-Analis dari instalasi sebelum pembaruan RBAC perlu diberi agent dan privilege oleh admin. Penjelasan lengkap tersedia pada [panduan akses agent](docs/OPERATIONS.md#role-privilege-dan-akses-agent).
+Analis dari instalasi sebelum pembaruan RBAC perlu diberi agent dan privilege oleh admin. Setelah cakupan atau privilege diubah, pengguna perlu masuk kembali sesuai kebijakan sesi.
 
 ## Alur data
 
@@ -854,6 +903,102 @@ Wazuh agents → Wazuh Manager → OpenSearch / Wazuh Indexer
 ```
 
 Fetch incremental memakai checkpoint, overlap, dan rekonsiliasi untuk alert yang terlambat terindeks. `OPENSEARCH_SIZE` menentukan ukuran halaman, bukan batas total alert. Fetch manual memeriksa seluruh halaman hari ini berdasarkan **Asia/Jakarta**; alert yang sudah tersimpan dilewati secara idempoten.
+
+<a id="keamanan"></a>
+
+## Cara kerja keamanan SIEM Salabim
+
+Versi 1.2 sudah menerapkan kontrol keamanan pada **akses pengguna, sesi, kepemilikan tindakan, penyimpanan payload, dan penelusuran aktivitas**. Perlindungan tersebut bekerja di sisi aplikasi. Keamanan koneksi, disk, sistem operasi, dan pengelolaan kunci tetap memerlukan konfigurasi deployment yang sesuai.
+
+### Alur pemeriksaan dari login sampai tindakan
+
+1. **Login:** aplikasi memvalidasi identitas, memeriksa hash password dan status aktif akun, serta membatasi percobaan login gagal berdasarkan kombinasi identitas dan IP. Registrasi publik tidak tersedia; akun disiapkan oleh administrator.
+2. **Pemeriksaan sesi:** pada request berikutnya, server memeriksa kembali akun aktif, versi sesi, waktu aktivitas terakhir, dan batas umur sesi. Perubahan password atau hak akses membuat sesi lama tidak berlaku.
+3. **Pemeriksaan data dan privilege:** policy serta query server menyaring akses berdasarkan role, cluster, dan Agent ID. Privilege membaca alert, ACK, ignore, notifikasi, dan AI diperiksa sesuai tindakan. Mengganti ID pada URL atau request tidak memberikan akses ke alert agent lain.
+4. **Klaim tindakan:** server memeriksa pemilik ACK di dalam transaksi sebelum memproses ignore/notifikasi. Untuk massal, server memeriksa seluruh pilihan. Worker mengecek kembali izin dan kondisi alert sebelum mengklaim pengiriman yang masih pending.
+5. **Pembacaan payload dan pencatatan hasil:** atribut sensitif didekripsi ketika dibutuhkan proses yang telah melewati pemeriksaan akses. Hasil tindakan masuk ke riwayat; pengiriman Telegram memiliki receipt dan ID operasi untuk penelusuran retry.
+
+Pembatasan ini diterapkan pada backend, termasuk detail, API, pilihan massal, dashboard, dan AI. Cache serta hasil yang bergantung pada cakupan akses dipisahkan sesuai pengguna/cakupan yang relevan. Tombol yang disembunyikan atau dinonaktifkan pada antarmuka membantu pengguna memahami izin; keputusan akses tetap dilakukan server.
+
+### Perlindungan akun dan sesi
+
+Password akun disimpan sebagai **hash melalui mekanisme Hash Laravel**. Password tidak disimpan sebagai teks yang dapat dibuka kembali. Password/token integrasi menggunakan enkripsi karena aplikasi perlu memakainya untuk menghubungi layanan tujuan.
+
+- **Akun nonaktif:** login ditolak dan sesi lama tidak dapat melanjutkan akses. Riwayat aktor tetap dipertahankan.
+- **Perubahan akses:** perubahan role, agent, privilege, password, atau status aktif mencabut versi sesi sebelumnya. Pengguna perlu masuk kembali.
+- **Sesi tidak aktif:** sesi berakhir setelah lebih dari **15 menit** tanpa aktivitas pengguna, serta memiliki batas absolut **8 jam**. Polling dan refresh otomatis tidak memperpanjangnya.
+- **Aktivitas antartab:** gerakan pointer, klik, sentuhan, pengetikan, dan scroll dilaporkan secara terbatas; tab pada sesi yang sama berbagi waktu aktivitas. Pelaporan berasal dari browser, sehingga idle timeout tidak membuktikan bahwa pengguna selalu hadir secara fisik.
+- **Perlindungan admin:** admin aktif terakhir tidak dapat diturunkan role-nya atau dinonaktifkan. Profil akun admin lain dilindungi dari edit oleh sesama admin.
+- **Cookie dan session store:** pengaturan HttpOnly, SameSite, Secure cookie, dan enkripsi session store mengikuti konfigurasi Laravel. Installer baru menyiapkan `SESSION_ENCRYPT=true`; instalasi lama perlu memeriksa konfigurasi efektifnya. Secure cookie memerlukan aplikasi diakses melalui HTTPS.
+
+Request web yang mengubah data menggunakan perlindungan CSRF Laravel. Validasi input membatasi tipe, panjang pesan, jumlah alert massal, dan file yang diterima. Query aplikasi menggunakan Eloquent/Query Builder dan parameter binding; query SQL khusus tetap harus ditinjau saat pengembangan fitur baru. Enkripsi merupakan perlindungan isi data, sedangkan pencegahan SQL injection tetap bergantung pada penggunaan query, validasi, dan hak database yang benar.
+
+Log mentah dan hasil AI diperlakukan sebagai data yang tidak tepercaya. Viewer JSON melakukan escaping sebelum menambahkan pewarnaan sintaks; nilai pada tabel dan ringkasan AI ditampilkan sebagai teks. Ini mengurangi risiko isi log diperlakukan sebagai HTML/script pada halaman tersebut. Validasi gambar memeriksa jenis dan ukuran upload; mekanisme ini tidak mencakup pemindaian antivirus atau content disarm and reconstruction.
+
+### Konsistensi penanganan alert dan notifikasi
+
+ACK menentukan siapa yang memegang tanggung jawab penanganan alert. Transaksi, lock, dan update bersyarat menjaga agar dua pengguna yang menekan ACK bersamaan tidak menjadi pemilik alert yang sama. Ignore dan notifikasi manual hanya dapat dilakukan pemilik ACK, termasuk bila pengguna adalah admin. Jika pemilik dinonaktifkan, alert ACK yang belum selesai dikembalikan ke NEW dan pelepasannya dicatat.
+
+Pengiriman manual mempunyai UUID operasi dan fingerprint pesan/lampiran. Request identik dengan UUID sama tidak membuat intent baru; perubahan payload pada UUID yang sudah digunakan ditolak. Pada massal, alert digabung menurut tujuan Telegram yang dipetakan ke identitas agent. Dua worker tidak boleh mengirim ulang grup yang sudah diklaim. Lock database dilepas sebelum panggilan jaringan agar proses lain tidak tertahan selama menunggu Telegram.
+
+Telegram tidak menyediakan idempotency key untuk menjamin pengiriman tepat satu kali di sisi layanan. Karena itu, timeout atau proses yang berhenti setelah klaim dapat menyisakan status **sending/unconfirmed**. Operator perlu memeriksa chat dan riwayat sebelum membuat operasi baru. Kontrol aplikasi mengutamakan pencegahan duplikasi; hasil jaringan yang tidak pasti tidak dianggap sebagai keberhasilan maupun alasan untuk mengirim ulang otomatis.
+
+### Enkripsi saat disimpan, dipakai, dan dikirim
+
+| Kondisi data | Perlindungan yang tersedia | Batas cakupan |
+| :--- | :--- | :--- |
+| **At rest — database** | AES-256-GCM untuk payload log, IP, hasil/evidence AI, pesan dan rincian notifikasi, alasan triage, insight, serta secret integrasi/password arsip yang terkait. Tag autentikasi memeriksa integritas ciphertext. | Enkripsi bersifat selektif. Nama agent, deskripsi rule, status, identitas sumber, waktu, serta metadata akun/audit tidak seluruhnya dienkripsi. |
+| **At rest — lampiran antrean** | Evidence notifikasi massal disimpan sementara dalam bentuk terenkripsi pada disk private, diverifikasi ketika dipakai, lalu dihapus setelah seluruh tujuan mencapai hasil akhir. | Operasi pending/sending dapat mempertahankan file. Salinan plaintext sementara diperlukan saat mengirim foto ke API dan dihapus setelah pemakaian. |
+| **In use — proses aplikasi** | Dekripsi dilakukan ketika atribut dibutuhkan; akses pengguna dan scope data diperiksa pada jalur aplikasi. Daftar/dashboard memakai metadata dan proyeksi kecil untuk mengurangi pembacaan payload. | Data yang sedang digunakan tetap berada dalam bentuk terbaca di RAM PHP, browser pengguna berizin, atau proses integrasi. Tidak ada klaim enkripsi RAM/TEE pada implementasi ini. |
+| **In transit — antar layanan** | OpenSearch mendukung verifikasi sertifikat; default instalasi baru true. Telegram menggunakan endpoint HTTPS bawaan. Aplikasi dan database dapat dikonfigurasi memakai TLS. | HTTPS aplikasi, TLS database, URL provider AI, dan CA yang dipercaya bergantung pada deployment. Enkripsi field tidak mengenkripsi seluruh koneksi jaringan. |
+| **Backup dan unduhan** | Field terenkripsi tetap berupa ciphertext dalam ekspor; checksum/fingerprint membantu verifikasi arsip dan sumber data. Unduhan diperiksa melalui autentikasi admin, password akun, dan tautan bertanda tangan berumur pendek. | ZIP unduhan merupakan arsip standar tanpa password arsip. Metadata ekspor tetap dapat terlihat; password akun saat mengunduh tidak menjadi enkripsi ZIP. |
+
+Pencarian data sensitif memakai **blind index HMAC-SHA256** sehingga server dapat mencocokkan IP atau kata utuh tanpa mendekripsi semua payload. Kunci indeks terpisah, `SIEM_BLIND_INDEX_KEY`, dipertahankan saat `APP_KEY` dirotasi. Indeks memperlihatkan kesamaan/frekuensi token dan menambah biaya penyimpanan; cakupan pencarian dibatasi jumlah token serta ukuran teks yang diindeks.
+
+Pembaca kompatibel mendukung ciphertext CBC lama yang terautentikasi dan kunci sebelumnya melalui `APP_PREVIOUS_KEYS`. Data plaintext lama dapat dibaca dalam mode migrasi; sesudah migrasi diverifikasi, nonaktifkan mode tersebut dengan `SIEM_ALLOW_LEGACY_PLAINTEXT=false`. Ciphertext rusak atau kunci salah menyebabkan kegagalan dekripsi dan tidak dialihkan menjadi plaintext. Kehilangan kunci yang masih diperlukan dapat membuat database maupun backup tidak dapat dibaca.
+
+Penguasaan hak tulis database tetap berbahaya: penyerang dapat mengubah role, izin, konfigurasi, atau metadata operasional yang tidak dienkripsi. Enkripsi payload tidak menggantikan perlindungan terhadap perubahan tersebut. Akses database dan akses proses aplikasi harus dibatasi bersama.
+
+### Batas kepercayaan integrasi, AI, dan audit
+
+**Wazuh/OpenSearch:** gunakan akun pembaca indeks dengan akses sesuai kebutuhan. Verifikasi sertifikat memeriksa identitas server; pilihan false hanya membantu diagnosis sementara pada jaringan tepercaya. Mengubah toggle tidak memperbaiki sertifikat dan tidak mengubah koneksi HTTP menjadi HTTPS.
+
+**AI dan Telegram:** evidence yang dipakai analisis dapat dikirim ke provider AI yang dipilih, sedangkan pesan/lampiran dikirim ke tujuan Telegram yang dikonfigurasi. Pembatasan agent dan pemetaan tujuan mengurangi risiko salah cakupan, tetapi administrator tetap menentukan layanan serta penerima yang dipercaya. Sanitasi evidence AI tidak menjamin seluruh informasi sensitif hilang. Batas request dan konkurensi mengendalikan pemakaian provider; kesimpulan AI tetap perlu divalidasi analis terhadap bukti asli.
+
+**Riwayat dan audit:** Log analis mencatat tindakan alert dan hasil notifikasi. Log aktivitas khusus admin mencatat akses akun, perubahan konfigurasi, template, status aktif, objek terkait, dan hasil berhasil/gagal, tanpa menyalin password/token atau isi template. Edit/hapus template tidak mengubah snapshot pesan dalam antrean/riwayat. Audit disimpan pada database aplikasi; administrator database yang menguasai hak tulis tetap dapat mengubah atau menghapusnya. Penyimpanan audit di luar host atau media immutable memerlukan infrastruktur tambahan.
+
+**Backup dan retensi:** purge memeriksa backup terverifikasi beserta fingerprint sumber; perubahan data setelah backup dapat menggagalkan purge. Ekspor mengikuti cakupan/periode yang dipilih dan tidak otomatis mencakup seluruh akun, konfigurasi, kunci, serta file aplikasi. Uji restore tetap diperlukan agar backup benar-benar dapat digunakan.
+
+### Cakupan kesiapan keamanan dan tugas operator
+
+Kontrol yang ada menangani risiko akses alert di luar izin, sesi yang tidak aktif, benturan penanganan antaruser, duplikasi operasi notifikasi, dan pembacaan payload database tanpa kunci. Verifikasi yang tersedia berupa pengujian regresi aplikasi, termasuk konkurensi, enkripsi/rotasi, akses agent, serta pemulihan SQL. Audit keamanan independen dan uji penetrasi memerlukan penilaian tersendiri; daftar fitur keamanan tidak menjadi sertifikasi atau skor keamanan deployment.
+
+Autentikasi bawaan masih berbasis email/password. MFA/2FA dan SSO belum menjadi fitur autentikasi bawaan pada versi ini. Pemisahan akses agent juga tidak memberikan isolasi database/host tersendiri untuk setiap organisasi. Kebutuhan tersebut perlu dipenuhi melalui pengembangan atau arsitektur deployment tambahan.
+
+Untuk menjalankan SIEM Salabim pada data operasional, operator perlu menyiapkan:
+
+- **HTTPS dan cookie yang sesuai:** sertifikat aplikasi, pengaturan proxy, serta Secure cookie untuk trafik browser.
+- **TLS koneksi database dan integrasi:** konfigurasi CA/hostname sesuai engine dan provider. Ketersediaan pengaturan SSL tidak berarti koneksi aktif sudah memakai TLS.
+- **Kunci dan akses server:** simpan backup kunci di lokasi terpisah, batasi pembaca `.env`/config cache, dan lindungi akun deployment. Penguasaan host aplikasi beserta kunci memungkinkan dekripsi data.
+- **Enkripsi disk dan backup infrastruktur:** TDE/enkripsi volume seperti BitLocker/LUKS tidak diaktifkan otomatis oleh aplikasi. Enkripsi field juga tidak menghapus sisa plaintext pada halaman disk atau backup lama.
+- **Privilege minimal dan pemeliharaan:** batasi akun database pada kebutuhan schema aplikasi, pisahkan akun migrasi bila diperlukan, batasi akses jaringan ke database/Indexer, perbarui dependency, dan pantau error serta job gagal.
+- **Kebijakan data:** tentukan retensi, lokasi backup, penerima Telegram, provider AI, dan pemisahan instalasi bila organisasi membutuhkan isolasi infrastruktur lebih ketat daripada scope agent.
+
+Setelah migrasi data lama selesai dan aplikasi produksi dilayani melalui HTTPS, contoh pengaturan dasar yang perlu diverifikasi adalah:
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+APP_CIPHER=AES-256-GCM
+SIEM_ALLOW_LEGACY_PLAINTEXT=false
+SESSION_ENCRYPT=true
+SESSION_SECURE_COOKIE=true
+SESSION_HTTP_ONLY=true
+SESSION_SAME_SITE=lax
+OPENSEARCH_VERIFY_SSL=true
+```
+
+Contoh ini tidak menyertakan kunci atau kredensial dan tidak mengonfigurasi TLS database, CA, maupun enkripsi disk. Pertahankan `APP_KEY` dan kunci indeks yang benar; muat ulang konfigurasi/proses setelah perubahan. Langkah migrasi, rotasi kunci, serta prasyarat restore tersedia pada [catatan keamanan dan upgrade 1.2](docs/README.md#enkripsi-data-dan-pencarian).
 
 
 <a id="instalasi"></a>
@@ -912,7 +1057,6 @@ Jalankan web server, buka URL aplikasi, lalu masukkan token pada **`/install`**.
 
 Koneksi database dan integrasi yang diaktifkan diuji sebelum `.env` diperbarui. Tanpa integrasi, pengguna tetap dapat login dan menjelajahi dashboard; data kosong sampai alert diimpor. Migrasi dijalankan tanpa seeder; secret OpenSearch, Telegram, dan AI disimpan terenkripsi di database. Kredensial database/SMTP berada di `.env` berizin privat. Installer dikunci setelah marker terakhir berhasil dibuat.
 
-Untuk kembali ke kondisi sebelum instalasi, gunakan `php artisan siem:reset-installation`. Perintah ini **menghapus seluruh tabel database aktif** dan membuat token baru untuk `/install`. Backup dahulu dan hentikan worker/scheduler selama reset; baca [panduan reset instalasi](docs/OPERATIONS.md#mengulang-instalasi-dari-awal) sebelum menjalankannya.
 
 Untuk pengembangan lokal, perintah berikut menjalankan server, worker, scheduler, dan Vite:
 
@@ -950,14 +1094,15 @@ Buka **Settings**, lalu klik kotak bagian yang diperlukan untuk membuka/menutup 
 2. **Ignore permanen:** tambah/hapus Rule ID yang dilewati pada impor baru.
 3. **Konfigurasi AI:** provider, endpoint, model, dan jadwal ringkasan.
 4. **Konfigurasi Telegram:** token bot, label/chat tujuan, pemetaan agent, notifikasi otomatis, dan batas harian.
-5. **Manajemen user:** tambah akun, menu ⋮, role, agent, dan privilege.
-6. **Manajemen data:** preview cakupan, backup, unduh, dan retensi.
+5. **Template notifikasi:** tambah, edit, nonaktifkan, dan hapus template untuk notifikasi tunggal maupun massal.
+6. **Manajemen user:** tambah akun, menu ⋮, status aktif, role, agent, dan privilege.
+7. **Manajemen data:** preview cakupan, backup, unduh, dan retensi.
 
 | Integrasi | Yang disiapkan | Panduan |
 | :--- | :--- | :--- |
-| **OpenSearch / Wazuh Indexer** | Host, akun pembaca indeks, pola indeks, dan ambang level | [OpenSearch dan impor alert](docs/OPERATIONS.md#opensearch--wazuh-indexer) |
-| **Telegram** | Token bot, Chat ID grup/pribadi, label tujuan, dan agent yang diizinkan | [Telegram](docs/OPERATIONS.md#telegram) |
-| **AI** | Provider cloud atau lokal, endpoint, model, dan API key jika diperlukan | [Konfigurasi dan cakupan AI](docs/OPERATIONS.md#analisis-ai) |
+| **OpenSearch / Wazuh Indexer** | Host, akun pembaca indeks, pola indeks, dan ambang level | [OpenSearch dan impor alert](docs/README.md#integrasi-wazuh-waktu-dan-ssl) |
+| **Telegram** | Token bot, Chat ID grup/pribadi, label tujuan, dan agent yang diizinkan | [Telegram](docs/README.md#notifikasi-telegram-dan-template) |
+| **AI** | Provider cloud atau lokal, endpoint, model, dan API key jika diperlukan | [Konfigurasi dan cakupan AI](docs/README.md#analisis-ai) |
 
 Password dan token integrasi disimpan terenkripsi. Kosongkan kolom password/token untuk mempertahankan nilai yang sudah tersimpan. Tes bot Telegram memeriksa koneksi; tombol **Kirim pesan tes** mengirim pesan ke tujuan yang dipilih.
 
@@ -971,14 +1116,14 @@ Untuk Laragon atau ketika web server sudah berjalan, gunakan satu baris berikut 
 npx concurrently --names=queue,exports,scheduler --kill-others "php artisan queue:work --queue=ai,default --sleep=3 --tries=2 --timeout=1800" "php artisan queue:work --queue=exports --sleep=3 --tries=3 --timeout=1800" "php artisan schedule:work"
 ```
 
-Gunakan satu scheduler per instalasi. Untuk pengembangan yang sekaligus menjalankan web server dan Vite, gunakan `composer run dev`. Panduan layanan permanen tersedia pada [deployment dan operasional](docs/OPERATIONS.md#deployment-dan-operasional).
+Gunakan satu scheduler per instalasi. Untuk pengembangan yang sekaligus menjalankan web server dan Vite, gunakan `composer run dev`. Lihat juga [catatan upgrade dan pengoperasian worker](docs/README.md#upgrade-dan-operasional).
 
 ### Catatan penggunaan
 
 - **Notifikasi otomatis** hanya memproses alert baru yang diimpor sejak fitur diaktifkan. Alert lama tidak dikirim ulang sebagai backlog. Pengiriman mengikuti pemetaan agent dan batas harian di Settings.
 - **Ignore permanen** menghentikan impor baru berdasarkan Rule ID, tanpa menulis ulang atau menghapus alert lama.
 - **Ekspor** diproses worker `exports`. Unduhan tersedia setelah verifikasi selesai; pengguna memasukkan password akun sebelum memperoleh tautan unduh. ZIP hasil unduhan merupakan arsip standar tanpa enkripsi password arsip.
-- **Password akun** diubah melalui **Profile → Kata sandi** dengan password saat ini. Pemulihan melalui `/forgot-password` dan `/reset-password` telah dihapus. Admin dapat mengganti password akun lain melalui Manajemen user.
+- **Password akun** diubah melalui **Profile → Kata sandi** dengan password saat ini. Pemulihan melalui `/forgot-password` dan `/reset-password` telah dihapus. Admin dapat mengganti password akun analis melalui Manajemen user; profil akun admin lain tetap dilindungi.
 
 <a id="panduan"></a>
 
@@ -986,14 +1131,14 @@ Gunakan satu scheduler per instalasi. Untuk pengembangan yang sekaligus menjalan
 
 | Kebutuhan | Dokumentasi |
 | :--- | :--- |
-| Filter impor, tanggal, level, dan fetch manual | [OpenSearch dan impor alert](docs/OPERATIONS.md#opensearch--wazuh-indexer) |
-| Role, privilege, dan pembatasan agent | [Akses agent](docs/OPERATIONS.md#role-privilege-dan-akses-agent) |
-| Data yang dikirim ke AI | [Analisis AI](docs/OPERATIONS.md#analisis-ai) |
-| Backup, unduh, dan retensi | [Manajemen data](docs/OPERATIONS.md#backup-dan-penghapusan-data) |
-| Deployment dengan worker dan scheduler | [Deployment](docs/OPERATIONS.md#deployment-dan-operasional) |
-| Mengulang instalasi | [Reset instalasi](docs/OPERATIONS.md#mengulang-instalasi-dari-awal) |
-| Pengujian | [Menjalankan tes](docs/OPERATIONS.md#pengujian) |
-| Persiapan commit/push | [Panduan Git](docs/OPERATIONS.md#sebelum-commit-dan-push) |
+| Cara kerja dan batas perlindungan keamanan | [Keamanan SIEM Salabim](#keamanan) |
+| Filter impor, tanggal, level, dan fetch manual | [OpenSearch dan impor alert](docs/README.md#integrasi-wazuh-waktu-dan-ssl) |
+| Role, privilege, dan pembatasan agent | [Akses agent](#akses) |
+| Data yang dikirim ke AI | [Analisis AI](docs/README.md#analisis-ai) |
+| Backup, unduh, dan retensi | [Manajemen data](docs/README.md#backup-sql-dan-pemulihan) |
+| Deployment dengan worker dan scheduler | [Deployment](docs/README.md#upgrade-dan-operasional) |
+| Pengujian | [Menjalankan tes](docs/README.md#pengujian) |
+| Persiapan commit/push | [Panduan Git](#kontribusi) |
 
 ## Pertanyaan yang sering muncul
 
@@ -1007,12 +1152,19 @@ Gunakan satu scheduler per instalasi. Untuk pengembangan yang sekaligus menjalan
 
 <a id="kontribusi"></a>
 
-## Kontribusi
+## Masukan, laporan bug, dan kontributor SIEM Salabim
 
-- [Laporkan bug](https://github.com/SundaXploit/siem_salabim/issues/new?template=bug_report.yml) dengan langkah reproduksi dan perilaku yang diharapkan.
-- [Usulkan fitur](https://github.com/SundaXploit/siem_salabim/issues/new?template=feature_request.yml) berdasarkan kebutuhan operasional.
-- Fork repository, buat branch, dan jalankan pengujian yang relevan sebelum membuka pull request.
+Saya terbuka terhadap masukan, laporan bug, ide pengembangan, dan siapa saja yang ingin bergabung sebagai **tim kontributor SIEM Salabim**. Pengalaman Anda saat memakai aplikasi untuk monitoring Wazuh atau pekerjaan SOC dapat membantu menentukan perbaikan berikutnya. Kontribusi bisa berupa kode, dokumentasi, pengujian, perbaikan tampilan, atau contoh alur kerja dengan data uji.
 
-Gunakan data yang telah disanitasi pada laporan publik. Jangan menyertakan password, token, `.env`, API key, atau raw log sensitif.
+| Ingin membantu | Cara berpartisipasi |
+| :--- | :--- |
+| **Melaporkan bug** | Buka [form laporan bug](https://github.com/SundaXploit/siem_salabim/issues/new?template=bug_report.yml). Sertakan versi aplikasi, halaman terdampak, langkah reproduksi, hasil aktual/yang diharapkan, serta lingkungan PHP/database/browser yang relevan. |
+| **Memberi masukan atau ide fitur** | Gunakan [form usulan fitur](https://github.com/SundaXploit/siem_salabim/issues/new?template=feature_request.yml). Jelaskan kebutuhan pengguna, contoh penggunaan, dan manfaatnya bagi operasi SOC. |
+| **Memperbaiki kode atau dokumentasi** | Fork repository, buat branch, kerjakan satu perubahan yang jelas, lalu buka [pull request](https://github.com/SundaXploit/siem_salabim/pulls) dengan penjelasan serta cara verifikasinya. |
+| **Bergabung sebagai kontributor** | Buka [issue baru](https://github.com/SundaXploit/siem_salabim/issues/new) berjudul **[Kontributor] Bidang kontribusi Anda**. Perkenalkan minat atau pengalaman, area yang ingin dibantu, dan ide tugas awal. Anda juga boleh memulai dari perbaikan kecil. |
+
+Untuk perubahan kode, jalankan tes yang relevan di lingkungan pengujian. Gunakan `npm test` untuk JavaScript dan `npm run build` jika antarmuka berubah. Pengujian PHP dapat difokuskan dengan `php artisan test --filter NamaTest`; pastikan driver PDO dan database pengujian terpisah dari data operasional.
+
+Gunakan data yang telah disanitasi pada laporan publik. Hapus password, bot token, `.env`, API key, identitas pribadi, dan raw log insiden sensitif dari teks maupun screenshot. Untuk temuan keamanan yang belum aman dipublikasikan, minta kanal pelaporan privat melalui issue tanpa menyertakan detail eksploitasi atau data rahasia.
 
 [Repository](https://github.com/SundaXploit/siem_salabim) · [Issues](https://github.com/SundaXploit/siem_salabim/issues) · [Pull requests](https://github.com/SundaXploit/siem_salabim/pulls) · [Kembali ke atas](#top)

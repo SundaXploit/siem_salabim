@@ -6,11 +6,11 @@ use App\Exceptions\AiAnalysisException;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Services\AlertAiAnalysisService;
+use App\Services\AlertDateFilter;
 use App\Services\AlertIngestionCoordinator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -32,6 +32,7 @@ class AlertController extends Controller
 
     public function index(Request $request)
     {
+        $request->validate(['search' => ['nullable', 'string', 'max:200'], 'agent' => ['nullable', 'string', 'max:255']]);
         // Keep filter URLs canonical. Empty GET controls must not look like
         // active filters or survive in copied/bookmarked search URLs.
         $cleanQuery = collect($request->query())
@@ -67,7 +68,7 @@ class AlertController extends Controller
         ];
 
         // ── Alert list with eager-loaded triage users ─────────────────────
-        $query = Alert::visibleTo($request->user())->with(['triages.user']);
+        $query = Alert::visibleTo($request->user())->select(Alert::LIST_COLUMNS)->with(['triages.user', 'acknowledgedBy']);
 
         // Default: only show active (non-ignored)
         if (! $request->has('status') || $request->status === '') {
@@ -82,40 +83,9 @@ class AlertController extends Controller
         if ($request->filled('agent')) {
             $query->where('agent_name', 'like', '%'.$request->agent.'%');
         }
-        if ($request->filled('date_from')) {
-            $query->where('first_seen_at', '>=', $request->date_from.' 00:00:00');
-        }
-        if ($request->filled('date_to')) {
-            $query->where('first_seen_at', '<=', $request->date_to.' 23:59:59');
-        }
+        AlertDateFilter::apply($query, $request);
         if ($request->filled('search')) {
-            $rawDataSearch = match (DB::connection()->getDriverName()) {
-                'mysql', 'mariadb' => 'CAST(raw_data AS CHAR) LIKE ?',
-                // PostgreSQL cannot apply LIKE directly to json/jsonb, while
-                // TEXT is also the portable representation on SQLite.
-                default => 'CAST(raw_data AS TEXT) LIKE ?',
-            };
-            $terms = collect(preg_split('/\s+/u', trim((string) $request->search), -1, PREG_SPLIT_NO_EMPTY))
-                ->take(8);
-
-            foreach ($terms as $term) {
-                $like = "%{$term}%";
-
-                $query->where(function ($q) use ($term, $like, $rawDataSearch) {
-                    $q->where('rule_description', 'like', $like)
-                        ->orWhere('src_ip', 'like', $like)
-                        ->orWhere('dst_ip', 'like', $like)
-                        ->orWhere('agent_name', 'like', $like)
-                        ->orWhere('rule_id', 'like', $like)
-                        ->orWhere('wazuh_alert_id', 'like', $like)
-                        ->orWhere('status', 'like', $like)
-                        ->orWhereRaw($rawDataSearch, [$like]);
-
-                    if (ctype_digit($term)) {
-                        $q->orWhere('id', (int) $term);
-                    }
-                });
-            }
+            $query->searchTerms((string) $request->search);
         }
 
         $perPage = in_array((int) $request->input('per_page', 25), [25, 50, 100], true)
@@ -132,7 +102,7 @@ class AlertController extends Controller
 
     public function show(Alert $alert)
     {
-        $alert->load(['triages.user', 'notificationLogs.user', 'latestAiAnalysis']);
+        $alert->load(['triages.user', 'notificationLogs.user', 'latestAiAnalysis', 'acknowledgedBy']);
         $telegramLabels = collect(Configuration::getTelegramDestinations())
             ->filter(fn ($destination) => is_array($destination)
                 && is_string($destination['chat_id'] ?? null)

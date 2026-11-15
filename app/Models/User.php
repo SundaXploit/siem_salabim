@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 
 class User extends Authenticatable
 {
@@ -18,7 +19,7 @@ class User extends Authenticatable
         'alerts.analyze' => 'Jalankan analisis AI',
     ];
 
-    protected $attributes = ['role' => 'analyst', 'allowed_agents' => '[]', 'privileges' => '[]'];
+    protected $attributes = ['role' => 'analyst', 'is_active' => true, 'allowed_agents' => '[]', 'privileges' => '[]'];
 
     protected $fillable = [
         'name',
@@ -32,6 +33,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'session_version',
     ];
 
     protected function casts(): array
@@ -39,14 +41,44 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
             'allowed_agents' => 'array',
             'privileges' => 'array',
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::creating(function (User $user): void {
+            $user->session_version = Str::random(64);
+        });
+        static::updating(function (User $user): void {
+            if ($user->isDirty(['password', 'is_active', 'role', 'allowed_agents', 'privileges'])) {
+                $user->session_version = Str::random(64);
+                $user->remember_token = null;
+            }
+        });
+    }
+
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
+    }
+
+    public static function lockForAction(int $id): self
+    {
+        $model = new static;
+        $connection = $model->getConnection();
+        if ($connection->transactionLevel() === 0) {
+            throw new \LogicException('Kunci tindakan pengguna harus berada dalam transaksi.');
+        }
+        if ($connection->getDriverName() === 'sqlite') {
+            // SQLite ignores FOR UPDATE. Reserve its writer before reading to
+            // avoid two DEFERRED snapshots racing to upgrade their read locks.
+            $connection->table($model->getTable())->where('id', $id)->update(['id' => $connection->raw('id')]);
+        }
+
+        return static::whereKey($id)->lockForUpdate()->firstOrFail();
     }
 
     public function isAnalyst(): bool
@@ -56,8 +88,8 @@ class User extends Authenticatable
 
     public function hasPrivilege(string $privilege): bool
     {
-        return $this->isAdmin() || ($this->isAnalyst()
-            && ($privilege === 'alerts.view' || in_array($privilege, $this->privileges ?? [], true)));
+        return $this->is_active && ($this->isAdmin() || ($this->isAnalyst()
+            && ($privilege === 'alerts.view' || in_array($privilege, $this->privileges ?? [], true))));
     }
 
     public function agentAccessKeys(): array

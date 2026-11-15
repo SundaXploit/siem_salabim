@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedString;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -40,7 +41,7 @@ class DataExport extends Model
     ];
 
     protected $casts = [
-        'archive_password' => 'encrypted',
+        'archive_password' => EncryptedString::class,
         'period_start' => 'datetime',
         'period_end' => 'datetime',
         'source_snapshot_at' => 'datetime',

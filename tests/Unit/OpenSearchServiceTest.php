@@ -992,6 +992,8 @@ class OpenSearchServiceTest extends TestCase
             {
                 $this->ignoredRuleIds = $this->rules;
             }
+
+            protected function refreshConnectionSettings(): void {}
         };
     }
 

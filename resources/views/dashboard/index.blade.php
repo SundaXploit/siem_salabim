@@ -12,6 +12,9 @@
 
 @section('content')
 
+<div class="alert-msg error" role="alert" x-data="{ tlsError: @js($ingestionStatus['tls_error'] ?? null) }"
+     @siem-ingestion.window="tlsError = $event.detail?.tls_error ?? null" x-show="tlsError" x-cloak x-text="tlsError"></div>
+
 {{-- Stats Cards --}}
 <div class="stats-grid" x-data="alertStats()" data-alert-stats="{{ json_encode($stats) }}"
      @alerts-updated.window="stats = $event.detail">
@@ -46,8 +49,9 @@
                 <div style="flex:1; min-width:200px;">
                     <label class="form-label" for="dashboard-index-search">Cari event</label>
                     <input id="dashboard-index-search" type="text" name="search" class="form-input search-input"
-                        placeholder="Cari ID, rule, IP, agent, atau isi event..."
-                        autocomplete="off"
+                        placeholder="Cari ID, rule, IP lengkap, agent, atau kata log..."
+                        autocomplete="off" maxlength="200"
+                        title="{{ config('data_security.search_max_tokens') > 0 ? 'Isi log dicari per kata utuh; gunakan IP lengkap. Log panjang dapat terindeks sebagian.' : 'Indeks kata log nonaktif. Cari metadata atau IP lengkap pada kolom sumber/tujuan.' }}"
                         @input.debounce.700ms="submitSearch($el)"
                         value="{{ request('search') }}">
                 </div>
@@ -72,11 +76,11 @@
                     </select>
                 </div>
                 <div>
-                    <label class="form-label" for="dashboard-index-date_from">Dari Tanggal</label>
+                    <label class="form-label" for="dashboard-index-date_from">Dari tanggal (WIB)</label>
                     <input id="dashboard-index-date_from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.requestSubmit()">
                 </div>
                 <div>
-                    <label class="form-label" for="dashboard-index-date_to">Sampai</label>
+                    <label class="form-label" for="dashboard-index-date_to">Sampai (WIB)</label>
                     <input id="dashboard-index-date_to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.requestSubmit()">
                 </div>
                 <div style="display:flex; gap:var(--spacing-8); align-items:flex-end;">
@@ -97,7 +101,9 @@
 </div>
 
 {{-- Alert Table --}}
-<div class="card" x-data="alertTable(@js(route('alerts.bulk-triage', [], false)))">
+<div class="card" x-data="alertTable(@js(route('alerts.bulk-triage', [], false)))"
+     @bulk-notification-closed.window="bulkAction = null"
+     @bulk-notification-sent.window="bulkMessage = $event.detail.message; clearSelection(); bulkMode = false; refreshData()">
     <div class="card-header">
         <span class="card-title">Daftar alert</span>
         <span class="text-muted text-sm" style="margin-left:var(--spacing-8);" id="alert-total-count">
@@ -119,7 +125,8 @@
         <div class="bulk-triage-summary">
             <strong>Triage massal</strong>
             <span class="text-muted text-sm" aria-live="polite"
-                  x-text="selectedIds.length ? `${selectedIds.length} alert dipilih pada halaman ini` : 'Pilih alert melalui checkbox. Maksimal 100 per halaman.'"></span>
+                  x-text="selectedIds.length ? `${selectedIds.length} alert dipilih` : 'Pilih alert melalui checkbox. Maksimal 100 per halaman.'"></span>
+            <span class="text-muted text-sm" x-show="selectedIds.length && !allSelectedOwned">ACK massal terlebih dahulu. Ignore/notifikasi hanya untuk alert ACK milik Anda.</span>
         </div>
         <div class="bulk-triage-actions">
             <button type="button" class="btn btn-ghost btn-sm" @click="cancelBulkMode()"
@@ -132,13 +139,19 @@
             </form>
             @can('alerts.acknowledge')
             <button type="button" class="btn btn-primary btn-sm" @click="openBulk('acknowledge')"
-                    :disabled="!selectedIds.length || submitting || isRefreshing">ACK massal
+                    :disabled="!selectedAckable || submitting || isRefreshing" data-bulk-ack>ACK massal
             </button>
             @endcan
             @can('alerts.ignore')
             <button type="button" class="btn btn-danger btn-sm" @click="openBulk('ignore')"
-                    :disabled="!selectedIds.length || submitting || isRefreshing">
+                    :disabled="!allSelectedOwned || submitting || isRefreshing" data-bulk-ignore>
                 <i data-lucide="x" aria-hidden="true"></i> Abaikan massal
+            </button>
+            @endcan
+            @can('alerts.notify')
+            <button type="button" class="btn btn-secondary btn-sm" @click="openBulk('notify')"
+                    :disabled="!allSelectedOwned || submitting || isRefreshing" data-bulk-notify>
+                <i data-lucide="send" aria-hidden="true"></i> Notifikasi massal
             </button>
             @endcan
         </div>
@@ -149,10 +162,10 @@
             @cancel.prevent="closeBulk()">
         <form @submit.prevent="submitBulk()" :aria-busy="submitting.toString()">
             <h2 class="modal-title" id="bulk-triage-title"
-                x-text="bulkAction === 'ignore' ? 'Abaikan alert terpilih' : 'ACK alert terpilih'"></h2>
-            <p class="text-sm" x-text="`${selectedIds.length} alert dipilih pada halaman ini.`"></p>
+                x-text="bulkAction === 'notify' ? 'Notifikasi alert terpilih' : (bulkAction === 'ignore' ? 'Abaikan alert terpilih' : 'ACK alert terpilih')"></h2>
+            <p class="text-sm" x-text="`${selectedIds.length} alert dipilih.`"></p>
             <p class="text-muted text-sm bulk-triage-help"
-               x-text="bulkAction === 'ignore' ? 'Alasan yang sama akan dicatat untuk setiap alert. Alert yang sudah diabaikan akan dilewati.' : 'Hanya alert berstatus NEW yang di-ACK. Alert yang sudah ditangani akan dilewati.'"></p>
+               x-text="bulkAction === 'notify' ? 'Satu pesan gabungan per tujuan Telegram, berisi alert dari agent yang dipetakan ke tujuan itu. Semua alert harus ACK milik Anda. Worker memeriksa kembali kepemilikan sebelum mengirim.' : (bulkAction === 'ignore' ? 'Semua alert yang diabaikan harus sudah Anda ACK. Alert milik pengguna lain tidak dapat diproses.' : 'ACK pertama menentukan pemilik. Alert milik pengguna lain akan dilewati.')"></p>
             <div class="form-group" :hidden="bulkAction !== 'ignore'">
                 <label class="form-label" for="bulk-triage-reason">Alasan mengabaikan *</label>
                 <textarea id="bulk-triage-reason" class="form-textarea" rows="4" x-ref="bulkReason"
@@ -164,10 +177,16 @@
                 <button type="button" class="btn btn-ghost" @click="closeBulk()" :disabled="submitting">Batal</button>
                 <button type="submit" class="btn" x-ref="bulkConfirm"
                         :class="bulkAction === 'ignore' ? 'btn-danger' : 'btn-primary'" :disabled="submitting"
-                        x-text="submitting ? 'Memproses…' : (bulkAction === 'ignore' ? 'Abaikan' : 'ACK') + ` ${selectedIds.length} alert`"></button>
+                        x-text="submitting ? 'Memproses…' : (bulkAction === 'notify' ? 'Kirim notifikasi' : (bulkAction === 'ignore' ? 'Abaikan' : 'ACK')) + ` ${selectedIds.length} alert`"></button>
             </div>
         </form>
     </dialog>
+    @can('alerts.notify')
+    <div x-data="notificationComposer(@js(['bulk' => true, 'asyncSubmit' => true, 'templateUrl' => route('alerts.bulk-notify-preview'), 'sendUrl' => route('alerts.bulk-notify'), 'operationId' => (string) Illuminate\Support\Str::uuid()]))"
+         @open-bulk-notification.window="openNotifModal($event.detail.alertIds)">
+        @include('partials.notification-dialog', ['notificationAction' => route('alerts.bulk-notify'), 'notificationTitle' => 'Kirim notifikasi Telegram — triage massal', 'bulkNotification' => true])
+    </div>
+    @endcan
     @endif
     <p class="bulk-triage-feedback bulk-triage-error" x-show="refreshError" x-text="refreshError" role="alert" x-cloak></p>
 
@@ -207,6 +226,8 @@
                                    disabled title="Alert sudah diabaikan"
                                @else
                                    data-triage-id="{{ $alert->id }}" x-model="selectedIds"
+                                   data-ack-owned="{{ $alert->isAcknowledgedBy(auth()->user()) ? '1' : '0' }}"
+                                   data-ackable="{{ $alert->status === 'new' || ($alert->status === 'acknowledged' && !$alert->acknowledged_by_user_id) ? '1' : '0' }}"
                                    :disabled="submitting || isRefreshing"
                                @endif></label>
                     </td>
@@ -230,14 +251,15 @@
                     </td>
                     <td>
                         <span class="table-status {{ $alert->status_badge_class }}">{{ $alert->status_label }}</span>
+                        @if($alert->acknowledgedBy)<small class="text-muted">{{ $alert->acknowledgedBy->name }}</small>@endif
                     </td>
                     <td>
                         {{-- ══════ Per-row Alpine component ══════ --}}
                         <div class="table-actions"
-                             x-data="notifModal({{ $alert->id }})">
+                             x-data="notificationComposer(@js(['templateUrl' => route('alerts.template', $alert), 'sendUrl' => route('alerts.notify', $alert), 'operationId' => (string) Illuminate\Support\Str::uuid()]))">
 
                             {{-- ACK --}}
-                            @if($alert->status === 'new' && auth()->user()->can('acknowledge', $alert))
+                            @if(($alert->status === 'new' || ($alert->status === 'acknowledged' && !$alert->acknowledged_by_user_id)) && auth()->user()->can('acknowledge', $alert))
                             <form method="POST" action="{{ route('alerts.acknowledge', $alert) }}" style="display:inline;">
                                 @csrf
                                 <button type="submit" class="table-action" title="Acknowledge alert" aria-label="Acknowledge alert"><i data-lucide="check" aria-hidden="true"></i></button>
@@ -277,90 +299,7 @@
                             </button>
 
                             {{-- NOTIF MODAL --}}
-                            <div class="modal-backdrop" x-show="showNotifModal" x-cloak @click.self="showNotifModal=false" @keydown.escape.window="showNotifModal=false" role="dialog" aria-modal="true" aria-label="Kirim notifikasi">
-                                <div class="modal-box" style="max-width:700px;" @click.stop>
-                                    <div class="modal-title"><i data-lucide="send" aria-hidden="true"></i> Kirim notifikasi — alert #{{ $alert->id }}</div>
-
-                                    {{-- Loading --}}
-                                    <div x-show="loading" style="text-align:center; padding:var(--spacing-32); color:var(--text-muted);">
-                                        <i class="loading-state-icon" data-lucide="clock-3" aria-hidden="true"></i>
-                                        Memuat template...
-                                    </div>
-
-                                    <form method="POST" action="{{ route('alerts.notify', $alert) }}" x-show="!loading" enctype="multipart/form-data">
-                                        @csrf
-                    <div class="form-group">
-                        <span class="form-label">Tujuan otomatis</span>
-                        <p class="text-sm" x-show="destinations.length" x-text="destinations.join(', ')"></p>
-                        <p class="form-error" x-show="!destinations.length" x-text="notificationError || 'Belum ada tujuan untuk agent ini. Hubungi admin untuk mengatur Settings → Telegram.'"></p>
-                    </div>
-
-
-                                        {{-- ── Template Selector ── --}}
-                                        <div class="form-group">
-                                            <label class="form-label">Pilih template</label>
-                                            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:var(--spacing-8);">
-                                                <template x-for="tpl in templates" :key="tpl.id">
-                                                    <button type="button"
-                                                        class="btn btn-ghost btn-sm"
-                                                        :class="selectedTplId === tpl.id ? 'active-template' : ''"
-                                                        :style="selectedTplId === tpl.id
-                                                            ? 'border-color:var(--accent); background:var(--color-accent-soft); color:var(--accent);'
-                                                            : ''"
-                                                        @click="selectTemplate(tpl)"
-                                                        style="justify-content:flex-start; text-align:left; white-space:normal; height:auto; padding:var(--spacing-8) var(--spacing-12); line-height:var(--ina-line-height-body-small);">
-                                                        <span x-text="tpl.name"
-                                                              style="font-size:var(--text-sm);line-height:var(--leading-sm);"></span>
-                                                    </button>
-                                                </template>
-                                            </div>
-                                        </div>
-
-                                        {{-- ── Message Editor ── --}}
-                                        <div class="form-group">
-                                            <label class="form-label" style="display:flex; justify-content:space-between;">
-                                                <span>Pesan (dapat diedit bebas)</span>
-                                                <span style="font-size:var(--text-xs); color:var(--text-muted); line-height:var(--leading-xs);" x-text="message.length + ' karakter'"></span>
-                                            </label>
-                                            <textarea name="message" class="form-textarea"
-                                                      rows="16"
-                                                      x-model="message"
-                                                      placeholder="Pilih template di atas, lalu edit sesuai kebutuhan..."
-                                                      required style="font-size:var(--text-sm); line-height:var(--leading-sm);"></textarea>
-                                            <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">
-                                                Mendukung HTML tag Telegram: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a href&gt;
-                                            </div>
-                                        </div>
-
-                                        {{-- ── Evidence Area ── --}}
-                                        <div class="form-group" style="margin-top:calc(-1 * var(--spacing-8)); margin-bottom:var(--spacing-24);">
-                                            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
-                                                <span>Lampirkan evidence (opsional)</span>
-                                                <button type="button" class="btn btn-ghost btn-sm" @click="addEvidence()" style="color:var(--accent);">+ Tambah</button>
-                                            </label>
-                                            <div style="display:flex; flex-direction:column; gap:var(--spacing-8);">
-                                                <template x-for="(ev, index) in evidences" :key="ev.id">
-                                                    <div style="display:flex; gap:var(--spacing-8); align-items:center;">
-                                                        <input type="file" name="evidence[]" class="form-input" style="padding:var(--spacing-8); background:var(--bg-body); border-style:dashed; flex:1;" accept="image/*">
-                                                        <button type="button" class="btn btn-danger btn-sm" x-show="evidences.length > 1" @click="removeEvidence(index)" title="Hapus" aria-label="Hapus evidence"><i data-lucide="x" aria-hidden="true"></i></button>
-                                                    </div>
-                                                </template>
-                                            </div>
-                                            <div class="text-muted text-sm" style="margin-top:var(--spacing-4);">
-                                                Gambar akan dikirim secara berurutan setelah pesan notifikasi.
-                                            </div>
-                                        </div>
-
-                                        <div class="flex gap-2" style="justify-content:flex-end;">
-                                            <button type="button" class="btn btn-ghost" @click="showNotifModal=false">Batal</button>
-                                            <button type="submit" class="btn btn-primary"
-                                                    :disabled="destinations.length === 0 || loading">Kirim ke Telegram
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-
+                            @include('partials.notification-dialog', ['notificationAction' => route('alerts.notify', $alert), 'notificationTitle' => 'Kirim notifikasi Telegram — alert #'.$alert->id])
                             {{-- Detail --}}
                             @endcan
                             <a href="{{ route('alerts.show', $alert) }}" class="table-action" title="Lihat detail alert" aria-label="Lihat detail alert"><i data-lucide="eye" aria-hidden="true"></i></a>
@@ -440,55 +379,5 @@ function liveAlertFilters() {
 
 // ── Auto-refresh countdown ──────────────────────────────────────────
 // ── Notification modal per row ──────────────────────────────────────
-function notifModal(alertId) {
-    return {
-        showIgnoreModal: false,
-        showNotifModal:  false,
-        loading:         false,
-        destinations: [],
-        notificationError: '',
-
-        templates:    [],
-        selectedTplId: null,
-        message:      '',
-        evidences:    [{id: Date.now()}],
-
-        async openNotifModal() {
-            this.showNotifModal = true;
-
-            this.destinations = [];
-            this.notificationError = '';
-            this.loading = true;
-            try {
-                const res  = await fetch(`/alerts/${alertId}/template`);
-                if (!res.ok || res.redirected) throw new Error('Tidak dapat memuat tujuan notifikasi.');
-                const data = await res.json();
-
-                this.templates = data.templates || [];
-                this.destinations = data.destinations || [];
-                if (!this.message) {
-                    if (this.templates.length) this.selectTemplate(this.templates[0]);
-                    else this.message = data.default_message || '';
-                }
-            } catch(e) {
-                this.notificationError = 'Tujuan notifikasi belum dapat dimuat. Coba buka kembali.';
-            }
-            this.loading = false;
-        },
-
-        selectTemplate(tpl) {
-            this.selectedTplId = tpl.id;
-            this.message       = tpl.body;
-        },
-
-        addEvidence() {
-            this.evidences.push({id: Date.now()});
-        },
-
-        removeEvidence(index) {
-            this.evidences.splice(index, 1);
-        }
-    }
-}
 </script>
 @endpush

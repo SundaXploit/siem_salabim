@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedJson;
+use App\Casts\EncryptedString;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -23,10 +25,11 @@ class AlertAiAnalysis extends Model
 
     protected $casts = [
         'confidence' => 'integer',
-        'supporting_indicators' => 'array',
-        'legitimate_indicators' => 'array',
-        'recommended_checks' => 'array',
-        'limitations' => 'array',
+        'summary' => EncryptedString::class,
+        'supporting_indicators' => EncryptedJson::class,
+        'legitimate_indicators' => EncryptedJson::class,
+        'recommended_checks' => EncryptedJson::class,
+        'limitations' => EncryptedJson::class,
         'duration_ms' => 'integer',
         'generated_at' => 'datetime',
     ];

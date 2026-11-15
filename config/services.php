@@ -10,7 +10,8 @@ return [
         // Stable logical name for the source cluster. Do not derive this from
         // the host: endpoints can change while the source identity stays put.
         'source_cluster' => env('OPENSEARCH_SOURCE_CLUSTER', 'wazuh-primary'),
-        'verify_ssl' => filter_var(env('OPENSEARCH_VERIFY_SSL', true), FILTER_VALIDATE_BOOL),
+        'timezone' => env('OPENSEARCH_TIMEZONE', 'UTC'),
+        'verify_ssl' => filter_var(env('OPENSEARCH_VERIFY_SSL', true), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true,
         'min_level' => (int) env('OPENSEARCH_MIN_LEVEL', 12),
         'size' => (int) env('OPENSEARCH_SIZE', 100),
         // Pace scroll pages so a manual backfill does not send a tight burst.
@@ -97,6 +98,8 @@ return [
     |
     */
     'ai' => [
+        'max_concurrent_requests' => (int) env('AI_MAX_CONCURRENT_REQUESTS', 3),
+        'requests_per_minute' => (int) env('AI_REQUESTS_PER_MINUTE', 20),
         // Legacy environment names are read only for existing installations.
         'provider' => env('AI_PROVIDER', 'custom'),
         'api_format' => env('AI_API_FORMAT', env('AMANAI_BASE_URL') ? 'responses' : 'chat_completions'),

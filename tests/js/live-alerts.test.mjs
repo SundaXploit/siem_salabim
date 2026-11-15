@@ -9,7 +9,7 @@ function component(t) {
     t.after(() => Object.assign(globalThis, previous));
     const table = alertTable('/live-alerts/triage');
     table.$root = { querySelectorAll: selector => selector === '[data-triage-id]'
-        ? ['1', '2'].map(id => ({ dataset: { triageId: id } })) : [] };
+        ? ['1', '2'].map(id => ({ dataset: { triageId: id, ackOwned: '1', ackable: '0' } })) : [] };
     table.$refs = { bulkDialog: { showModal() {}, close() {} }, bulkReason: { focus() {} }, bulkConfirm: { focus() {} } };
     table.$nextTick = callback => callback();
     table.$dispatch = () => {};
@@ -110,6 +110,50 @@ test('server validation failure retains selection and reason for correction', as
     assert.equal(table.submitting, false);
 });
 
+test('ignore is unavailable when a selection contains NEW or another users ACK', t => {
+    const table = component(t);
+    table.startBulkMode();
+    table.toggleAll(true);
+    table.pageOwnership['2'] = { owned: false, ackable: true };
+    assert.equal(table.allSelectedOwned, false);
+    assert.equal(table.selectedAckable, true);
+    table.openBulk('ignore');
+    assert.equal(table.bulkAction, null);
+    table.pageOwnership['2'] = { owned: false, ackable: false };
+    assert.equal(table.allSelectedOwned, false);
+    assert.equal(table.selectedAckable, false);
+});
+
+test('mass ACK keeps only owned winners selected for follow-up triage', async t => {
+    const table = component(t);
+    table.startBulkMode();
+    table.toggleAll(true);
+    table.pageOwnership = { '1': { owned: false, ackable: true }, '2': { owned: false, ackable: true } };
+    table.openBulk('acknowledge');
+    t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({
+        success: true, processed: 1, skipped: 1, owned_ids: [1], message: '1 berhasil di-ACK; 1 dilewati.',
+    }) }));
+    const refresh = t.mock.method(table, 'refreshData', async () => {});
+    await table.submitBulk();
+    assert.deepEqual(table.selectedIds, ['1']);
+    assert.equal(table.bulkMode, true);
+    assert.equal(table.allSelectedOwned, true);
+    assert.deepEqual(refresh.mock.calls[0].arguments, [['1']]);
+    table.openBulk('ignore');
+    assert.equal(table.bulkAction, 'ignore');
+});
+
+test('owned bulk notifications open the shared composer with the exact selection', t => {
+    const table = component(t);
+    const dispatch = t.mock.method(table, '$dispatch');
+    table.startBulkMode();
+    table.toggleAll(true);
+    table.openBulk('notify');
+    assert.equal(table.bulkAction, 'notify');
+    assert.equal(table.refreshPaused, true);
+    assert.deepEqual(dispatch.mock.calls[0].arguments, ['open-bulk-notification', { alertIds: ['1', '2'] }]);
+});
+
 test('a refresh already in flight cannot replace newly selected rows', async t => {
     const table = component(t);
     let resolve;
@@ -127,6 +171,29 @@ test('a refresh already in flight cannot replace newly selected rows', async t =
     assert.deepEqual(table.selectedIds, ['1']);
     assert.equal(table.isRefreshing, false);
 });
+
+for (const visible of [false, true]) {
+    test(`post-ACK refresh ${visible ? 'honors a visible ownership change' : 'keeps owned alerts hidden by the current filter'}`, async t => {
+        const table = component(t);
+        table.bulkMode = true;
+        table.selectedIds = ['1'];
+        table.$root.querySelector = () => ({ innerHTML: '' });
+        t.mock.method(table, 'readPageIds', () => {
+            table.pageIds = visible ? ['1'] : ['2'];
+            table.pageOwnership = visible ? { '1': { owned: false, ackable: false } } : { '2': { owned: false, ackable: true } };
+        });
+        globalThis.DOMParser = class {
+            parseFromString() {
+                return { getElementById: id => id === 'alert-table-card-body' ? { innerHTML: 'fresh rows' } : null, querySelector: () => null };
+            }
+        };
+        t.mock.method(globalThis, 'fetch', async () => ({ ok: true, redirected: false, text: async () => 'server table' }));
+        await table.refreshData(['1']);
+        assert.deepEqual(table.selectedIds, ['1']);
+        assert.equal(table.allSelectedOwned, !visible);
+        assert.equal(table.refreshError, '');
+    });
+}
 
 test('successful refresh updates rows and icons and highlights only newly arrived alerts', async t => {
     const table = component(t);
