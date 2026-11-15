@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="public/images/brand/siem-salabim-logo.png" width="100%" alt="SIEM Salabim — dashboard SIEM Wazuh dan OpenSearch untuk monitoring keamanan serta operasi SOC.">
+<img src="public/images/brand/siem-salabim-logo.png" width="50%" alt="SIEM Salabim — dashboard SIEM Wazuh dan OpenSearch untuk monitoring keamanan serta operasi SOC.">
 
 # SIEM Salabim — Dashboard SIEM Wazuh untuk SOC
 
