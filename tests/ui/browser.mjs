@@ -110,7 +110,7 @@ if (phase !== 'before') {
     await navigate('/dashboard');
     await check('dashboard backend totals and no fake LIVE', `document.querySelector('.signal-lead-value').textContent.trim()==='42' && !document.querySelector('.live-badge')`);
     await check('font loaded locally', `document.fonts.check('16px Inter') && [...document.fonts].some(font=>font.family==='Inter'&&font.status==='loaded') && [...document.querySelectorAll('link,script')].every(x=>!(x.href||x.src||'').includes('fonts.googleapis'))`);
-    await check('collapsed sidebar persists', `(document.querySelector('.sidebar-collapse-toggle').click(), localStorage.getItem('siem-sidebar-collapsed')==='true' && Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===228)`);
+    await check('collapsed sidebar persists', `(document.querySelector('.sidebar-collapse-toggle').click(), localStorage.getItem('siem-sidebar-collapsed')==='true' && Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===208)`);
     await pause(250);
     await check('collapsed rail width', `Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===76`);
     await check('official logo and collapse control fit inside the rail', `(()=>{const sidebar=document.querySelector('.sidebar').getBoundingClientRect();return [...document.querySelectorAll('.sidebar-logo .application-logo,.sidebar-collapse-toggle')].every(el=>{const r=el.getBoundingClientRect();return r.left>=sidebar.left&&r.right<=sidebar.right&&r.width>=24})})()`);

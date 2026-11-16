@@ -14,10 +14,10 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 await send('Page.enable');await send('Runtime.enable');
 let pages=[['dashboard','/dashboard'],['live-alerts','/live-alerts'],['detail','/alerts/1'],['bulk','/live-alerts/triage/detail?alert_ids[]=1&alert_ids[]=2'],['leaderboard','/leaderboard'],['history-alerts','/history/alerts'],['analyst-log','/analyst-log'],['activity','/history/activity'],['settings','/settings'],...['opensearch','permanent-ignore','ai','telegram','users','data'].map(section=>['settings-'+section,'/settings?section='+section]),['profile','/profile'],['login','/login'],['confirm','/confirm-password'],['verify','/verify-email'],['installer','/install'],['wizard','/install?wizard=1'],['complete','/install/complete'],...[403,404,419,429,500,503].map(code=>['error-'+code,'/__qa/error/'+code])];
 if(phase!=='before')pages.push(
-    ['detail-ignore','/alerts/1',`Alpine.$data(document.querySelector('[x-data^="detailNotifModal"]')).showIgnoreModal=true`],
-    ['detail-notify','/alerts/1',`Alpine.$data(document.querySelector('[x-data^="detailNotifModal"]')).showNotifModal=true`],
+    ['detail-ignore','/alerts/9',`Alpine.$data(document.querySelector('[x-data^="notificationComposer"]')).showIgnoreModal=true`],
+    ['detail-notify','/alerts/9',`Alpine.$data(document.querySelector('[x-data^="notificationComposer"]')).openNotifModal()`],
     ['bulk-ack','/live-alerts/triage/detail?alert_ids[]=1&alert_ids[]=2',`document.querySelector('[data-bulk-detail-ack]').click()`],
-    ['bulk-ignore','/live-alerts/triage/detail?alert_ids[]=1&alert_ids[]=2',`document.querySelector('[data-bulk-detail-ignore]').click()`],
+    ['bulk-ignore','/live-alerts/triage/detail?alert_ids[]=9&alert_ids[]=15',`document.querySelector('[data-bulk-detail-ignore]').click()`],
     ['settings-agent-picker','/settings?section=telegram',`document.querySelector('[data-telegram-agent-toggle]').click()`],
     ['export-verification','/settings?section=data',`window.dispatchEvent(new CustomEvent('download-export',{detail:{url:'/settings/data/exports/1/download',filename:'preview.zip'}}))`]
 );

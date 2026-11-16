@@ -317,7 +317,16 @@ class DataExportSafetyTest extends TestCase
         $this->actingAs($admin)->post(route('settings.data.backup'), $this->payload());
         $export = DataExport::query()->sole();
 
-        DB::unprepared(<<<'SQL'
+        if (DB::getDriverName() === 'pgsql') {
+            DB::unprepared(<<<'SQL'
+                CREATE OR REPLACE FUNCTION test_reject_purge() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'forced completed status failure'; END;
+                $$;
+                CREATE TRIGGER reject_completed_purge BEFORE UPDATE OF purge_status ON data_exports
+                FOR EACH ROW WHEN (NEW.purge_status = 'completed') EXECUTE FUNCTION test_reject_purge()
+                SQL);
+        } else {
+            DB::unprepared(<<<'SQL'
             CREATE TRIGGER reject_completed_purge
             BEFORE UPDATE OF purge_status ON data_exports
             WHEN NEW.purge_status = 'completed'
@@ -325,6 +334,7 @@ class DataExportSafetyTest extends TestCase
                 SELECT RAISE(ABORT, 'forced completed status failure');
             END
             SQL);
+        }
 
         $this->actingAs($admin)
             ->post(route('settings.data.exports.purge', $export))

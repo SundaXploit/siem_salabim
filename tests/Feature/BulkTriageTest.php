@@ -149,7 +149,16 @@ class BulkTriageTest extends TestCase
     {
         $first = $this->alert();
         $second = $this->alert();
-        DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages WHEN NEW.alert_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'test history failure'); END");
+        if (DB::getDriverName() === 'pgsql') {
+            DB::unprepared(<<<'SQL'
+                CREATE OR REPLACE FUNCTION test_reject_triage() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'test history failure'; END;
+                $$
+                SQL);
+            DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages FOR EACH ROW WHEN (NEW.alert_id = {$second->id}) EXECUTE FUNCTION test_reject_triage()");
+        } else {
+            DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages WHEN NEW.alert_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'test history failure'); END");
+        }
         $this->withoutExceptionHandling();
         try {
             $this->actingAs(User::factory()->forAgent('001', ['alerts.acknowledge', 'alerts.ignore'])->create())

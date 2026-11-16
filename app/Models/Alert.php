@@ -54,6 +54,18 @@ class Alert extends Model
         'first_seen_at' => UtcDateTime::class,
     ];
 
+    public function setRuleDescriptionAttribute(?string $value): void
+    {
+        // PostgreSQL text cannot hold NUL. Escape display metadata so PDO
+        // cannot silently truncate it; raw_data retains the original evidence.
+        $this->attributes['rule_description'] = $value === null ? null : str_replace("\0", '\\u0000', $value);
+    }
+
+    public function setAgentNameAttribute(?string $value): void
+    {
+        $this->attributes['agent_name'] = $value === null ? null : str_replace("\0", '\\u0000', $value);
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Alert $alert): void {

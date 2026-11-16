@@ -19,6 +19,34 @@ class FetchWazuhAlertsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_long_agent_names_and_64_character_rule_ids_are_preserved(): void
+    {
+        $hit = $this->hit('long-metadata');
+        $hit['_source']['agent']['name'] = str_repeat('endpoint-', 20);
+        $hit['_source']['rule']['id'] = str_repeat('9', 64);
+        $this->mockBatches([[$hit]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])->assertSuccessful();
+        $alert = Alert::sole();
+        $this->assertSame($hit['_source']['agent']['name'], $alert->agent_name);
+        $this->assertSame($hit['_source']['rule']['id'], $alert->rule_id);
+        $this->assertSame($hit['_source'], $alert->raw_data);
+    }
+
+    public function test_null_bytes_in_display_metadata_do_not_truncate_the_event(): void
+    {
+        $hit = $this->hit('nul-metadata');
+        $hit['_source']['rule']['description'] = "Before\0after-description";
+        $hit['_source']['agent']['name'] = "Before\0after-agent";
+        $this->mockBatches([[$hit]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])->assertSuccessful();
+        $alert = Alert::sole();
+        $this->assertSame('Before\\u0000after-description', $alert->rule_description);
+        $this->assertSame('Before\\u0000after-agent', $alert->agent_name);
+        $this->assertSame($hit['_source'], $alert->raw_data, 'Encrypted source evidence must retain the exact original strings.');
+    }
+
     public function test_full_fetch_continues_past_a_page_of_100_existing_alerts_and_preserves_triage(): void
     {
         Configuration::set('min_alert_level', 12);

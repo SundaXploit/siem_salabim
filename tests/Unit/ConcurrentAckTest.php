@@ -7,6 +7,7 @@ use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Tests\Support\PostgresTestDatabase;
 
 class ConcurrentAckTest extends TestCase
 {
@@ -28,6 +29,7 @@ class ConcurrentAckTest extends TestCase
         $driver = getenv('SIEM_ACK_TEST_DRIVER') ?: 'sqlite';
         $database = $directory.'/race.sqlite';
         $connectionEnvironment = [];
+        $schema = null;
         if ($driver === 'mysql') {
             $app = require $root.'/bootstrap/app.php';
             $app->make(Kernel::class)->bootstrap();
@@ -41,6 +43,21 @@ class ConcurrentAckTest extends TestCase
             $pdo->exec('USE `'.$database.'`');
             $connectionEnvironment = ['DB_HOST' => $configuration['host'], 'DB_PORT' => (string) $configuration['port'],
                 'DB_USERNAME' => $configuration['username'], 'DB_PASSWORD' => $configuration['password']];
+        } elseif ($driver === 'pgsql') {
+            $app = require $root.'/bootstrap/app.php';
+            $app->make(Kernel::class)->bootstrap();
+            $configuration = config('database.connections.pgsql');
+            PostgresTestDatabase::assertSafe($configuration);
+            $database = $configuration['database'];
+            $pdo = $app['db']->connection('pgsql')->getPdo();
+            restore_error_handler();
+            restore_exception_handler();
+            $schema = 'siem_ack_test_'.bin2hex(random_bytes(6));
+            $pdo->exec('CREATE SCHEMA "'.$schema.'"');
+            $pdo->exec('SET search_path TO "'.$schema.'"');
+            $connectionEnvironment = ['DB_HOST' => $configuration['host'], 'DB_PORT' => (string) $configuration['port'],
+                'DB_USERNAME' => $configuration['username'], 'DB_PASSWORD' => $configuration['password'],
+                'DB_SSLMODE' => $configuration['sslmode'], 'DB_SSLROOTCERT' => $configuration['sslrootcert'] ?? ''];
         } else {
             $this->assertSame('sqlite', $driver);
             $pdo = new PDO('sqlite:'.$database);
@@ -54,7 +71,9 @@ class ConcurrentAckTest extends TestCase
         foreach ($alertIds as $id) {
             $pdo->exec("INSERT INTO alerts VALUES ({$id},'new','2026-11-14 17:00:00',NULL,NULL,NULL)");
         }
-        $primary = $driver === 'mysql' ? 'INTEGER PRIMARY KEY AUTO_INCREMENT' : 'INTEGER PRIMARY KEY';
+        $primary = match ($driver) {
+            'mysql' => 'INTEGER PRIMARY KEY AUTO_INCREMENT', 'pgsql' => 'BIGSERIAL PRIMARY KEY', default => 'INTEGER PRIMARY KEY',
+        };
         $pdo->exec('CREATE TABLE alert_triages (id '.$primary.', alert_id INTEGER, user_id INTEGER, action TEXT, reason TEXT, created_at TEXT)');
         file_put_contents($directory.'/claim.php', <<<'PHP'
 <?php
@@ -64,6 +83,12 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 if (config('database.default') !== $argv[5] || config('database.connections.'.$argv[5].'.database') !== $argv[6]) {
     throw new RuntimeException('Unexpected race-test database.');
 }
+if ($argv[5] === 'pgsql') {
+    Tests\Support\PostgresTestDatabase::assertSafe(config('database.connections.pgsql'));
+    if (!preg_match('/\Asiem_ack_test_[a-f0-9]{12}\z/', $argv[7])) throw new RuntimeException('Invalid test schema.');
+    config(['database.connections.pgsql.search_path' => $argv[7]]);
+    Illuminate\Support\Facades\DB::purge('pgsql');
+}
 touch($argv[2].'/ready-'.$argv[3]);
 $deadline = microtime(true) + 10;
 while (!is_file($argv[2].'/start')) {
@@ -72,14 +97,15 @@ while (!is_file($argv[2].'/start')) {
 }
 echo json_encode(app(App\Services\AlertTriageService::class)->apply(json_decode($argv[4], true), 'acknowledge', (int)$argv[3]));
 PHP);
-        $probe = new Process([PHP_BINARY, '-r', 'echo extension_loaded("pdo_sqlite") ? "yes" : "no";']);
+        $module = $driver === 'pgsql' ? 'pdo_pgsql' : 'pdo_sqlite';
+        $probe = new Process([PHP_BINARY, '-r', 'echo extension_loaded("'.$module.'") ? "yes" : "no";']);
         $probe->mustRun();
-        $extensions = $driver !== 'sqlite' || trim($probe->getOutput()) === 'yes' ? [] : ['-d', 'extension=pdo_sqlite'];
+        $extensions = $driver === 'mysql' || trim($probe->getOutput()) === 'yes' ? [] : ['-d', 'extension='.$module];
         $processes = [];
         try {
             foreach ([1, 2] as $actor) {
                 $selection = $actor === 1 ? $firstSelection : $secondSelection;
-                $process = new Process([PHP_BINARY, ...$extensions, $directory.'/claim.php', $root, $directory, (string) $actor, json_encode($selection), $driver, $database], $root, [
+                $process = new Process([PHP_BINARY, ...$extensions, $directory.'/claim.php', $root, $directory, (string) $actor, json_encode($selection), $driver, $database, $schema ?? ''], $root, [
                     ...$connectionEnvironment,
                     'APP_ENV' => 'testing', 'APP_INSTALLED' => 'true', 'DB_CONNECTION' => $driver, 'DB_DATABASE' => $database,
                     'DB_URL' => '', 'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array', 'LOG_CHANNEL' => 'null',
@@ -120,6 +146,9 @@ PHP);
             }
             if ($driver === 'mysql' && preg_match('/\Asiem_ack_test_[a-f0-9]{12}\z/', $database)) {
                 $pdo->exec('DROP DATABASE `'.$database.'`');
+            }
+            if ($schema !== null && preg_match('/\Asiem_ack_test_[a-f0-9]{12}\z/', $schema)) {
+                $pdo->exec('DROP SCHEMA "'.$schema.'" CASCADE');
             }
             $pdo = null;
             foreach (glob($directory.'/*') as $file) {

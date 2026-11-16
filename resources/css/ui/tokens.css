@@ -12,7 +12,7 @@
     --motion-overlay: 220ms;
     --motion-reveal: 300ms;
     --ease-out: cubic-bezier(.2,.7,.2,1);
-    --sidebar-w: 14.25rem;
+    --sidebar-w: 13rem;
     --sidebar-rail-w: 4.75rem;
     --shadow-sm: 0 4px 14px color-mix(in srgb, var(--ina-neutral-900) 10%, transparent);
     --shadow-overlay: 0 16px 48px color-mix(in srgb, var(--ina-neutral-900) 22%, transparent);

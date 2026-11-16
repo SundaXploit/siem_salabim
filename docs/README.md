@@ -1,5 +1,7 @@
 # Catatan perubahan SIEM Salabim 1.1 → 1.2
 
+Audit PostgreSQL native dan panduan konfigurasi terbaru: [PostgreSQL: audit, konfigurasi, dan pemeriksaan](POSTGRESQL.md), 16 November 2026.
+
 [README utama](../README.md) · [Galeri aplikasi](../README.md#galeri) · [Kontribusi](../README.md#kontribusi)
 
 Diperbarui **15 November 2026**. Acuan versi 1.1 adalah commit `c4da117` dengan pesan `update V.1.1`; catatan 1.2 ini merangkum perubahan kode dan antarmuka setelah acuan tersebut.

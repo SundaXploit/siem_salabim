@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Tests\Support\PostgresTestDatabase;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -35,13 +36,11 @@ class SqlExportRoundTripTest extends TestCase
             config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
             DB::purge('sqlite');
         } elseif ($this->driver === 'pgsql') {
-            // Opt-in integration checks use the disposable localhost PGlite server only.
+            $configuration = config('database.connections.pgsql');
+            PostgresTestDatabase::assertSafe($configuration);
             $this->sandbox = 'siem_export_test_'.bin2hex(random_bytes(6));
-            config(['database.default' => 'sql_restore_test', 'database.connections.sql_restore_test' => [
-                'driver' => 'pgsql', 'host' => '127.0.0.1', 'port' => 55439, 'database' => 'postgres',
-                'username' => 'postgres', 'password' => 'postgres', 'sslmode' => 'disable',
-                'charset' => 'utf8', 'prefix' => '', 'search_path' => $this->sandbox,
-            ]]);
+            $configuration['search_path'] = $this->sandbox;
+            config(['database.default' => 'sql_restore_test', 'database.connections.sql_restore_test' => $configuration]);
             DB::statement('CREATE SCHEMA "'.$this->sandbox.'"');
         } elseif ($this->driver === 'mysql') {
             $configuration = config('database.connections.mysql');

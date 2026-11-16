@@ -9,7 +9,8 @@ for (const [name, style] of Object.entries(tokens.typography)) {
     rules.push(`    --ina-font-size-${name}: ${style.size / 16}rem;`, `    --ina-line-height-${name}: ${style.lineHeight / 16}rem;`, `    --ina-font-weight-${name}: ${style.weight};`, `    --ina-letter-spacing-${name}: ${style.letterSpacing};`);
 }
 for (const space of tokens.spacing) rules.push(`    --spacing-${space}: ${space / 16}rem;`);
-const aliases = { xs:'caption', sm:'body-small', base:'body', lg:'body-large', xl:'heading-5', '2xl':'heading-3', '3xl':'heading-3', '4xl':'heading-2', '5xl':'display-small', '6xl':'display-large', '7xl':'display-large', '8xl':'display-large', '9xl':'display-large', page:'heading-1', section:'heading-5', panel:'heading-5', kpi:'heading-3' };
+// Use the compact INA styles for the application's data-heavy workspace.
+const aliases = { xs:'caption-small', sm:'caption', base:'body-small', lg:'body', xl:'body-large', '2xl':'heading-4', '3xl':'heading-3', '4xl':'heading-2', '5xl':'display-small', '6xl':'display-large', '7xl':'display-large', '8xl':'display-large', '9xl':'display-large', page:'heading-2', section:'body-large', panel:'body-large', kpi:'heading-4' };
 for (const [name, style] of Object.entries(aliases)) rules.push(`    --text-${name}: var(--ina-font-size-${style});`, `    --leading-${name}: var(--ina-line-height-${style});`);
 for (const [name, space] of Object.entries({0:0,1:4,2:8,3:12,4:16,5:24,6:24,8:32,10:40,12:48,14:56,16:64,20:80,32:128})) rules.push(`    --space-${name}: var(--spacing-${space});`);
 rules.push("    --ina-font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;", '    --font-sans: var(--ina-font-family);', "    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;", '    --font-weight-regular: 400;', '    --font-weight-bold: 700;');

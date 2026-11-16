@@ -290,11 +290,13 @@ class DataExportArchiveService
         $connection = DB::connection();
         $driver = $connection->getDriverName();
 
-        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+        if (in_array($driver, ['mysql', 'mariadb', 'pgsql'], true)) {
             if ($connection->transactionLevel() !== 0) {
                 throw new RuntimeException('Ekspor konsisten tidak dapat dimulai di dalam transaksi lain.');
             }
+        }
 
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
             // SET TRANSACTION applies only to the next transaction and does
             // not leak a changed session default into this long-lived worker.
             $connection->statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');

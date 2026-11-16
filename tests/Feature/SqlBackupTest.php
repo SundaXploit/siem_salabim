@@ -9,6 +9,7 @@ use App\Models\NotificationLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use PDO;
 use Tests\TestCase;
@@ -104,6 +105,22 @@ class SqlBackupTest extends TestCase
         $sql = $zip->getFromName('data.sql');
         $zip->close();
         $this->assertIsString($sql);
+
+        if (DB::getDriverName() === 'pgsql') {
+            Schema::create('export_guard', fn ($table) => $table->integer('id')->primary());
+            DB::table('export_guard')->insert(['id' => 1]);
+            foreach ($tables as $table) {
+                $this->assertSame($expected[$table], DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all());
+            }
+            DB::table('alerts')->delete();
+            DB::unprepared($sql);
+            $this->assertDatabaseHas('export_guard', ['id' => 1]);
+            foreach ($tables as $table) {
+                $this->assertSame($expected[$table], DB::table($table)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), "Export did not preserve {$table} values.");
+            }
+
+            return;
+        }
 
         // Execute the generated SQLite SQL directly with FK checks enabled.
         // Account records are prerequisites, rather than part of this operational-data backup.

@@ -41,12 +41,12 @@
 </div>
 
 {{-- Filter Bar --}}
-<div class="card mb-3" style="margin-bottom: var(--spacing-16);">
+<div class="card mb-3 live-alert-filters" style="margin-bottom: var(--spacing-16);">
     <div class="card-body">
         <form method="GET" action="{{ route('alerts.index') }}" id="filterForm"
             x-data="liveAlertFilters()" @submit.prevent="submitFilters($el)">
-            <div class="filter-bar">
-                <div style="flex:1; min-width:200px;">
+            <div class="filter-bar live-alert-filter-grid">
+                <div class="live-alert-filter-search">
                     <label class="form-label" for="dashboard-index-search">Cari event</label>
                     <input id="dashboard-index-search" type="text" name="search" class="form-input search-input"
                         placeholder="Cari ID, rule, IP lengkap, agent, atau kata log..."
@@ -83,7 +83,7 @@
                     <label class="form-label" for="dashboard-index-date_to">Sampai (WIB)</label>
                     <input id="dashboard-index-date_to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.requestSubmit()">
                 </div>
-                <div style="display:flex; gap:var(--spacing-8); align-items:flex-end;">
+                <div class="live-alert-filter-actions">
                     <button type="submit" class="btn btn-primary">Filter</button>
                     <a href="{{ route('alerts.index') }}" class="btn btn-ghost">Reset</a>
                 </div>
