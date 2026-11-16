@@ -106,7 +106,7 @@ class SqlBackupTest extends TestCase
         $zip->close();
         $this->assertIsString($sql);
 
-        if (DB::getDriverName() === 'pgsql') {
+        if (in_array(DB::getDriverName(), ['pgsql', 'mysql', 'mariadb'], true)) {
             Schema::create('export_guard', fn ($table) => $table->integer('id')->primary());
             DB::table('export_guard')->insert(['id' => 1]);
             foreach ($tables as $table) {

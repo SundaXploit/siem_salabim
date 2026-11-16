@@ -191,7 +191,7 @@ class Alert extends Model
                     // Materialize the UNION once. MySQL otherwise rewrites it
                     // as a dependent lookup for every alert and misses the hash indexes.
                     $match->whereIn('alerts.id', DB::query()->fromSub($lookups, 'sensitive_ip_matches')->select('id'));
-                    if (config('data_security.allow_legacy_plaintext', true)) {
+                    if (config('data_security.allow_legacy_plaintext', false)) {
                         $match->orWhere(fn ($legacy) => $legacy->whereNull('src_ip_hash')->where('src_ip', $ip))
                             ->orWhere(fn ($legacy) => $legacy->whereNull('dst_ip_hash')->where('dst_ip', $ip));
                     }
@@ -202,7 +202,7 @@ class Alert extends Model
             $query->where(function (Builder $match) use ($term): void {
                 $like = '%'.$term.'%';
                 foreach (['rule_description', 'agent_name', 'rule_id', 'wazuh_alert_id', 'status'] as $column) {
-                    $match->orWhere($column, 'like', $like);
+                    $match->orWhereLike($column, $like);
                 }
                 $ip = EncryptedSearchIndex::ip($term);
                 $hash = EncryptedSearchIndex::hash('ip', $ip);
@@ -212,13 +212,13 @@ class Alert extends Model
                     $match->orWhere('id', (int) $term);
                 }
                 // Transitional reads only; strict mode removes the old JSON scan.
-                if (config('data_security.allow_legacy_plaintext', true)) {
+                if (config('data_security.allow_legacy_plaintext', false)) {
                     $raw = in_array($match->getConnection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
                     $match->orWhere(fn ($legacy) => $legacy->whereNull('src_ip_hash')->where('src_ip', $ip))
                         ->orWhere(fn ($legacy) => $legacy->whereNull('dst_ip_hash')->where('dst_ip', $ip))
                         ->orWhere(fn ($legacy) => $legacy
                             ->whereRaw("(LTRIM(CAST(raw_data AS {$raw})) LIKE '{%' OR LTRIM(CAST(raw_data AS {$raw})) LIKE '[%')")
-                            ->whereRaw('CAST(raw_data AS '.$raw.') LIKE ?', [$like]));
+                            ->whereLike(DB::raw('CAST(raw_data AS '.$raw.')'), $like));
                 }
             });
         }

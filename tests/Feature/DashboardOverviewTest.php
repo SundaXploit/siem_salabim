@@ -69,6 +69,7 @@ class DashboardOverviewTest extends TestCase
 
     public function test_analyst_receives_manual_monthly_ai_result_directly(): void
     {
+        $executionLimit = ini_get('max_execution_time');
         $summary = str_repeat(
             'Terjadi peningkatan alert autentikasi yang perlu diverifikasi oleh analis SOC. ',
             4
@@ -92,6 +93,7 @@ class DashboardOverviewTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('insight.summary', trim($summary));
+        $this->assertSame($executionLimit, ini_get('max_execution_time'));
 
         $this->assertDatabaseHas('dashboard_insights', [
             'period_key' => now('Asia/Jakarta')->format('Y-m'),
@@ -153,6 +155,7 @@ class DashboardOverviewTest extends TestCase
 
     public function test_reasoning_only_response_reports_incomplete_output_instead_of_connection_error(): void
     {
+        $executionLimit = ini_get('max_execution_time');
         $analyst = User::factory()->forAgent('001', ['alerts.analyze'])->create();
         $this->makeAlert('empty-ai-reply', 5, 'test-agent');
         Http::fake(['*/responses' => Http::response([
@@ -166,6 +169,7 @@ class DashboardOverviewTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath('error', 'Endpoint AI terhubung, tetapi tidak mengembalikan teks jawaban. Periksa model dan batas token.')
             ->assertDontSee('private-provider-text');
+        $this->assertSame($executionLimit, ini_get('max_execution_time'));
         $this->assertDatabaseCount('dashboard_insights', 0);
         Http::assertSentCount(1);
     }

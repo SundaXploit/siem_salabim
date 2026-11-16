@@ -40,12 +40,3 @@
 /test_telegram.php
 # Test/build output and local assistant/editor state.
 /coverage/
-/.agents/
-/.codex/
-Homestead.json
-Homestead.yaml
-Thumbs.db
-/DESIGN_SYSTEM.md
-/UI_AUDIT.md
-/UI_REFACTOR_REPORT.md
-/docs/redesign/

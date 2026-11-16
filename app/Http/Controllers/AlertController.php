@@ -32,7 +32,10 @@ class AlertController extends Controller
 
     public function index(Request $request)
     {
-        $request->validate(['search' => ['nullable', 'string', 'max:200'], 'agent' => ['nullable', 'string', 'max:255']]);
+        $request->validate([
+            'search' => ['nullable', 'string', 'max:200', 'regex:/\A[^\x00]*\z/u'],
+            'agent' => ['nullable', 'string', 'max:255', 'regex:/\A[^\x00]*\z/u'],
+        ]);
         // Keep filter URLs canonical. Empty GET controls must not look like
         // active filters or survive in copied/bookmarked search URLs.
         $cleanQuery = collect($request->query())
@@ -81,7 +84,7 @@ class AlertController extends Controller
             $query->where('rule_level', '>=', (int) $request->level);
         }
         if ($request->filled('agent')) {
-            $query->where('agent_name', 'like', '%'.$request->agent.'%');
+            $query->whereLike('agent_name', '%'.$request->agent.'%');
         }
         AlertDateFilter::apply($query, $request);
         if ($request->filled('search')) {

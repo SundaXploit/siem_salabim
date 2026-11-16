@@ -23,7 +23,9 @@ class SensitiveDataCipher
             return Crypt::decryptString(substr($value, strlen(self::PREFIX)));
         }
         $envelope = json_decode(base64_decode($value, true) ?: '', true);
-        if (is_array($envelope) && isset($envelope['iv'], $envelope['value'], $envelope['mac'])) {
+        // A partially damaged Laravel envelope is still ciphertext. Legacy
+        // repair must authenticate it rather than re-encrypt it as plaintext.
+        if (is_array($envelope) && count(array_intersect(['iv', 'value', 'mac', 'tag'], array_keys($envelope))) >= 2) {
             return Crypt::decryptString($value);
         }
         self::assertLegacyAllowed();
@@ -56,7 +58,7 @@ class SensitiveDataCipher
 
     private static function assertLegacyAllowed(): void
     {
-        if (! config('data_security.allow_legacy_plaintext', true)) {
+        if (! config('data_security.allow_legacy_plaintext', false)) {
             throw new DecryptException('Legacy plaintext requires an explicit migration mode.');
         }
     }

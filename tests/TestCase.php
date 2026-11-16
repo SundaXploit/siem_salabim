@@ -9,6 +9,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Str;
+use Tests\Support\MySqlTestDatabase;
 use Tests\Support\PostgresTestDatabase;
 
 abstract class TestCase extends BaseTestCase
@@ -28,6 +29,17 @@ abstract class TestCase extends BaseTestCase
             PostgresTestDatabase::assertSafe($app['config']->get('database.connections.pgsql'));
             // Real commits are needed for snapshot exports, locking, and failed
             // statements. Rebuild this disposable database before each test.
+            $this->connectionsToTransact = [];
+            RefreshDatabaseState::$migrated = false;
+        }
+
+        $driver = $app['config']->get('database.default');
+        if (getenv('SIEM_TEST_MYSQL') === '1'
+            && ($app->configurationIsCached() || ! in_array($driver, ['mysql', 'mariadb'], true))) {
+            throw new \RuntimeException('MySQL/MariaDB tests require uncached database test configuration.');
+        }
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            MySqlTestDatabase::assertSafe($app['config']->get('database.connections.'.$driver));
             $this->connectionsToTransact = [];
             RefreshDatabaseState::$migrated = false;
         }

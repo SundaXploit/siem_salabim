@@ -42,8 +42,8 @@ class SqlExportRoundTripTest extends TestCase
             $configuration['search_path'] = $this->sandbox;
             config(['database.default' => 'sql_restore_test', 'database.connections.sql_restore_test' => $configuration]);
             DB::statement('CREATE SCHEMA "'.$this->sandbox.'"');
-        } elseif ($this->driver === 'mysql') {
-            $configuration = config('database.connections.mysql');
+        } elseif (in_array($this->driver, ['mysql', 'mariadb'], true)) {
+            $configuration = config('database.connections.'.$this->driver);
             $this->assertContains($configuration['host'], ['127.0.0.1', 'localhost'], 'MySQL round-trip tests require localhost.');
             $this->sandbox = 'siem_export_test_'.bin2hex(random_bytes(6));
             $configuration['database'] = null;
@@ -148,7 +148,7 @@ class SqlExportRoundTripTest extends TestCase
         $export = $this->fixture();
         $archives = app(DataExportArchiveService::class);
         $label = match ($this->driver) {
-            'pgsql' => 'PostgreSQL', 'mysql' => 'MySQL', default => 'SQLite'
+            'pgsql' => 'PostgreSQL', 'mysql' => 'MySQL', 'mariadb' => 'MariaDB', default => 'SQLite'
         };
         $this->actingAs(User::first())->get(route('settings.index', ['section' => 'data']))->assertOk()->assertSee('SQL INSERT ('.$label.')');
         $before = $this->records($export);

@@ -6,11 +6,31 @@ use App\Models\Alert;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class LiveAlertSearchTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[DataProvider('invalidSearches')]
+    public function test_invalid_search_input_is_rejected_before_any_database_specific_query(string $route, mixed $search): void
+    {
+        $this->actingAs(User::factory()->forAgent('007')->create())
+            ->getJson(route($route, ['search' => $search]))->assertUnprocessable()->assertJsonValidationErrors('search');
+    }
+
+    public static function invalidSearches(): array
+    {
+        $cases = [];
+        foreach (['alerts.index', 'history.alerts', 'analyst-log.index'] as $route) {
+            foreach (['array' => ['unexpected'], 'NUL' => "bad\0query", 'invalid UTF-8' => "bad\xffquery"] as $name => $value) {
+                $cases[$route.' '.$name] = [$route, $value];
+            }
+        }
+
+        return $cases;
+    }
 
     public function test_search_finds_rule_description_when_other_filters_are_blank(): void
     {

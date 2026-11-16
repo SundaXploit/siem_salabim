@@ -2,11 +2,14 @@
 
 namespace Tests\Unit;
 
+use App\Services\SensitiveDataCipher;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Encryption\Encrypter;
 use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Tests\Support\MySqlTestDatabase;
 use Tests\Support\PostgresTestDatabase;
 
 class ConcurrentManualNotificationTest extends TestCase
@@ -40,32 +43,52 @@ class ConcurrentManualNotificationTest extends TestCase
             $connectionEnvironment = ['DB_HOST' => $configuration['host'], 'DB_PORT' => (string) $configuration['port'],
                 'DB_USERNAME' => $configuration['username'], 'DB_PASSWORD' => $configuration['password'],
                 'DB_SSLMODE' => $configuration['sslmode'], 'DB_SSLROOTCERT' => $configuration['sslrootcert'] ?? ''];
+        } elseif (in_array($driver, ['mysql', 'mariadb'], true)) {
+            $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
+            $app->make(Kernel::class)->bootstrap();
+            $configuration = config('database.connections.'.$driver);
+            MySqlTestDatabase::assertSafe($configuration);
+            restore_error_handler();
+            restore_exception_handler();
+            $database = 'siem_notify_test_'.bin2hex(random_bytes(6));
+            $pdo = new PDO('mysql:host='.$configuration['host'].';port='.$configuration['port'].';charset=utf8mb4', $configuration['username'], $configuration['password']);
+            $pdo->exec('CREATE DATABASE `'.$database.'` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+            $pdo->exec('USE `'.$database.'`');
+            $connectionEnvironment = ['DB_HOST' => $configuration['host'], 'DB_PORT' => (string) $configuration['port'],
+                'DB_USERNAME' => $configuration['username'], 'DB_PASSWORD' => $configuration['password']];
         } else {
             $this->assertSame('sqlite', $driver);
             $pdo = new PDO('sqlite:'.$database);
             $pdo->exec('PRAGMA journal_mode=WAL');
             $pdo->exec('PRAGMA busy_timeout=5000');
         }
-        $primary = $driver === 'pgsql' ? 'BIGSERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY';
+        $primary = match ($driver) {
+            'pgsql' => 'BIGSERIAL PRIMARY KEY', 'mysql', 'mariadb' => 'INTEGER PRIMARY KEY AUTO_INCREMENT', default => 'INTEGER PRIMARY KEY',
+        };
+        $fixtureKey = random_bytes(32);
+        $cipher = new Encrypter($fixtureKey, 'AES-256-GCM');
+        $encrypt = fn (string $value) => SensitiveDataCipher::PREFIX.$cipher->encryptString($value);
+        $encryptJson = fn (array $value) => json_encode($encrypt(json_encode($value, JSON_THROW_ON_ERROR)), JSON_THROW_ON_ERROR);
         $pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, role TEXT, is_active INTEGER, allowed_agents TEXT, privileges TEXT)');
         $pdo->exec("INSERT INTO users VALUES (1,'Owner','admin',1,'[]','[]')");
         $pdo->exec('CREATE TABLE alerts (id INTEGER PRIMARY KEY, status TEXT, acknowledged_by_user_id INTEGER, agent_scope_key TEXT)');
         $key = hash('sha256', 'agent-fixture');
         $pdo->prepare("INSERT INTO alerts VALUES (1,'acknowledged',1,?)")->execute([$key]);
-        $pdo->exec('CREATE TABLE configurations (id '.$primary.', key TEXT, value TEXT)');
-        $pdo->prepare("INSERT INTO configurations (key,value) VALUES ('telegram_destinations',?)")->execute([json_encode([
+        $keyColumn = in_array($driver, ['mysql', 'mariadb'], true) ? '`key`' : 'key';
+        $pdo->exec('CREATE TABLE configurations (id '.$primary.', '.$keyColumn.' TEXT, value TEXT)');
+        $pdo->prepare("INSERT INTO configurations ({$keyColumn},value) VALUES ('telegram_destinations',?)")->execute([json_encode([
             ['label' => 'SOC', 'chat_id' => '-1001', 'agent_keys' => [$key]],
             ['label' => 'Tim insiden', 'chat_id' => '-1002', 'agent_keys' => [$key]],
         ])]);
-        $pdo->exec('CREATE TABLE manual_notification_operations (id TEXT PRIMARY KEY, alert_id INTEGER, user_id INTEGER, payload_hash TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)');
-        $pdo->exec('CREATE TABLE notification_logs (id '.$primary.', alert_id INTEGER, user_id INTEGER, chat_id TEXT, message TEXT, response_status INTEGER, sent_at TEXT, manual_operation_id TEXT, automatic_key TEXT, delivery_state TEXT, delivery_details TEXT, UNIQUE(manual_operation_id,chat_id))');
+        $pdo->exec('CREATE TABLE manual_notification_operations (id VARCHAR(64) PRIMARY KEY, alert_id INTEGER, user_id INTEGER, payload_hash TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
+        $pdo->exec('CREATE TABLE notification_logs (id '.$primary.', alert_id INTEGER, user_id INTEGER, chat_id VARCHAR(64), message TEXT, response_status INTEGER, sent_at TEXT, manual_operation_id VARCHAR(64), automatic_key TEXT, delivery_state TEXT, delivery_details TEXT, UNIQUE(manual_operation_id,chat_id))');
         $pdo->exec('CREATE TABLE alert_triages (id '.$primary.', alert_id INTEGER, user_id INTEGER, action TEXT, reason TEXT, created_at TEXT)');
         $pdo->exec('CREATE TABLE telegram_calls (id '.$primary.', chat_id TEXT, kind TEXT)');
         if ($mode === 'queued') {
             $pdo->exec("INSERT INTO manual_notification_operations (id,alert_id,user_id,payload_hash) VALUES ('86b501b0-e26f-4974-a763-a9989a67162c',1,1,'queued-fixture')");
             foreach (['-1001', '-1002'] as $chat) {
-                $pdo->prepare("INSERT INTO notification_logs (alert_id,user_id,chat_id,message,manual_operation_id,delivery_state,delivery_details) VALUES (1,1,?,'Queued notification','86b501b0-e26f-4974-a763-a9989a67162c','pending',?)")
-                    ->execute([$chat, json_encode(['message' => ['state' => 'pending'], 'evidence' => []])]);
+                $pdo->prepare("INSERT INTO notification_logs (alert_id,user_id,chat_id,message,manual_operation_id,delivery_state,delivery_details) VALUES (1,1,?,?,'86b501b0-e26f-4974-a763-a9989a67162c','pending',?)")
+                    ->execute([$chat, $encrypt('Queued notification'), $encryptJson(['message' => ['state' => 'pending'], 'evidence' => []])]);
             }
         }
         if ($mode === 'bulk') {
@@ -74,8 +97,8 @@ class ConcurrentManualNotificationTest extends TestCase
             foreach ([1, 2] as $alertId) {
                 $operationId = 'bulk-operation-'.$alertId;
                 $pdo->prepare("INSERT INTO manual_notification_operations (id,alert_id,user_id,payload_hash) VALUES (?,?,1,'bulk-fixture')")->execute([$operationId, $alertId]);
-                $pdo->prepare("INSERT INTO notification_logs (alert_id,user_id,chat_id,message,manual_operation_id,delivery_state,delivery_details) VALUES (?,1,'-1001','Alert context',?,'pending',?)")
-                    ->execute([$alertId, $operationId, json_encode(['message' => ['state' => 'pending'], 'evidence' => [], 'bulk_group' => $group])]);
+                $pdo->prepare("INSERT INTO notification_logs (alert_id,user_id,chat_id,message,manual_operation_id,delivery_state,delivery_details) VALUES (?,1,'-1001',?,?,'pending',?)")
+                    ->execute([$alertId, $encrypt('Alert context'), $operationId, $encryptJson(['message' => ['state' => 'pending'], 'evidence' => [], 'bulk_group' => $group])]);
             }
         }
         file_put_contents($directory.'/proof.png', 'mock-image-content');
@@ -129,7 +152,9 @@ $result = $notifier->send(
 echo json_encode(['replayed' => $result['replayed']]);
 PHP);
         $root = dirname(__DIR__, 2);
-        $module = $driver === 'pgsql' ? 'pdo_pgsql' : 'pdo_sqlite';
+        $module = match ($driver) {
+            'pgsql' => 'pdo_pgsql', 'mysql', 'mariadb' => 'pdo_mysql', default => 'pdo_sqlite',
+        };
         $probe = new Process([PHP_BINARY, '-r', 'echo extension_loaded("'.$module.'") ? "yes" : "no";']);
         $probe->mustRun();
         $extensions = trim($probe->getOutput()) === 'yes' ? [] : ['-d', 'extension='.$module];
@@ -138,6 +163,8 @@ PHP);
             foreach ([1, 2] as $number) {
                 $process = new Process([PHP_BINARY, ...$extensions, $directory.'/send.php', $root, $directory, (string) $number, $mode, $driver, $database, $schema ?? ''], $root, [
                     ...$connectionEnvironment,
+                    'APP_KEY' => 'base64:'.base64_encode($fixtureKey), 'APP_CIPHER' => 'AES-256-GCM',
+                    'SIEM_ALLOW_LEGACY_PLAINTEXT' => 'false',
                     'APP_ENV' => 'testing', 'APP_INSTALLED' => 'true', 'DB_CONNECTION' => $driver, 'DB_DATABASE' => $database,
                     'DB_URL' => '', 'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array', 'LOG_CHANNEL' => 'null',
                 ]);
@@ -172,7 +199,7 @@ PHP);
                 'bulk' => 1,
             };
             $this->assertSame($expectedCalls, (int) $pdo->query('SELECT COUNT(*) FROM telegram_calls')->fetchColumn());
-            $this->assertSame($expectedCalls, (int) $pdo->query('SELECT COUNT(*) FROM (SELECT DISTINCT chat_id, kind FROM telegram_calls)')->fetchColumn());
+            $this->assertSame($expectedCalls, (int) $pdo->query('SELECT COUNT(*) FROM (SELECT DISTINCT chat_id, kind FROM telegram_calls) AS unique_calls')->fetchColumn());
             $this->assertSame(2, (int) $pdo->query("SELECT COUNT(*) FROM notification_logs WHERE delivery_state = 'sent'")->fetchColumn());
         } finally {
             foreach ($processes as $process) {
@@ -182,6 +209,9 @@ PHP);
             }
             if ($schema !== null && preg_match('/\Asiem_notify_test_[a-f0-9]{12}\z/', $schema)) {
                 $pdo->exec('DROP SCHEMA "'.$schema.'" CASCADE');
+            }
+            if (in_array($driver, ['mysql', 'mariadb'], true) && preg_match('/\Asiem_notify_test_[a-f0-9]{12}\z/', $database)) {
+                $pdo->exec('DROP DATABASE `'.$database.'`');
             }
             $pdo = null;
             foreach (glob($directory.'/*') as $file) {

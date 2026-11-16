@@ -23,7 +23,12 @@ return new class extends Migration
         });
         DB::table('alerts')->select('id', 'source_cluster', 'raw_data')->orderBy('id')->chunkById(500, function ($rows): void {
             foreach ($rows as $row) {
-                $source = SensitiveDataCipher::decryptJson($row->raw_data);
+                // This upgrade predates payload encryption. Accept legacy JSON
+                // here without enabling plaintext reads for web requests.
+                $source = json_decode($row->raw_data ?? 'null', true, 512, JSON_THROW_ON_ERROR);
+                if (! is_array($source)) {
+                    $source = SensitiveDataCipher::decryptJson($row->raw_data);
+                }
                 DB::table('alerts')->where('id', $row->id)->update([
                     'agent_scope_key' => $row->source_cluster ? Alert::agentScopeKey($row->source_cluster, data_get($source, 'agent.id')) : null,
                 ]);

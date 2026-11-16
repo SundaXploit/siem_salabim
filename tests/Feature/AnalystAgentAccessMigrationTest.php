@@ -4,20 +4,27 @@ namespace Tests\Feature;
 
 use App\Models\Alert;
 use App\Models\User;
+use App\Services\SensitiveDataCipher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AnalystAgentAccessMigrationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_backfill_adds_access_keys_without_rewriting_source_evidence_timestamps_or_granting_legacy_accounts(): void
+    #[DataProvider('payloadEncodings')]
+    public function test_backfill_adds_access_keys_without_rewriting_source_evidence_timestamps_or_granting_legacy_accounts(bool $encrypted): void
     {
         $migration = require database_path('migrations/2026_11_13_000017_add_analyst_agent_access.php');
         $migration->down();
         $user = DB::table('users')->insertGetId(['name' => 'Existing analyst', 'email' => 'legacy@example.test', 'password' => 'unused', 'role' => 'analyst']);
         $raw = '{ "agent": {"id":"007", "name":"Original name"}, "unknown": [false, null, "  Exact.  "] }';
+        config(['data_security.allow_legacy_plaintext' => false]);
+        if ($encrypted) {
+            $raw = SensitiveDataCipher::encryptJson(json_decode($raw, true, 512, JSON_THROW_ON_ERROR));
+        }
         foreach (['wazuh-primary', 'another-wazuh'] as $index => $cluster) {
             DB::table('alerts')->insert([
                 'wazuh_alert_id' => 'legacy-'.$index, 'source_cluster' => $cluster, 'source_index' => 'original', 'source_id' => (string) $index,
@@ -37,5 +44,10 @@ class AnalystAgentAccessMigrationTest extends TestCase
         $this->assertSame([], $analyst->agentAccessKeys());
         $this->assertFalse($analyst->hasPrivilege('alerts.acknowledge'));
         $this->assertSame(0, Alert::visibleTo($analyst)->count());
+    }
+
+    public static function payloadEncodings(): array
+    {
+        return ['legacy JSON during upgrade' => [false], 'authenticated ciphertext' => [true]];
     }
 }

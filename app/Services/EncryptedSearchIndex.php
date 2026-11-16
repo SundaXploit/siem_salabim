@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Normalizer;
 use RuntimeException;
 
 class EncryptedSearchIndex
@@ -37,7 +38,12 @@ class EncryptedSearchIndex
             $value = self::ip($value);
         }
 
-        return hash_hmac('sha256', $purpose."\0".mb_strtolower(trim($value), 'UTF-8'), self::key());
+        return hash_hmac('sha256', $purpose."\0".self::normalized($value), self::key());
+    }
+
+    private static function normalized(string $value): string
+    {
+        return mb_strtolower(Normalizer::normalize(trim($value), Normalizer::FORM_C) ?: trim($value), 'UTF-8');
     }
 
     public static function ip(?string $value): ?string
@@ -76,13 +82,22 @@ class EncryptedSearchIndex
             }
             $text = mb_strcut((string) $value, 0, $remaining, 'UTF-8');
             $remaining -= strlen($text);
-            if (filter_var(trim($text), FILTER_VALIDATE_IP)) {
-                $hashes[hash_hmac('sha256', "search\0".self::ip(trim($text)), $key)] = true;
+            // Addresses in free-form logs, URLs and socket endpoints need the
+            // same canonical form as exact IP queries, including compressed IPv6.
+            preg_match_all('/(?<![\pL\pN])(?:(?:[a-f0-9]{0,4}:){2,}[a-f0-9:.]*|(?:\d{1,3}\.){3}\d{1,3})(?![\pL\pN])/iu', $text, $addresses);
+            foreach ($addresses[0] ?? [] as $address) {
+                $address = rtrim($address, '.');
+                if (filter_var($address, FILTER_VALIDATE_IP)) {
+                    $hashes[hash_hmac('sha256', "search\0".self::ip($address), $key)] = true;
+                    if (count($hashes) >= $limit) {
+                        return;
+                    }
+                }
             }
-            preg_match_all('/[\pL\pN]+(?:[_.:@\/\\\\-][\pL\pN]+)*/u', mb_strtolower($text, 'UTF-8'), $matches);
+            preg_match_all('/[\pL\pN\pM]+(?:[_.:@\/\\\\-][\pL\pN\pM]+)*/u', self::normalized($text), $matches);
             foreach ($matches[0] ?? [] as $word) {
                 // Also index components: DOMAIN\\alice and alice can both be found.
-                foreach ([$word, ...(preg_split('/[^\pL\pN]+/u', $word, -1, PREG_SPLIT_NO_EMPTY) ?: [])] as $token) {
+                foreach ([$word, ...(preg_split('/[^\pL\pN\pM]+/u', $word, -1, PREG_SPLIT_NO_EMPTY) ?: [])] as $token) {
                     if (mb_strlen($token) >= 2 && mb_strlen($token) <= 128) {
                         $hashes[hash_hmac('sha256', "search\0".$token, $key)] = true;
                     }
@@ -105,27 +120,29 @@ class EncryptedSearchIndex
         $query = DB::table('encrypted_search_tokens')->where('entity', $entity)->where('record_id', $recordId);
         $rows = $this->rows($entity, $recordId, $alertId, $values);
         $hashes = array_column($rows, 'token_hash');
-        $existing = (clone $query)->pluck('token_hash')->all();
+        $postings = (clone $query)->get(['token_hash', 'alert_id']);
+        $existing = $postings->pluck('token_hash')->all();
         sort($existing);
         $sorted = $hashes;
         sort($sorted);
-        if ($existing === $sorted) {
+        if ($existing === $sorted && $postings->every(fn ($row) => (int) $row->alert_id === $alertId)) {
             return;
         }
         (clone $query)->whereNotIn('token_hash', $hashes)->delete();
         foreach (array_chunk($rows, 250) as $chunk) {
-            DB::table('encrypted_search_tokens')->upsert($chunk, ['entity', 'record_id', 'token_hash'], ['token_hash']);
+            DB::table('encrypted_search_tokens')->upsert($chunk, ['entity', 'record_id', 'token_hash'], ['alert_id']);
         }
     }
 
     public function matches(string $entity, int $recordId, int $alertId, mixed $values): bool
     {
         $expected = array_column($this->rows($entity, $recordId, $alertId, $values), 'token_hash');
-        $actual = DB::table('encrypted_search_tokens')->where('entity', $entity)->where('record_id', $recordId)->pluck('token_hash')->all();
+        $postings = DB::table('encrypted_search_tokens')->where('entity', $entity)->where('record_id', $recordId)->get(['token_hash', 'alert_id']);
+        $actual = $postings->pluck('token_hash')->all();
         sort($expected);
         sort($actual);
 
-        return $actual === $expected;
+        return $actual === $expected && $postings->every(fn ($row) => (int) $row->alert_id === $alertId);
     }
 
     public static function match(Builder $query, string $entity, string $recordColumn, string $term): void

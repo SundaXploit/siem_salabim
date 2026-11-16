@@ -5,9 +5,12 @@ namespace Tests\Feature;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\User;
+use App\Services\SensitiveDataCipher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class BulkAlertAnalysisTest extends TestCase
@@ -136,6 +139,38 @@ class BulkAlertAnalysisTest extends TestCase
         $this->actingAs(auth()->user()->fresh());
         $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => $ids])->assertOk()->assertJsonPath('cached', false);
         Http::assertSentCount(3);
+    }
+
+    #[DataProvider('unreadableCacheValues')]
+    public function test_unreadable_cached_analysis_is_discarded_without_a_500_or_a_provider_call_on_page_load(string $kind): void
+    {
+        config(['data_security.allow_legacy_plaintext' => false]);
+        $this->analyst();
+        $ids = [$this->alert()->id, $this->alert()->id];
+        $this->provider($ids);
+        $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => $ids])->assertOk();
+        $keys = array_values(array_filter(array_keys(Cache::getStore()->all()), fn ($key) => str_starts_with($key, 'bulk-alert-ai:v1:')));
+        $this->assertCount(1, $keys);
+        $value = match ($kind) {
+            'legacy array' => ['summary' => 'legacy private cached analysis'],
+            'invalid type' => 42,
+            'invalid JSON' => '{broken',
+            'damaged ciphertext' => json_encode(SensitiveDataCipher::PREFIX.'damaged-cache'),
+            'authenticated wrong shape' => SensitiveDataCipher::encryptJson(true),
+        };
+        Cache::put($keys[0], $value, 600);
+        $this->get(route('alerts.bulk-detail', ['alert_ids' => $ids]))->assertOk()
+            ->assertViewHas('storedAnalysis', null)->assertDontSee('legacy private cached analysis');
+        $this->assertNull(Cache::get($keys[0]));
+        Http::assertSentCount(1);
+        $this->postJson(route('alerts.bulk-ai-analysis'), ['alert_ids' => $ids])->assertOk()->assertJsonPath('cached', false);
+        Http::assertSentCount(2);
+        $this->assertDatabaseCount('alert_triages', 0);
+    }
+
+    public static function unreadableCacheValues(): array
+    {
+        return array_map(fn ($kind) => [$kind], ['legacy array', 'invalid type', 'invalid JSON', 'damaged ciphertext', 'authenticated wrong shape']);
     }
 
     public function test_selection_validation_and_roles_reject_the_entire_request(): void

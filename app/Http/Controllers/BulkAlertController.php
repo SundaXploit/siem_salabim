@@ -7,12 +7,14 @@ use App\Models\Alert;
 use App\Services\AlertAiAnalysisService;
 use App\Services\AlertTriageService;
 use App\Services\SensitiveDataCipher;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use JsonException;
 
 class BulkAlertController extends Controller
 {
@@ -104,10 +106,23 @@ class BulkAlertController extends Controller
         if ($value === null) {
             return null;
         }
-        if (is_array($value) && config('data_security.allow_legacy_plaintext', true)) {
+        if (is_array($value) && config('data_security.allow_legacy_plaintext', false)) {
             return $value;
         }
 
-        return SensitiveDataCipher::decryptJson($value);
+        try {
+            $analysis = is_string($value) ? SensitiveDataCipher::decryptJson($value) : null;
+            if (is_array($analysis)) {
+                return $analysis;
+            }
+        } catch (DecryptException|JsonException $exception) {
+            Log::warning('[Bulk alert AI] Unreadable cached analysis discarded.', ['exception_class' => $exception::class]);
+        }
+
+        // Cached AI output can be regenerated. Never display rejected data or
+        // make an optional stale cache entry break the evidence/triage page.
+        Cache::forget($key);
+
+        return null;
     }
 }

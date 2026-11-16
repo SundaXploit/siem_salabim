@@ -156,6 +156,8 @@ class BulkTriageTest extends TestCase
                 $$
                 SQL);
             DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages FOR EACH ROW WHEN (NEW.alert_id = {$second->id}) EXECUTE FUNCTION test_reject_triage()");
+        } elseif (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages FOR EACH ROW BEGIN IF NEW.alert_id = {$second->id} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'test history failure'; END IF; END");
         } else {
             DB::unprepared("CREATE TRIGGER fail_triage BEFORE INSERT ON alert_triages WHEN NEW.alert_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'test history failure'); END");
         }

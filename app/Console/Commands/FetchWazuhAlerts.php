@@ -442,10 +442,11 @@ class FetchWazuhAlerts extends Command
 
             $index = app(EncryptedSearchIndex::class);
             $tokenRows = [];
-            foreach (Alert::whereIn('source_identity_hash', array_keys($novel))->get(['id', 'source_identity_hash']) as $inserted) {
-                $source = $novel[$inserted->source_identity_hash];
+            foreach (Alert::whereIn('source_identity_hash', array_keys($novel))->cursor(['id', 'raw_data', 'src_ip', 'dst_ip']) as $inserted) {
+                // A competing insert may have won after the existence check.
+                // Index the persisted evidence that the upsert preserves.
                 foreach ($index->rows('alert', $inserted->id, $inserted->id,
-                    [$source['raw_data'], $source['src_ip'] ?? null, $source['dst_ip'] ?? null]) as $token) {
+                    [$inserted->raw_data, $inserted->src_ip, $inserted->dst_ip]) as $token) {
                     $tokenRows[] = $token;
                     if (count($tokenRows) >= 250) {
                         DB::table('encrypted_search_tokens')->upsert($tokenRows, ['entity', 'record_id', 'token_hash'], ['token_hash']);

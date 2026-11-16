@@ -168,6 +168,10 @@ Cipher default menjadi **AES-256-GCM**, dengan verifikasi integritas bawaan. Pem
 - Batas indeks default: 512 token unik dan 128 KiB teks yang diproses per log/catatan. `SIEM_SEARCH_MAX_TOKENS=0` menonaktifkan indeks kata; pencarian exact-match pada kolom IP tetap tersedia.
 - Indeks menambah penyimpanan/biaya ingest dan mengungkap kesamaan token. Pencarian kata utuh dengan batas token berbeda dari pencarian substring bebas seluruh JSON.
 - Perintah migrasi mendukung proses bertahap yang dapat dilanjutkan, pemeriksaan autentikasi/index, serta enkripsi ulang untuk rotasi kunci.
+- Mode plaintext legacy sekarang nonaktif secara default pada aplikasi dan pengujian. Gunakan `--allow-legacy` secara eksplisit pada proses repair ketika diperlukan; ciphertext yang rusak tetap ditolak.
+- Token IP dalam teks/socket dan bentuk IPv6 yang ekuivalen dikanonisasi. Token Unicode memakai NFC serta lowercase, dengan combining mark dipertahankan. Instalasi yang sudah berjalan perlu membangun ulang indeks melalui `siem:encrypt-data` lalu memeriksanya dengan `--check`.
+- Indeks ingestion mengikuti bukti yang benar-benar tersimpan saat terjadi benturan INSERT. Pemeriksaan indeks juga memverifikasi parent alert; perpindahan record memicu reindex. Cache AI yang tidak dapat diverifikasi dibuang agar halaman bukti tetap dapat dibuka tanpa menampilkan hasil yang ditolak.
+- Rincian temuan, cakupan, batas keamanan, dan hasil lintas engine tersedia pada [audit enkripsi dan hybrid query](ENCRYPTION_AUDIT.md).
 - Pembuatan kunci indeks oleh migrator memakai penulis konfigurasi yang mempertahankan `APP_KEY`. Jalur pembaruan runtime ini menolak perubahan `APP_KEY`, sehingga menambahkan kunci pencarian tidak mengganti kunci dekripsi data yang sudah ada.
 
 ### Rotasi kunci
@@ -347,17 +351,17 @@ Patch pembatasan tujuan dan validasi tanggal tidak menambah migrasi tersendiri. 
 
 1. Buat backup database dan file instalasi, termasuk kunci, konfigurasi, arsip private, dan media yang masih diperlukan. Verifikasi pemulihannya di lingkungan terpisah.
 2. Deploy kode pembaca CBC/GCM yang kompatibel. Untuk banyak node, pertahankan penulisan CBC selama rollout awal jika masih ada pembaca lama; aktifkan GCM setelah seluruh node dapat membacanya.
-3. Pertahankan `APP_KEY` asli. Atur `APP_CIPHER=AES-256-GCM` dan sementara `SIEM_ALLOW_LEGACY_PLAINTEXT=true` untuk migrasi data lama. Provision kunci indeks yang sama pada semua node; migrator dapat membuatnya pada instalasi tunggal jika belum ada.
+3. Pertahankan `APP_KEY` asli. Atur `APP_CIPHER=AES-256-GCM` dan `SIEM_ALLOW_LEGACY_PLAINTEXT=false`. Izin pembacaan plaintext lama cukup diberikan pada proses CLI melalui `--allow-legacy`. Provision kunci indeks yang sama pada semua node; migrator dapat membuatnya pada instalasi tunggal jika belum ada.
 4. Jalankan:
 
 ```bash
 php artisan config:clear
 php artisan migrate --force
-php artisan siem:encrypt-data --chunk=50
+php artisan siem:encrypt-data --allow-legacy --chunk=50
 php artisan siem:encrypt-data --check
 ```
 
-5. Setelah pemeriksaan menunjukkan nol entri yang memerlukan migrasi/perbaikan, ubah `SIEM_ALLOW_LEGACY_PLAINTEXT=false`. Simpan kunci indeks yang dibuat ke pengelolaan secret dan backup kunci.
+5. Pemeriksaan harus menunjukkan nol entri yang memerlukan migrasi/perbaikan dan konfigurasi web tetap `SIEM_ALLOW_LEGACY_PLAINTEXT=false`. Simpan kunci indeks yang dibuat ke pengelolaan secret dan backup kunci.
 6. Bersihkan cache konfigurasi/view, muat ulang proses aplikasi yang menyimpan konfigurasi, dan restart worker secara terkendali. `php artisan queue:restart` memberi sinyal berhenti setelah job selesai; worker terminal perlu dijalankan kembali, sedangkan supervisor harus dikonfigurasi untuk memulainya lagi.
 7. Masuk ulang, periksa admin aktif, pemilik ACK, pemetaan Telegram yang belum terselesaikan, zona waktu sumber, serta verifikasi SSL. Buat backup baru setelah upgrade.
 
@@ -375,7 +379,7 @@ Kunci aplikasi dan kunci indeks tidak boleh dipublikasikan atau dibuang ketika m
 
 Regresi mencakup ACK bersamaan dari dua proses, retry notifikasi, pembatalan grup, scope agent, keamanan sesi, enkripsi dan rotasi, restore SQL, template yang dihapus, audit aktivitas, serta tampilan responsif. Pengujian Telegram menggunakan tiruan layanan.
 
-Verifikasi kode terakhir pada **15 November 2026** memeriksa **693 kasus PHP**: 692 lulus, satu dilewati, dan tidak ada kegagalan/error. Tes benturan nama file dilewati karena filesystem Windows; `InstallerDevelopmentServerTest` dikecualikan dari suite tersebut. **30 tes JavaScript lulus**, termasuk pesan validasi leaderboard dan pemulihan tampilan setelah input diperbaiki. Build produksi berhasil setelah pembaruan dependency. Pengujian PHP memakai database SQLite pengujian, bukan database operasional.
+Audit terakhir pada **16 November 2026** menggabungkan suite penuh dan tes ulang menjadi **756 kasus unik per engine**: PostgreSQL 755 lulus/satu dilewati; SQLite, MySQL, dan MariaDB masing-masing 751 lulus/lima dilewati. Tidak ada kegagalan yang belum terselesaikan. Empat masalah fixture/setup MySQL pada run awal telah diverifikasi melalui tes ulang. Tes benturan nama file dilewati pada Windows, empat tes khusus PostgreSQL dilewati pada engine lain, dan `InstallerDevelopmentServerTest` dikecualikan karena pengelolaan proses pada lingkungan ini. **30 tes JavaScript dan build produksi lulus**. Seluruh database pengujian terpisah dari database operasional; rincian versi, perbaikan, laporan awal/ulang, dan batas cakupan ada pada [audit enkripsi dan hybrid query](ENCRYPTION_AUDIT.md).
 
 Sebanyak **17 tes khusus tujuan integrasi** memeriksa penolakan host/port/protokol/base path yang belum disimpan, pencabutan tujuan lama, penyimpanan endpoint AI sebelum model dipilih, audit perubahan, dan penolakan mode installer setelah aplikasi terpasang. Pemeriksaan transport cURL dengan listener lokal terkontrol memverifikasi DNS pinning dan tidak adanya request lanjutan ke tujuan redirect. Hasil audit dependency pada tanggal yang sama adalah nol advisory Composer dan nol kerentanan npm; hasil ini bukan jaminan terhadap advisory yang terbit kemudian.
 
@@ -392,6 +396,6 @@ Sebanyak **17 tes khusus tujuan integrasi** memeriksa penolakan host/port/protok
 | Enkripsi dan pemulihan SQL | [SensitiveDataEncryptionTest](../tests/Feature/SensitiveDataEncryptionTest.php), [SqlExportRoundTripTest](../tests/Feature/SqlExportRoundTripTest.php) |
 | Pemeriksaan UI | [security-policy.mjs](../tests/ui/security-policy.mjs) |
 
-Pemulihan SQL telah diperiksa pada SQLite, MySQL, dan PostgreSQL/PGlite; ini tidak menyatakan seluruh driver Laravel mempunyai tingkat dukungan yang sama. Tes integrasi yang membuat database sementara memerlukan akun pengujian tersendiri. Jangan menjalankan restore atau pengujian terhadap database operasional.
+Pemulihan SQL telah diperiksa pada SQLite serta server native PostgreSQL, MySQL, dan MariaDB; ini tidak menyatakan seluruh driver Laravel mempunyai tingkat dukungan yang sama. Tes integrasi yang membuat database sementara memerlukan akun pengujian tersendiri. Jangan menjalankan restore atau pengujian terhadap database operasional.
 
 Untuk kontribusi, jalankan tes yang relevan di lingkungan pengujian dengan PDO sesuai, `npm test` untuk JavaScript, dan `npm run build` jika antarmuka berubah. Sertakan cara verifikasi pada pull request. Lihat [cara melaporkan bug dan bergabung sebagai kontributor](../README.md#kontribusi).

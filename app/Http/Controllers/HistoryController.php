@@ -17,6 +17,7 @@ class HistoryController extends Controller
 {
     public function alerts(Request $request)
     {
+        $request->validate(['search' => ['nullable', 'string', 'max:200', 'regex:/\A[^\x00]*\z/u']]);
         $query = Alert::visibleTo($request->user())->select(Alert::LIST_COLUMNS);
 
         if ($request->filled('status') && $request->status !== 'all') {
@@ -65,16 +66,16 @@ class HistoryController extends Controller
                 $like = '%'.$term.'%';
                 $query->where(function ($query) use ($like, $term) {
                     foreach (['users.name', 'alerts.rule_description', 'alerts.agent_name', 'entries.chat_id'] as $field) {
-                        $query->orWhere($field, 'like', $like);
+                        $query->orWhereLike($field, $like);
                     }
                     $query->orWhere(fn ($notes) => $notes->where('entries.entry_type', 'notification')->whereExists(
                         fn ($tokens) => EncryptedSearchIndex::match($tokens, 'notification', 'entries.id', $term)))
                         ->orWhere(fn ($notes) => $notes->where('entries.entry_type', 'triage')->whereExists(
                             fn ($tokens) => EncryptedSearchIndex::match($tokens, 'triage', 'entries.id', $term)));
-                    if (config('data_security.allow_legacy_plaintext', true)) {
-                        $query->orWhere(fn ($legacy) => $legacy->where('entries.note', 'not like', SensitiveDataCipher::PREFIX.'%')->where('entries.note', 'like', $like));
+                    if (config('data_security.allow_legacy_plaintext', false)) {
+                        $query->orWhere(fn ($legacy) => $legacy->where('entries.note', 'not like', SensitiveDataCipher::PREFIX.'%')->whereLike('entries.note', $like));
                     }
-                    $query->orWhereRaw("CASE WHEN entries.automatic_key IS NOT NULL THEN 'Sistem (otomatis)' ELSE '' END LIKE ?", [$like]);
+                    $query->orWhereLike(DB::raw("CASE WHEN entries.automatic_key IS NOT NULL THEN 'Sistem (otomatis)' ELSE '' END"), $like);
                 });
             }
         }
@@ -115,7 +116,7 @@ class HistoryController extends Controller
     private function filters(Request $request, array $actions): array
     {
         return $request->validate([
-            'search' => ['nullable', 'string', 'max:200'],
+            'search' => ['nullable', 'string', 'max:200', 'regex:/\A[^\x00]*\z/u'],
             'action' => ['nullable', Rule::in(['all', ...$actions])],
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('date_from'), 'after_or_equal:date_from')],

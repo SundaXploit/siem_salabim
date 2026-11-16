@@ -11,7 +11,7 @@ trait IndexesEncryptedSearch
     public static function bootIndexesEncryptedSearch(): void
     {
         static::saving(function ($model): void {
-            $model->refreshEncryptedIndex = $model->exists ? $model->isDirty($model->encryptedSearchFields)
+            $model->refreshEncryptedIndex = $model->exists ? $model->isDirty([...$model->encryptedSearchFields, 'alert_id'])
                 : collect($model->encryptedSearchFields)->contains(fn ($field) => ($model->getAttributes()[$field] ?? null) !== null);
         });
         static::saved(function ($model): void {

@@ -94,6 +94,7 @@ class DashboardController extends Controller
             ], 409);
         }
 
+        $executionLimit = ini_get('max_execution_time');
         try {
             if (function_exists('set_time_limit')) {
                 @set_time_limit(180);
@@ -153,6 +154,9 @@ class DashboardController extends Controller
                     : 'Analisis AI tidak dapat diselesaikan. Coba kembali beberapa saat lagi.',
             ], 502);
         } finally {
+            if ($executionLimit !== false && function_exists('set_time_limit')) {
+                @set_time_limit((int) $executionLimit);
+            }
             $lock->release();
         }
     }

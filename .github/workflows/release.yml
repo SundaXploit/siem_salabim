@@ -27,6 +27,34 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: siem_mysql_test
+          MYSQL_ROOT_PASSWORD: ci-root-only
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping --host=127.0.0.1 --user=root --password=ci-root-only --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_DATABASE: siem_mariadb_test
+          MARIADB_ROOT_PASSWORD: ci-root-only
+          MARIADB_ROOT_HOST: '%'
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,7 +66,7 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: '8.3'
-          extensions: curl, dom, fileinfo, mbstring, openssl, pdo_sqlite, sqlite3, pdo_pgsql, pgsql, xml, zip
+          extensions: curl, dom, fileinfo, mbstring, openssl, pdo_sqlite, sqlite3, pdo_pgsql, pgsql, pdo_mysql, xml, zip
           coverage: none
 
       - name: Set up Node.js
@@ -86,6 +114,43 @@ jobs:
           DB_SSLMODE: disable
         run: php vendor/bin/phpunit --configuration phpunit.pgsql.xml
 
+      - name: Create restricted MySQL and MariaDB test users
+        env:
+          TEST_SQL_ROOT_PASSWORD: ci-root-only
+        run: |
+          php <<'PHP'
+          <?php
+          foreach ([3306, 3307] as $port) {
+              $pdo = new PDO('mysql:host=127.0.0.1;port='.$port, 'root', getenv('TEST_SQL_ROOT_PASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+              // Disposable CI service only: fault-injection triggers must be
+              // creatable by the restricted test user without SUPER privileges.
+              if ($port === 3306) {
+                  $pdo->exec('SET GLOBAL log_bin_trust_function_creators = 1');
+              }
+              $pdo->exec("CREATE USER 'siem_test'@'%' IDENTIFIED BY 'ci-siem-test-only'");
+              $pdo->exec("GRANT ALL PRIVILEGES ON `siem\\_%`.* TO 'siem_test'@'%'");
+          }
+          PHP
+
+      - name: Run MySQL test suite
+        env:
+          DB_DATABASE: siem_mysql_test
+          DB_USERNAME: siem_test
+          DB_PASSWORD: ci-siem-test-only
+        run: php vendor/bin/phpunit --configuration phpunit.mysql.xml
+
+      - name: Run MariaDB test suite
+        env:
+          DB_CONNECTION: mariadb
+          DB_PORT: '3307'
+          DB_DATABASE: siem_mariadb_test
+          DB_USERNAME: siem_test
+          DB_PASSWORD: ci-siem-test-only
+          SIEM_SQL_TEST_DRIVER: mariadb
+          SIEM_ACK_TEST_DRIVER: mariadb
+          SIEM_NOTIFY_TEST_DRIVER: mariadb
+        run: php vendor/bin/phpunit --configuration phpunit.mysql.xml
+
       - name: Install production dependencies
         run: composer install --no-dev --classmap-authoritative --no-interaction --prefer-dist --no-progress
 
@@ -105,6 +170,7 @@ jobs:
             ':(exclude)bootstrap/cache' \
             ':(exclude)phpunit.xml' \
             ':(exclude)phpunit.pgsql.xml' \
+            ':(exclude)phpunit.mysql.xml' \
             ':(exclude)storage' \
             ':(exclude)tests' \
             | tar -xf - -C "${release_root}"

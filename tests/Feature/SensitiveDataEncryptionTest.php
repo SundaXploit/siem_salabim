@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Alert;
 use App\Models\AlertTriage;
 use App\Models\Configuration;
+use App\Models\DashboardInsight;
+use App\Models\DataExport;
 use App\Models\NotificationLog;
 use App\Models\User;
 use App\Services\EncryptedSearchIndex;
@@ -16,6 +18,7 @@ use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -29,7 +32,7 @@ class SensitiveDataEncryptionTest extends TestCase
     {
         parent::setUp();
         $this->lockPath = sys_get_temp_dir().'/siem-encryption-test-'.bin2hex(random_bytes(8)).'.lock';
-        config(['data_security.allow_legacy_plaintext' => true,
+        config(['data_security.allow_legacy_plaintext' => false,
             'data_security.migration_lock_path' => $this->lockPath,
             'data_security.blind_index_key' => 'base64:'.base64_encode(str_repeat('b', 32))]);
     }
@@ -81,6 +84,7 @@ class SensitiveDataEncryptionTest extends TestCase
 
     public function test_plaintext_is_readable_before_migration_but_ciphertext_tampering_never_falls_back(): void
     {
+        config(['data_security.allow_legacy_plaintext' => true]);
         $alert = $this->alert();
         DB::table('alerts')->where('id', $alert->id)->update(['raw_data' => json_encode(['legacy' => 'old-event']), 'src_ip' => '198.51.100.9']);
         $this->assertSame(['legacy' => 'old-event'], $alert->fresh()->raw_data);
@@ -113,6 +117,24 @@ class SensitiveDataEncryptionTest extends TestCase
         $alert->fresh()->raw_data;
     }
 
+    #[DataProvider('missingEnvelopeFields')]
+    public function test_legacy_mode_cannot_treat_a_damaged_unprefixed_envelope_as_plaintext(string $field): void
+    {
+        Configuration::set('ai_api_key', 'private credential');
+        $stored = DB::table('configurations')->where('key', 'ai_api_key')->value('value');
+        $envelope = json_decode(base64_decode($stored), true, 512, JSON_THROW_ON_ERROR);
+        unset($envelope[$field]);
+        DB::table('configurations')->where('key', 'ai_api_key')->update(['value' => base64_encode(json_encode($envelope, JSON_THROW_ON_ERROR))]);
+        config(['data_security.allow_legacy_plaintext' => true]);
+        $this->expectException(DecryptException::class);
+        Configuration::get('ai_api_key');
+    }
+
+    public static function missingEnvelopeFields(): array
+    {
+        return [['iv'], ['value'], ['mac']];
+    }
+
     public function test_previous_keys_and_authenticated_cbc_remain_readable_after_switching_to_gcm(): void
     {
         $old = random_bytes(32);
@@ -134,6 +156,62 @@ class SensitiveDataEncryptionTest extends TestCase
         DB::table('configurations')->where('key', 'opensearch_password')->update(['value' => base64_encode(json_encode($corrupt))]);
         $this->expectException(DecryptException::class);
         Configuration::get('opensearch_password');
+    }
+
+    public function test_rotation_reencrypts_every_sensitive_model_and_keeps_search_and_original_evidence_usable_without_old_keys(): void
+    {
+        $oldKey = config('app.key');
+        config(['app.cipher' => 'AES-256-CBC']);
+        app()->forgetInstance('encrypter');
+        Crypt::clearResolvedInstance('encrypter');
+        $user = User::factory()->create(['role' => 'admin']);
+        $alert = $this->alert();
+        $raw = $alert->raw_data;
+        $hash = $alert->getRawOriginal('src_ip_hash');
+        $ciphertext = $alert->getRawOriginal('raw_data');
+        $analysis = $alert->aiAnalyses()->create([
+            'verdict' => 'suspicious', 'summary' => 'private rotation analysis', 'model' => 'fixture',
+            'supporting_indicators' => ['private indicator'], 'generated_at' => now(),
+        ]);
+        $triage = AlertTriage::create(['alert_id' => $alert->id, 'user_id' => $user->id, 'action' => 'ignore', 'reason' => 'private rotation note']);
+        $delivery = NotificationLog::create([
+            'alert_id' => $alert->id, 'user_id' => $user->id, 'chat_id' => '-1001', 'message' => 'private rotation notification',
+            'delivery_details' => ['message' => ['state' => 'sent']], 'sent_at' => now(),
+        ]);
+        $insight = DashboardInsight::create([
+            'period_key' => '2026-11', 'period_start' => '2026-11-01', 'period_end' => '2026-11-30',
+            'summary' => 'private rotation dashboard', 'source_snapshot' => ['private' => 'rotation evidence'],
+        ]);
+        $export = DataExport::forceCreate([
+            'uuid' => (string) Str::uuid(), 'requested_by_name' => 'Admin', 'scope' => 'all', 'format' => 'json',
+            'period_label' => 'all', 'storage_disk' => 'local', 'filename' => 'rotation.zip', 'archive_password' => 'private rotation password',
+        ]);
+        Configuration::set('ai_api_key', 'private rotation credential');
+
+        config(['app.key' => 'base64:'.base64_encode(random_bytes(32)), 'app.previous_keys' => [$oldKey], 'app.cipher' => 'AES-256-GCM']);
+        app()->forgetInstance('encrypter');
+        Crypt::clearResolvedInstance('encrypter');
+        $this->artisan('siem:encrypt-data', ['--rotate' => true, '--chunk' => 1])->assertSuccessful();
+        config(['app.previous_keys' => []]);
+        app()->forgetInstance('encrypter');
+        Crypt::clearResolvedInstance('encrypter');
+        $this->artisan('siem:encrypt-data', ['--check' => true])->assertSuccessful();
+
+        $this->assertSame($raw, $alert->fresh()->raw_data);
+        $this->assertNotSame($ciphertext, $alert->fresh()->getRawOriginal('raw_data'));
+        $this->assertSame($hash, $alert->fresh()->getRawOriginal('src_ip_hash'));
+        $this->assertSame('private rotation analysis', $analysis->fresh()->summary);
+        $this->assertSame(['private indicator'], $analysis->fresh()->supporting_indicators);
+        $this->assertSame('private rotation note', $triage->fresh()->reason);
+        $this->assertSame('private rotation notification', $delivery->fresh()->message);
+        $this->assertSame(['message' => ['state' => 'sent']], $delivery->fresh()->delivery_details);
+        $this->assertSame('private rotation dashboard', $insight->fresh()->summary);
+        $this->assertSame(['private' => 'rotation evidence'], $insight->fresh()->source_snapshot);
+        $this->assertSame('private rotation password', $export->fresh()->archive_password);
+        $this->assertSame('private rotation credential', Configuration::get('ai_api_key'));
+        foreach (['192.0.2.48', 'protected-evidence-marker'] as $term) {
+            $this->assertSame([$alert->id], Alert::searchTerms($term)->pluck('id')->all());
+        }
     }
 
     public function test_blind_indexes_find_exact_ips_and_log_words_without_plaintext_or_decrypting_every_row(): void
@@ -161,6 +239,7 @@ class SensitiveDataEncryptionTest extends TestCase
 
     public function test_backfill_is_resumable_preserves_metadata_and_is_idempotent_without_rotation(): void
     {
+        config(['data_security.allow_legacy_plaintext' => true]);
         $user = User::factory()->create(['role' => 'admin']);
         $alert = $this->alert();
         $raw = ['agent' => ['id' => '001'], 'legacy' => 'sensitive-legacy-marker'];

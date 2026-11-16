@@ -7,6 +7,7 @@ use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Tests\Support\MySqlTestDatabase;
 use Tests\Support\PostgresTestDatabase;
 
 class ConcurrentAckTest extends TestCase
@@ -30,10 +31,11 @@ class ConcurrentAckTest extends TestCase
         $database = $directory.'/race.sqlite';
         $connectionEnvironment = [];
         $schema = null;
-        if ($driver === 'mysql') {
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
             $app = require $root.'/bootstrap/app.php';
             $app->make(Kernel::class)->bootstrap();
-            $configuration = config('database.connections.mysql');
+            $configuration = config('database.connections.'.$driver);
+            MySqlTestDatabase::assertSafe($configuration);
             restore_error_handler();
             restore_exception_handler();
             $this->assertContains($configuration['host'], ['127.0.0.1', 'localhost']);
@@ -72,7 +74,7 @@ class ConcurrentAckTest extends TestCase
             $pdo->exec("INSERT INTO alerts VALUES ({$id},'new','2026-11-14 17:00:00',NULL,NULL,NULL)");
         }
         $primary = match ($driver) {
-            'mysql' => 'INTEGER PRIMARY KEY AUTO_INCREMENT', 'pgsql' => 'BIGSERIAL PRIMARY KEY', default => 'INTEGER PRIMARY KEY',
+            'mysql', 'mariadb' => 'INTEGER PRIMARY KEY AUTO_INCREMENT', 'pgsql' => 'BIGSERIAL PRIMARY KEY', default => 'INTEGER PRIMARY KEY',
         };
         $pdo->exec('CREATE TABLE alert_triages (id '.$primary.', alert_id INTEGER, user_id INTEGER, action TEXT, reason TEXT, created_at TEXT)');
         file_put_contents($directory.'/claim.php', <<<'PHP'
@@ -97,10 +99,12 @@ while (!is_file($argv[2].'/start')) {
 }
 echo json_encode(app(App\Services\AlertTriageService::class)->apply(json_decode($argv[4], true), 'acknowledge', (int)$argv[3]));
 PHP);
-        $module = $driver === 'pgsql' ? 'pdo_pgsql' : 'pdo_sqlite';
+        $module = match ($driver) {
+            'pgsql' => 'pdo_pgsql', 'mysql', 'mariadb' => 'pdo_mysql', default => 'pdo_sqlite',
+        };
         $probe = new Process([PHP_BINARY, '-r', 'echo extension_loaded("'.$module.'") ? "yes" : "no";']);
         $probe->mustRun();
-        $extensions = $driver === 'mysql' || trim($probe->getOutput()) === 'yes' ? [] : ['-d', 'extension='.$module];
+        $extensions = trim($probe->getOutput()) === 'yes' ? [] : ['-d', 'extension='.$module];
         $processes = [];
         try {
             foreach ([1, 2] as $actor) {
@@ -144,7 +148,7 @@ PHP);
                     $process->stop(0);
                 }
             }
-            if ($driver === 'mysql' && preg_match('/\Asiem_ack_test_[a-f0-9]{12}\z/', $database)) {
+            if (in_array($driver, ['mysql', 'mariadb'], true) && preg_match('/\Asiem_ack_test_[a-f0-9]{12}\z/', $database)) {
                 $pdo->exec('DROP DATABASE `'.$database.'`');
             }
             if ($schema !== null && preg_match('/\Asiem_ack_test_[a-f0-9]{12}\z/', $schema)) {

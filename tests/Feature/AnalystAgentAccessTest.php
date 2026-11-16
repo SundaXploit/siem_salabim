@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AnalystAgentAccessTest extends TestCase
@@ -249,7 +250,8 @@ class AnalystAgentAccessTest extends TestCase
     public function test_unknown_agent_keys_and_privileges_cannot_be_persisted_and_existing_grants_survive_inventory_failure(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);
-        $analyst = $this->analyst(['alerts.ignore']);
+        // MySQL normalizes JSON object key order when persisting metadata.
+        $analyst = $this->analyst(['alerts.ignore'])->refresh();
         $before = $analyst->fresh()->getAttributes();
         $this->actingAs($admin);
         $service = $this->mock(OpenSearchService::class);
@@ -280,7 +282,7 @@ class AnalystAgentAccessTest extends TestCase
         $this->assignAckOwner($alert, $user);
         $this->mock(TelegramService::class)->shouldReceive('sendMessage')->once()
             ->with('-1001', 'Investigasi alert diperlukan.')->andReturn(['success' => true, 'status' => 200]);
-        $this->actingAs($user)->post(route('alerts.notify', $alert), ['operation_id' => (string) \Illuminate\Support\Str::uuid(), 'message' => 'Investigasi alert diperlukan.'])->assertRedirect();
+        $this->actingAs($user)->post(route('alerts.notify', $alert), ['operation_id' => (string) Str::uuid(), 'message' => 'Investigasi alert diperlukan.'])->assertRedirect();
         $this->assertSame('acknowledged', $alert->fresh()->status);
         $this->assertDatabaseHas('notification_logs', ['alert_id' => $alert->id, 'user_id' => $user->id]);
         $this->assertDatabaseMissing('alert_triages', ['alert_id' => $alert->id, 'action' => 'acknowledge']);

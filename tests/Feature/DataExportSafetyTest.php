@@ -37,7 +37,7 @@ class DataExportSafetyTest extends TestCase
         $this->assertSame('verified', $export->status);
         $this->assertNotNull($export->verified_at);
         $this->assertSame(64, strlen((string) $export->checksum));
-        $this->assertSame(['alerts' => 1, 'alert_ai_analyses' => 0, 'alert_triages' => 0, 'manual_notification_operations' => 0, 'notification_logs' => 0,
+        $this->assertEquals(['alerts' => 1, 'alert_ai_analyses' => 0, 'alert_triages' => 0, 'manual_notification_operations' => 0, 'notification_logs' => 0,
             'encrypted_search_tokens' => DB::table('encrypted_search_tokens')->count()], $export->record_counts);
 
         $manifest = json_decode(
@@ -324,6 +324,15 @@ class DataExportSafetyTest extends TestCase
                 $$;
                 CREATE TRIGGER reject_completed_purge BEFORE UPDATE OF purge_status ON data_exports
                 FOR EACH ROW WHEN (NEW.purge_status = 'completed') EXECUTE FUNCTION test_reject_purge()
+                SQL);
+        } elseif (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            DB::unprepared(<<<'SQL'
+                CREATE TRIGGER reject_completed_purge BEFORE UPDATE ON data_exports FOR EACH ROW
+                BEGIN
+                    IF NEW.purge_status = 'completed' THEN
+                        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced completed status failure';
+                    END IF;
+                END
                 SQL);
         } else {
             DB::unprepared(<<<'SQL'

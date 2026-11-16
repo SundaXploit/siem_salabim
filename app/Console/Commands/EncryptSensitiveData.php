@@ -206,7 +206,7 @@ class EncryptSensitiveData extends Command
         $prefix = $store->getPrefix();
         $pending = 0;
         DB::connection(config('cache.stores.database.connection'))->table(config('cache.stores.database.table', 'cache'))
-            ->where('key', 'like', $prefix.'bulk-alert-ai:v1:%')->orderBy('key')->chunk(100, function ($rows) use ($prefix, &$pending): void {
+            ->where('key', 'like', $prefix.'bulk-alert-ai:v1:%')->chunkById(100, function ($rows) use ($prefix, &$pending): void {
                 foreach ($rows as $row) {
                     if (! str_starts_with($row->key, $prefix.'bulk-alert-ai:v1:')) {
                         continue;
@@ -230,14 +230,15 @@ class EncryptSensitiveData extends Command
                             Cache::put($key, SensitiveDataCipher::encryptJson($value), max(1, $row->expiration - time()));
                         }
                     } else {
-                        $pending += $this->isGcm($value) ? 0 : 1;
-                        SensitiveDataCipher::decryptJson($value);
-                        if ($this->option('rotate') && ! $this->option('check')) {
-                            Cache::put($key, SensitiveDataCipher::encryptJson(SensitiveDataCipher::decryptJson($value)), max(1, $row->expiration - time()));
+                        $current = $this->isGcm($value);
+                        $pending += $current ? 0 : 1;
+                        $plain = SensitiveDataCipher::decryptJson($value);
+                        if (! $this->option('check') && (! $current || $this->option('rotate'))) {
+                            Cache::put($key, SensitiveDataCipher::encryptJson($plain), max(1, $row->expiration - time()));
                         }
                     }
                 }
-            });
+            }, 'key');
 
         return $pending;
     }
