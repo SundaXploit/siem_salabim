@@ -69,16 +69,6 @@ Persyaratan dasar: **PHP 8.3+**, **Composer 2**, **Node.js 22.12+**, npm, serta 
 
 Pertahankan `APP_KEY` dan simpan backup konfigurasi secara privat. Gunakan HTTPS untuk operasional serta akun runtime yang sesuai saat menjalankan perintah server. Rincian akses, enkripsi, backup, dan batas perlindungan tersedia pada [panduan keamanan](https://siem.sundaxploit.id/dokumentasi.html#keamanan).
 
-<a id="insight"></a>
-
-## Insight repository
-
-[![GitHub stars](https://img.shields.io/github/stars/SundaXploit/siem_salabim?style=flat-square)](https://github.com/SundaXploit/siem_salabim/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/SundaXploit/siem_salabim?style=flat-square)](https://github.com/SundaXploit/siem_salabim/forks)
-[![Clone insights 14 hari](https://img.shields.io/badge/Clone%20insights-14%20hari-0969DA?style=flat-square&logo=github)](https://github.com/SundaXploit/siem_salabim/graphs/traffic)
-
-Badge clone membuka GitHub Insights. Statistik clone 14 hari terakhir tersedia bagi akun dengan akses push; angka clone otomatis memerlukan akses Traffic API. [Ketentuan GitHub](https://docs.github.com/en/repositories/viewing-activity-and-data-for-your-repository/viewing-traffic-to-a-repository).
-
 <a id="dukungan"></a>
 
 ## Dukungan
