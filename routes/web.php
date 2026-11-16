@@ -21,8 +21,9 @@ Route::get('/', fn () => redirect('/dashboard'));
 // ─── Breeze Auth routes ───────────────────────────────────────────────────────
 require __DIR__.'/auth.php';
 
+// Keep human activity reports out of other actions' numeric throttle bucket.
 Route::post('/session/activity', SessionActivityController::class)
-    ->middleware(['auth', 'throttle:12,1'])->name('session.activity');
+    ->middleware(['auth', 'throttle:12,1,session-activity:'])->name('session.activity');
 
 // ─── Authenticated routes ─────────────────────────────────────────────────────
 Route::middleware(['auth', 'can:alerts.view'])->group(function () {

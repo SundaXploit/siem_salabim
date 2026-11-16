@@ -81,10 +81,13 @@ class AutomaticAlertNotifier
     {
         return DB::transaction(function () use ($delivery, $alert, $message, $dailyLimit): bool {
             $claimed = NotificationLog::whereKey($delivery->id)->where('delivery_state', 'pending')
-                ->update(['delivery_state' => 'sending', 'message' => $message, 'sent_at' => now()]);
+                ->update(['delivery_state' => 'sending', 'message' => SensitiveDataCipher::encryptString($message), 'sent_at' => now()]);
             if (! $claimed) {
                 return false;
             }
+
+            // The atomic claim bypasses model casts and search-index events.
+            app(EncryptedSearchIndex::class)->replace('notification', $delivery->id, $alert->id, [$message]);
 
             // Hash exact values so case-insensitive database collations cannot combine different agents/rules.
             $groupKey = hash('sha256', json_encode([

@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SecurityPolicyTest extends TestCase
@@ -119,7 +120,7 @@ class SecurityPolicyTest extends TestCase
 
             return ['success' => true, 'status' => 200];
         });
-        $this->actingAs($user)->post(route('alerts.notify', $alert), ['operation_id' => (string) \Illuminate\Support\Str::uuid(), 'message' => 'Owner incident notification'])->assertRedirect();
+        $this->actingAs($user)->post(route('alerts.notify', $alert), ['operation_id' => (string) Str::uuid(), 'message' => 'Owner incident notification'])->assertRedirect();
         $this->assertSame('ignored', $alert->fresh()->status);
         $this->assertDatabaseHas('alert_triages', ['alert_id' => $alert->id, 'action' => 'ignore']);
     }
@@ -194,6 +195,33 @@ class SecurityPolicyTest extends TestCase
         $this->getJson('/api/alerts/latest')->assertOk();
         $this->withSession(['security.started_at' => now()->subHours(8)->subSecond()->timestamp]);
         $this->postJson(route('session.activity'), ['idle_ms' => 0])->assertUnauthorized();
+    }
+
+    public function test_session_heartbeats_do_not_consume_other_actions_rate_limit(): void
+    {
+        $this->app['router']->post('/test/session-rate-limit', fn () => response()->json(['ok' => true]))
+            ->middleware(['web', 'auth', 'throttle:5,1']);
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+
+        for ($attempt = 0; $attempt < 12; $attempt++) {
+            $this->postJson(route('session.activity'), ['idle_ms' => 0])->assertOk();
+        }
+
+        $this->postJson('/test/session-rate-limit')->assertOk();
+        $this->postJson(route('session.activity'), ['idle_ms' => 0])->assertTooManyRequests();
+    }
+
+    public function test_other_actions_do_not_exhaust_the_session_heartbeat_budget(): void
+    {
+        $this->app['router']->post('/test/session-rate-limit', fn () => response()->json(['ok' => true]))
+            ->middleware(['web', 'auth', 'throttle:30,1']);
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+
+        for ($attempt = 0; $attempt < 12; $attempt++) {
+            $this->postJson('/test/session-rate-limit')->assertOk();
+        }
+
+        $this->postJson(route('session.activity'), ['idle_ms' => 0])->assertOk();
     }
 
     public function test_wazuh_offsets_and_local_date_bounds_match_the_same_instant(): void

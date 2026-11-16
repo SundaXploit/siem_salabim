@@ -16,6 +16,7 @@ use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SensitiveDataEncryptionTest extends TestCase
@@ -197,6 +198,71 @@ class SensitiveDataEncryptionTest extends TestCase
         $this->assertSame(1, $snapshot['metrics']['total']);
         $this->assertStringContainsString('Valid Accounts', json_encode($snapshot['techniques']));
         $this->assertSame(1, $snapshot['metrics']['unique_source_ips']);
+    }
+
+    #[DataProvider('notificationHistoryViewerRoles')]
+    public function test_explicit_legacy_repair_restores_existing_automatic_notification_details_without_weakening_web_reads(string $role): void
+    {
+        $alert = $this->alert();
+        $original = $alert->getRawOriginal('raw_data');
+        $message = 'Pesan otomatis lama yang perlu dienkripsi ulang.';
+        $delivery = NotificationLog::create([
+            'alert_id' => $alert->id, 'user_id' => null, 'chat_id' => '-1001', 'message' => 'Pesan sebelum job dikirim.',
+            'automatic_key' => hash('sha256', 'legacy-automatic-delivery'), 'delivery_state' => 'sent',
+            'response_status' => 200, 'sent_at' => now(),
+        ]);
+        DB::table('notification_logs')->where('id', $delivery->id)->update(['message' => $message]);
+        config(['data_security.allow_legacy_plaintext' => false]);
+        $viewer = $role === 'admin' ? User::factory()->create(['role' => 'admin'])
+            : User::factory()->forAgent('001', cluster: 'cluster-a')->create();
+        $this->actingAs($viewer)
+            ->get(route('alerts.show', $alert))->assertStatus(500);
+        $this->get(route('analyst-log.index'))->assertStatus(500);
+        $this->get(route('analyst-log.index', ['action' => 'notify']))->assertStatus(500);
+        $this->get(route('analyst-log.index', ['action' => 'acknowledge']))->assertOk();
+        $this->get(route('analyst-log.index', ['action' => 'ignore']))->assertOk();
+        $this->artisan('siem:encrypt-data', ['--check' => true])->assertFailed();
+        $this->artisan('siem:encrypt-data', ['--allow-legacy' => true])->assertSuccessful();
+        $this->assertFalse(config('data_security.allow_legacy_plaintext'));
+        $this->artisan('siem:encrypt-data', ['--check' => true])->assertSuccessful();
+        $this->get(route('alerts.show', $alert))->assertOk()->assertSee('Sistem (otomatis)')->assertSee($message);
+        foreach ([[], ['action' => 'notify'], ['search' => 'dienkripsi ulang']] as $filters) {
+            $this->get(route('analyst-log.index', $filters))->assertOk()->assertSee('Sistem (otomatis)')->assertSee($message)
+                ->assertViewHas('logs', fn ($logs) => $logs->total() === 1 && $logs->first()->alert_id === $alert->id);
+        }
+        $this->assertTrue(app(EncryptedSearchIndex::class)->matches('notification', $delivery->id, $alert->id, [$message]));
+        $this->assertStringStartsWith(SensitiveDataCipher::PREFIX, $delivery->fresh()->getRawOriginal('message'));
+        $this->assertSame($message, $delivery->fresh()->message);
+        $this->assertSame('sent', $delivery->fresh()->delivery_state);
+        $this->assertNull($delivery->fresh()->user_id);
+        $this->assertSame($original, $alert->fresh()->getRawOriginal('raw_data'));
+        $this->assertDatabaseCount('alert_triages', 0);
+        $repaired = $delivery->fresh()->getAttributes();
+        $this->artisan('siem:encrypt-data', ['--allow-legacy' => true])->assertSuccessful();
+        $this->assertSame($repaired, $delivery->fresh()->getAttributes());
+        $this->assertFalse(config('data_security.allow_legacy_plaintext'));
+    }
+
+    public static function notificationHistoryViewerRoles(): array
+    {
+        return ['admin' => ['admin'], 'assigned analyst' => ['analyst']];
+    }
+
+    public function test_explicit_legacy_repair_still_rejects_damaged_ciphertext_and_restores_strict_mode_on_failure(): void
+    {
+        $alert = $this->alert();
+        $delivery = NotificationLog::create([
+            'alert_id' => $alert->id, 'user_id' => null, 'chat_id' => '-1001', 'message' => 'Notification evidence.',
+            'automatic_key' => hash('sha256', 'damaged-automatic-delivery'), 'delivery_state' => 'sent', 'sent_at' => now(),
+        ]);
+        $damaged = SensitiveDataCipher::PREFIX.'damaged-ciphertext';
+        DB::table('notification_logs')->where('id', $delivery->id)->update(['message' => $damaged]);
+        config(['data_security.allow_legacy_plaintext' => false]);
+        $this->artisan('siem:encrypt-data', ['--allow-legacy' => true])->assertFailed();
+        $this->assertFalse(config('data_security.allow_legacy_plaintext'));
+        $this->assertSame($damaged, $delivery->fresh()->getRawOriginal('message'));
+        $this->expectException(DecryptException::class);
+        $delivery->fresh()->message;
     }
 
     public function test_search_refuses_index_corruption_and_respects_agent_visibility_after_rotation(): void

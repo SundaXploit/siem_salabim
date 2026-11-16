@@ -98,6 +98,28 @@ Catatan ini mencakup patch keamanan yang telah diterapkan sampai tanggal pembaru
 - Penghapusan riwayat notifikasi saja mempertahankan penanda operasi agar request lama tidak mengirim kembali.
 - Telegram tidak menyediakan idempotency key. Hasil yang tidak pasti tidak otomatis dikirim ulang; operator perlu memeriksa chat sebelum sengaja membuat operasi baru.
 
+### Detail alert atau Log analis error 500 setelah notifikasi otomatis
+
+Pada patch sebelumnya, klaim pengiriman otomatis memperbarui `notification_logs.message` langsung melalui query sehingga melewati cast enkripsi. Dengan `SIEM_ALLOW_LEGACY_PLAINTEXT=false`, detail alert atau halaman **Log analis (`/analyst-log`)** yang membaca pesan tersebut gagal dengan `Legacy plaintext requires an explicit migration mode.` Satu pesan lama pada halaman hasil sudah cukup menyebabkan 500, termasuk ketika dibuka admin. Patch ini mengenkripsi pesan saat klaim dan memperbarui indeks pencarian dalam transaksi yang sama. Pengiriman otomatis tetap tidak mengambil ACK atau mengubah keputusan triage. Memasang kode saja tidak memperbaiki pesan lama; jalankan pemulihan di bawah.
+
+Untuk instalasi yang sudah terkena:
+
+1. Cadangkan database, `.env`, dan kunci enkripsi sesuai prosedur backup. Hentikan scheduler/worker SIEM secara terkendali melalui Supervisor, systemd, atau terminal yang menjalankannya, lalu aktifkan maintenance dengan `sudo -u www-data /usr/bin/php artisan down`. Tunggu job aktif selesai sebelum memperbarui kode. Nama layanan mengikuti konfigurasi server Anda.
+2. Pasang patch ini, termasuk `AutomaticAlertNotifier.php` dan `EncryptSensitiveData.php`. Dari direktori proyek, jalankan perintah berikut sebagai pengguna PHP-FPM yang mempunyai izin baca `.env` dan tulis `storage`/`bootstrap/cache` (contoh Debian/Ubuntu: `www-data`):
+
+   ```bash
+   cd /var/www/html/siem_salabim
+   sudo -u www-data /usr/bin/php artisan optimize:clear
+   sudo -u www-data /usr/bin/php artisan siem:encrypt-data --allow-legacy --chunk=100
+   sudo -u www-data /usr/bin/php artisan siem:encrypt-data --check
+   ```
+
+   Opsi `--allow-legacy` hanya membuka pembacaan plaintext selama perintah pemulihan itu berjalan, termasuk ketika konfigurasi dicache. Opsi ini tidak mengubah `.env`, `APP_KEY`, atau pengaturan pembacaan pada request web. Pesan lama dienkripsi dan indeks pencariannya dibangun ulang; pesan Telegram tidak dikirim ulang. Perintah dapat diulang jika terhenti. Pemeriksaan `--check` harus sukses dengan nol entri tertunda sebelum melanjutkan.
+3. Bila pemeriksaan berhasil, jalankan `sudo -u www-data /usr/bin/php artisan up`, lalu mulai kembali scheduler dan worker menggunakan kode terbaru. Jika PHP-FPM memakai OPcache tanpa pemeriksaan timestamp, muat ulang layanan PHP-FPM. Untuk aplikasi yang dikelola dengan metode lain, sesuaikan akun dan perintah pengelola prosesnya.
+4. Buka kembali `/analyst-log` tanpa filter, dengan filter **Notifikasi**, dan dengan pencarian kata dari pesan lama. Buka juga detail alert yang bermasalah sebagai admin atau analis yang mempunyai akses agent tersebut. Kedua halaman harus dapat dibuka setelah pemulihan. Analisis AI memerlukan privilege analisis dan provider yang dikonfigurasi. Ambil ACK sebelum ignore atau notifikasi manual; tindakan lanjutan tetap milik pengguna pemegang ACK.
+
+Jika dekripsi tetap gagal karena ciphertext rusak atau kunci tidak cocok, hentikan pemulihan dan periksa backup/kunci sebelumnya. Jangan mengganti `APP_KEY`, menghapus database/riwayat, atau mengaktifkan mode legacy secara permanen untuk menyembunyikan kegagalan autentikasi.
+
 ### Satu pesan massal per tujuan
 
 - Toolbar Live Alerts dan Detail & analisis massal dapat mengirim notifikasi untuk pilihan hingga **100 alert** yang sudah ACK milik pengguna.

@@ -25,6 +25,7 @@ class EncryptSensitiveData extends Command
     protected $signature = 'siem:encrypt-data
         {--check : Authenticate stored values and report pending legacy fields without changing data}
         {--rotate : Re-encrypt every non-null value with the current APP_KEY and cipher}
+        {--allow-legacy : Read legacy plaintext only during this explicit repair command}
         {--chunk=100 : Rows locked per transaction, between 1 and 1000}';
 
     protected $description = 'Encrypt legacy sensitive data and rebuild keyed search indexes in resumable batches';
@@ -49,9 +50,15 @@ class EncryptSensitiveData extends Command
 
             return self::FAILURE;
         }
+        $allowLegacy = config('data_security.allow_legacy_plaintext');
         try {
+            if ($this->option('allow-legacy')) {
+                config(['data_security.allow_legacy_plaintext' => true]);
+            }
+
             return $this->runMigration($index, $environment);
         } finally {
+            config(['data_security.allow_legacy_plaintext' => $allowLegacy]);
             flock($this->migrationLock, LOCK_UN);
             fclose($this->migrationLock);
         }
@@ -173,7 +180,7 @@ class EncryptSensitiveData extends Command
 
             return self::FAILURE;
         }
-        $this->info($this->option('check') ? "Pemeriksaan selesai; entri yang perlu dimigrasikan/diperbaiki: {$pending}." : 'Enkripsi dan indeks selesai. Jalankan kembali dengan --check sebelum menonaktifkan mode legacy.');
+        $this->info($this->option('check') ? "Pemeriksaan selesai; entri yang perlu dimigrasikan/diperbaiki: {$pending}." : 'Enkripsi dan indeks selesai. Jalankan kembali dengan --check tanpa --allow-legacy untuk memverifikasi pembacaan ketat.');
 
         return $this->option('check') && $pending > 0 ? self::FAILURE : self::SUCCESS;
     }

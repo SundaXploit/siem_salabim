@@ -2,19 +2,23 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\SendAutomaticAlertNotification;
 use App\Jobs\PrepareAutomaticAlertNotifications;
+use App\Jobs\SendAutomaticAlertNotification;
 use App\Models\ActivityLog;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\NotificationLog;
 use App\Models\PermanentAlertIgnore;
 use App\Models\User;
+use App\Services\AlertAiAnalysisService;
 use App\Services\AutomaticAlertNotifier;
+use App\Services\EncryptedSearchIndex;
 use App\Services\OpenSearchService;
+use App\Services\SensitiveDataCipher;
 use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -25,6 +29,7 @@ class AutomaticAlertNotificationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['data_security.allow_legacy_plaintext' => false]);
         Queue::fake();
     }
 
@@ -47,7 +52,9 @@ class AutomaticAlertNotificationTest extends TestCase
         $source['id'] = $id;
         $source['rule']['level'] = $level;
         $source['agent']['name'] = $agent;
-        $source['agent']['id'] = match ($agent) { 'Agent-Demo-A' => '007', 'Production' => '008', default => '009' };
+        $source['agent']['id'] = match ($agent) {
+            'Agent-Demo-A' => '007', 'Production' => '008', default => '009'
+        };
         $source['rule']['description'] = $description ?? $source['rule']['description'];
 
         return ['_id' => $id, '_index' => 'wazuh-alerts-4.x-2026.11.12', '_source' => $source];
@@ -167,6 +174,62 @@ class AutomaticAlertNotificationTest extends TestCase
         $this->assertDatabaseCount('alert_triages', 0);
         $this->actingAs(User::factory()->forAgent('007')->create())->get(route('analyst-log.index', ['search' => 'otomatis']))->assertOk()->assertSee('Sistem (otomatis)')->assertSee('SENT');
         $this->get(route('alerts.show', $alert))->assertOk()->assertSee('Sistem (otomatis)');
+        foreach (NotificationLog::all() as $delivery) {
+            $this->assertStringStartsWith(SensitiveDataCipher::PREFIX, $delivery->getRawOriginal('message'));
+            $this->assertTrue(app(EncryptedSearchIndex::class)->matches('notification', $delivery->id, $alert->id, [$delivery->message]));
+        }
+    }
+
+    #[DataProvider('detailViewerRoles')]
+    public function test_automatic_delivery_preserves_view_analysis_and_manual_triage_for_authorized_users(string $role): void
+    {
+        $this->configure();
+        $privileges = ['alerts.analyze', 'alerts.acknowledge', 'alerts.ignore', 'alerts.notify'];
+        $user = $role === 'admin' ? User::factory()->create(['role' => 'admin'])
+            : User::factory()->forAgent('007', $privileges)->create();
+        $alert = $this->alert($this->hit('automatic-workflow'));
+        $original = $alert->getRawOriginal('raw_data');
+        $notifier = app(AutomaticAlertNotifier::class);
+        $telegram = $this->mock(TelegramService::class);
+        $telegram->shouldReceive('sendMessage')->times(4)->andReturn(['success' => true, 'status' => 200]);
+        foreach ($notifier->prepare([$alert]) as $id) {
+            (new SendAutomaticAlertNotification($id))->handle($notifier, $telegram);
+        }
+
+        $this->assertSame('new', $alert->fresh()->status);
+        $this->assertNull($alert->fresh()->acknowledged_by_user_id);
+        $this->assertDatabaseCount('alert_triages', 0);
+        $this->actingAs($user)->get(route('alerts.show', $alert))->assertOk()
+            ->assertSee('Sistem (otomatis)')->assertSee('Acknowledge alert')->assertSee('Analisis AI alert');
+        $analysis = $this->mock(AlertAiAnalysisService::class);
+        $analysis->shouldReceive('isConfigured')->once()->andReturnTrue();
+        $analysis->shouldReceive('analyse')->once()->andReturn([
+            'verdict' => 'suspicious', 'confidence' => 85, 'summary' => 'Investigasi setelah notifikasi otomatis.',
+            'supporting_indicators' => ['Pola akses perlu diperiksa.'], 'legitimate_indicators' => [],
+            'recommended_checks' => ['Periksa log sumber.'], 'limitations' => [], 'model' => 'test-model',
+        ]);
+        $this->postJson(route('alerts.ai-analysis', $alert))->assertOk()->assertJsonPath('success', true);
+        $this->post(route('alerts.acknowledge', $alert))->assertSessionHas('success');
+        $this->assertSame($user->id, $alert->fresh()->acknowledged_by_user_id);
+        $this->postJson(route('alerts.notify', $alert), [
+            'operation_id' => (string) Str::uuid(), 'message' => 'Tindak lanjut manual setelah investigasi.',
+        ])->assertOk()->assertJsonPath('success', true);
+        $this->post(route('alerts.ignore', $alert), ['reason' => 'Sudah divalidasi sebagai aktivitas resmi.'])->assertSessionHas('success');
+        $this->assertSame('ignored', $alert->fresh()->status);
+        $this->assertSame($original, $alert->fresh()->getRawOriginal('raw_data'));
+        $this->assertSame(2, NotificationLog::whereNotNull('automatic_key')->whereNull('user_id')->count());
+        $this->assertSame(2, NotificationLog::whereNull('automatic_key')->where('user_id', $user->id)->count());
+        $this->get(route('alerts.show', $alert))->assertOk()->assertSee('Sistem (otomatis)');
+
+        $this->actingAs(User::factory()->forAgent('008', $privileges)->create());
+        $this->get(route('alerts.show', $alert))->assertNotFound();
+        $this->postJson(route('alerts.ai-analysis', $alert))->assertNotFound();
+        $this->post(route('alerts.acknowledge', $alert))->assertNotFound();
+    }
+
+    public static function detailViewerRoles(): array
+    {
+        return ['admin' => ['admin'], 'assigned analyst' => ['analyst']];
     }
 
     public function test_removed_route_or_disabled_policy_cancels_pending_delivery_and_does_not_use_legacy_chats(): void
@@ -192,7 +255,8 @@ class AutomaticAlertNotificationTest extends TestCase
     {
         $this->configure();
         $notifier = app(AutomaticAlertNotifier::class);
-        $ids = $notifier->prepare([$this->alert($this->hit('partial-failure'))]);
+        $alert = $this->alert($this->hit('partial-failure'));
+        $ids = $notifier->prepare([$alert]);
         $telegram = $this->mock(TelegramService::class);
         $telegram->shouldReceive('sendMessage')->once()->with('-100111', \Mockery::type('string'))->andThrow(new \RuntimeException('Network result unknown'));
         $telegram->shouldReceive('sendMessage')->once()->with('123456', \Mockery::type('string'))->andReturn(['success' => true, 'status' => 200]);
@@ -201,6 +265,7 @@ class AutomaticAlertNotificationTest extends TestCase
         }
         $this->assertSame('unconfirmed', NotificationLog::where('chat_id', '-100111')->sole()->delivery_state);
         $this->assertSame('sent', NotificationLog::where('chat_id', '123456')->sole()->delivery_state);
+        $this->actingAs(User::factory()->forAgent('007')->create())->get(route('alerts.show', $alert))->assertOk();
         $notifier->dispatchPending();
         Queue::assertNothingPushed();
     }
