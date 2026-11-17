@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\PrepareAutomaticAlertNotifications;
 use App\Jobs\SendAutomaticAlertNotification;
+use App\Jobs\SendBulkAlertNotification;
 use App\Models\ActivityLog;
 use App\Models\Alert;
 use App\Models\Configuration;
@@ -12,6 +13,7 @@ use App\Models\PermanentAlertIgnore;
 use App\Models\User;
 use App\Services\AlertAiAnalysisService;
 use App\Services\AutomaticAlertNotifier;
+use App\Services\BulkAlertNotifier;
 use App\Services\EncryptedSearchIndex;
 use App\Services\OpenSearchService;
 use App\Services\SensitiveDataCipher;
@@ -225,6 +227,87 @@ class AutomaticAlertNotificationTest extends TestCase
         $this->get(route('alerts.show', $alert))->assertNotFound();
         $this->postJson(route('alerts.ai-analysis', $alert))->assertNotFound();
         $this->post(route('alerts.acknowledge', $alert))->assertNotFound();
+    }
+
+    #[DataProvider('detailViewerRoles')]
+    public function test_every_automatic_delivery_state_preserves_owned_bulk_ack_notification_and_ignore(string $role): void
+    {
+        $this->configure();
+        config(['queue.default' => 'database']);
+        $privileges = ['alerts.acknowledge', 'alerts.ignore', 'alerts.notify'];
+        $user = $role === 'admin' ? User::factory()->create(['role' => 'admin'])
+            : User::factory()->forAgent('007', $privileges)->create();
+        $notifier = app(AutomaticAlertNotifier::class);
+        $ids = [];
+        foreach (['pending' => null, 'sending' => null, 'sent' => 200, 'failed' => 403,
+            'unconfirmed' => 0, 'cancelled' => null, 'daily_limited' => null] as $state => $status) {
+            $alert = $this->alert($this->hit('automatic-bulk-'.$state));
+            $ids[] = $alert->id;
+            // Include persisted/interrupted deliveries; none may claim the alert's ACK.
+            NotificationLog::whereIn('id', $notifier->prepare([$alert]))->update([
+                'delivery_state' => $state, 'response_status' => $status,
+            ]);
+        }
+        $automaticLogs = NotificationLog::whereNotNull('automatic_key')->orderBy('id')->get()->toArray();
+        $this->assertCount(14, $automaticLogs);
+        $this->assertSame(7, Alert::whereIn('id', $ids)->where('status', 'new')->whereNull('acknowledged_by_user_id')->count());
+        $this->assertDatabaseCount('alert_triages', 0);
+
+        $buttonDisabled = static function ($response, string $attribute): bool {
+            preg_match_all('~<button\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>~s', $response->getContent(), $matches);
+            $button = collect($matches[0])->first(fn ($tag) => str_contains($tag, ' '.$attribute));
+            self::assertNotNull($button, 'Missing bulk action: '.$attribute);
+
+            return preg_match('/\sdisabled(?:\s|=|>)/', $button) === 1;
+        };
+        $this->actingAs($user);
+        $detail = $this->get(route('alerts.bulk-detail', ['alert_ids' => $ids]))->assertOk();
+        $this->assertFalse($buttonDisabled($detail, 'data-bulk-detail-ack'));
+        $this->assertTrue($buttonDisabled($detail, 'data-bulk-detail-ignore'));
+        $this->assertTrue($buttonDisabled($detail, 'data-bulk-detail-notify'));
+        $this->postJson(route('alerts.bulk-notify-preview'), ['alert_ids' => $ids])
+            ->assertUnprocessable()->assertJsonValidationErrors('alert_ids');
+
+        $this->postJson(route('alerts.bulk-triage'), ['alert_ids' => $ids, 'action' => 'acknowledge'])
+            ->assertOk()->assertJsonPath('processed', 7)->assertJsonPath('owned_ids', $ids);
+        $this->assertSame(7, Alert::whereIn('id', $ids)->where('status', 'acknowledged')->where('acknowledged_by_user_id', $user->id)->count());
+        $detail = $this->get(route('alerts.bulk-detail', ['alert_ids' => $ids]))->assertOk();
+        $this->assertFalse($buttonDisabled($detail, 'data-bulk-detail-ignore'));
+        $this->assertFalse($buttonDisabled($detail, 'data-bulk-detail-notify'));
+
+        // Even an admin must not take over an analyst's existing ACK (or vice versa).
+        $other = $role === 'admin' ? User::factory()->forAgent('007', $privileges)->create()
+            : User::factory()->create(['role' => 'admin']);
+        $this->actingAs($other)->post(route('alerts.acknowledge', $ids[0]))->assertSessionHas('error');
+        $this->post(route('alerts.ignore', $ids[0]), ['reason' => 'Percobaan pengguna lain.'])->assertForbidden();
+        $this->postJson(route('alerts.notify', $ids[0]), [
+            'operation_id' => (string) Str::uuid(), 'message' => 'Tidak memiliki ACK alert ini.',
+        ])->assertForbidden();
+        $this->postJson(route('alerts.bulk-notify-preview'), ['alert_ids' => $ids])
+            ->assertUnprocessable()->assertJsonValidationErrors('alert_ids');
+        $this->postJson(route('alerts.bulk-triage'), ['alert_ids' => $ids, 'action' => 'ignore', 'reason' => 'Percobaan pengguna lain.'])
+            ->assertUnprocessable()->assertJsonValidationErrors('alert_ids');
+
+        $this->actingAs($user)->postJson(route('alerts.bulk-notify-preview'), ['alert_ids' => $ids])
+            ->assertOk()->assertJsonCount(2, 'default_messages');
+        $telegram = $this->mock(TelegramService::class);
+        $telegram->shouldReceive('sendMessage')->twice()->andReturn(['success' => true, 'status' => 200]);
+        $this->postJson(route('alerts.bulk-notify'), [
+            'operation_id' => (string) Str::uuid(), 'alert_ids' => $ids,
+            'custom_template' => 'Tindak lanjut manual untuk {alert_count} alert otomatis.',
+        ])->assertOk()->assertJsonPath('notification_count', 2);
+        Queue::assertPushed(SendBulkAlertNotification::class, 2);
+        foreach (Queue::pushed(SendBulkAlertNotification::class) as $job) {
+            $job->handle(app(BulkAlertNotifier::class));
+        }
+        $this->assertSame(14, NotificationLog::whereNull('automatic_key')->where('user_id', $user->id)->where('delivery_state', 'sent')->count());
+        $this->assertSame(14, Alert::whereIn('id', $ids)->withCount(['triages' => fn ($query) => $query->where('action', 'notify')])->get()->sum('triages_count'));
+
+        $this->postJson(route('alerts.bulk-triage'), [
+            'alert_ids' => $ids, 'action' => 'ignore', 'reason' => 'Sudah ditinjau setelah notifikasi otomatis.',
+        ])->assertOk()->assertJsonPath('processed', 7);
+        $this->assertSame(7, Alert::whereIn('id', $ids)->where('status', 'ignored')->where('acknowledged_by_user_id', $user->id)->count());
+        $this->assertSame($automaticLogs, NotificationLog::whereNotNull('automatic_key')->orderBy('id')->get()->toArray());
     }
 
     public static function detailViewerRoles(): array
