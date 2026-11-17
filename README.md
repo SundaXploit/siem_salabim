@@ -69,11 +69,11 @@ Persyaratan dasar: **PHP 8.3+**, **Composer 2**, **Node.js 22.12+**, npm, serta 
 
 Pertahankan `APP_KEY` dan simpan backup konfigurasi secara privat. Gunakan HTTPS untuk operasional serta akun runtime yang sesuai saat menjalankan perintah server. Rincian akses, enkripsi, backup, dan batas perlindungan tersedia pada [panduan keamanan](https://siem.sundaxploit.id/dokumentasi.html#keamanan).
 
-<a id="dukungan"></a>
+<a id="lisensi"></a>
 
-## Dukungan
+## Lisensi
 
-Dikembangkan oleh [SundaXploit](https://github.com/SundaXploit) dan didukung oleh **[CSIRT – Diskominfo Subang](https://csirt.subang.go.id/profil)**.
+SIEM Salabim menggunakan lisensi [GNU GPL v3.0](LICENSE).
 
 <a id="kontribusi"></a>
 
