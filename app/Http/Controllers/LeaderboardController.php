@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\NotificationLog;
 use App\Models\Alert;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -73,6 +74,7 @@ class LeaderboardController extends Controller
          *   Collection{ userId => Collection{'2026-04-11' => 5, ...} }
          */
         $notifByUserDay = DB::table('notification_logs')
+            ->whereRaw(NotificationLog::ATTEMPTED_SQL)
             ->when(! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
             ->selectRaw('user_id, DATE(sent_at) as day, COUNT(*) as cnt')
             ->whereBetween('sent_at', [$startDay, $endDay])
@@ -166,7 +168,7 @@ class LeaderboardController extends Controller
 
     private function resolvePeriod(string $period, ?string $from, ?string $to): array
     {
-        $tz  = 'Asia/Jakarta';
+        $tz  = config('app.timezone');
         $now = Carbon::now($tz);
 
         return match ($period) {

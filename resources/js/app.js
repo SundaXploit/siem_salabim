@@ -1,5 +1,3 @@
-import './bootstrap';
-
 import Alpine from 'alpinejs';
 import { alertTable } from './live-alerts';
 import { alertEvidence } from './alert-evidence';

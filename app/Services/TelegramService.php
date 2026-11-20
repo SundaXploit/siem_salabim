@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Configuration;
-use Carbon\Carbon;
+use App\Support\LocalTime;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
@@ -465,13 +465,11 @@ class TelegramService
         $rawData = is_array($alert['raw_data'] ?? null) ? $alert['raw_data'] : [];
         $data = $rawData['data'] ?? [];
         $syscheck = $rawData['syscheck'] ?? [];
-        $timestamp = $alert['first_seen_at'] ?? '-';
+        $timestamp = '-';
         try {
-            if (isset($rawData['@timestamp'])) {
-                $timestamp = Carbon::parse($rawData['@timestamp'])->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s').' WIB';
-            }
+            $timestamp = LocalTime::format($alert['first_seen_at'] ?? null);
         } catch (Throwable) {
-            // Invalid source timestamps must not prevent notification composition.
+            // An invalid legacy event time is displayed as unknown, never replaced by a raw timestamp.
         }
 
         $srcIp = $alert['src_ip'] ?? $data['srcip'] ?? '-';

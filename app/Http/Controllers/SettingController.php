@@ -161,7 +161,7 @@ class SettingController extends Controller
             }
             if (array_key_exists('min_alert_level', $data)) {
                 Configuration::set('min_alert_level', (int) $data['min_alert_level']);
-                Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
+                Cache::forget('security-insight-snapshot:v3:'.now(config('app.timezone'))->format('Y-m'));
             }
         });
 
@@ -381,7 +381,7 @@ class SettingController extends Controller
             Configuration::set('ai_snapshot_limit', (int) $data['ai_snapshot_limit']);
             Configuration::set('ai_refresh_days', (int) $data['ai_refresh_days']);
         });
-        Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
+        Cache::forget('security-insight-snapshot:v3:'.now(config('app.timezone'))->format('Y-m'));
 
         return back()->with('settings_section', 'ai')->with('success', 'Konfigurasi Analisis AI berhasil disimpan.'.(blank($settings['model']) ? ' Muat daftar model, pilih model, lalu simpan kembali untuk mengaktifkan analisis.' : ''));
     }
@@ -393,7 +393,7 @@ class SettingController extends Controller
             'min_alert_level' => ['required', 'integer', Rule::in([3, 5, 7, 10, 12, 13, 14, 15])],
         ]);
         Configuration::set('min_alert_level', (int) $data['min_alert_level']);
-        Cache::forget('security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m'));
+        Cache::forget('security-insight-snapshot:v3:'.now(config('app.timezone'))->format('Y-m'));
 
         return back()->with('settings_section', 'opensearch')->with('success', 'Konfigurasi Alert berhasil disimpan.');
     }
@@ -1017,8 +1017,8 @@ class SettingController extends Controller
     private function resolveDataPeriod(array $data): array
     {
         if ($data['period_mode'] === 'range') {
-            $fromLocal = Carbon::parse($data['date_from'], 'Asia/Jakarta')->startOfDay();
-            $toExclusiveLocal = Carbon::parse($data['date_to'], 'Asia/Jakarta')->addDay()->startOfDay();
+            $fromLocal = Carbon::parse($data['date_from'], config('app.timezone'))->startOfDay();
+            $toExclusiveLocal = Carbon::parse($data['date_to'], config('app.timezone'))->addDay()->startOfDay();
 
             return [
                 'from' => $fromLocal->copy()->utc(),

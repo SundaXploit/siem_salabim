@@ -22,18 +22,18 @@
                         @endforeach
                     </select>
                 </div>
-                <div><label class="form-label" for="analyst-log-from">Dari (WIB)</label><input id="analyst-log-from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}"></div>
-                <div><label class="form-label" for="analyst-log-to">Sampai (WIB)</label><input id="analyst-log-to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}"></div>
+                <div><label class="form-label" for="analyst-log-from">Dari ({{ \App\Support\LocalTime::label() }})</label><input id="analyst-log-from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}"></div>
+                <div><label class="form-label" for="analyst-log-to">Sampai ({{ \App\Support\LocalTime::label() }})</label><input id="analyst-log-to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}"></div>
                 <div class="flex gap-2 items-center"><button type="submit" class="btn btn-primary">Filter</button><a href="{{ route('analyst-log.index') }}" class="btn btn-ghost">Reset</a></div>
             </div>
         </form>
     </div>
 </div>
 <div class="card">
-    <div class="card-header"><span class="card-title">{{ $logs->total() }} aktivitas analis</span><span class="text-muted text-xs">Terbaru lebih dulu · WIB</span></div>
+    <div class="card-header"><span class="card-title">{{ $logs->total() }} aktivitas analis</span><span class="text-muted text-xs">Terbaru lebih dulu · {{ \App\Support\LocalTime::label() }}</span></div>
     <div style="overflow-x:auto;">
         <table class="data-table" data-analyst-log>
-            <thead><tr><th scope="col">Alert</th><th scope="col">Analis</th><th scope="col">Aksi</th><th scope="col">Tujuan / hasil</th><th scope="col">Pesan / catatan</th><th scope="col">Waktu (WIB)</th></tr></thead>
+            <thead><tr><th scope="col">Alert</th><th scope="col">Analis</th><th scope="col">Aksi</th><th scope="col">Tujuan / hasil</th><th scope="col">Pesan / catatan</th><th scope="col">Waktu ({{ \App\Support\LocalTime::label() }})</th></tr></thead>
             <tbody>
                 @forelse($logs as $log)
                 <tr data-log-action="{{ $log->action }}">
@@ -55,7 +55,7 @@
                         <details class="history-log-note"><summary>{{ \Illuminate\Support\Str::limit($log->note, 140) }}</summary><p>{{ $log->note }}</p></details>
                         @else <span>{{ $log->note ?: '-' }}</span> @endif
                     </td>
-                    <td class="text-xs" style="white-space:nowrap;">{{ $log->occurred_at ? \Carbon\Carbon::parse($log->occurred_at, config('app.timezone'))->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') : '-' }}</td>
+                    <td class="text-xs" style="white-space:nowrap;">{{ $log->occurred_at ? \Carbon\Carbon::parse($log->occurred_at, config('app.timezone'))->format('d/m/Y H:i:s') : '-' }}</td>
                 </tr>
                 @empty
                 <tr><td colspan="6" class="text-muted" style="text-align:center; padding:var(--spacing-48);">Belum ada riwayat analis yang sesuai filter.</td></tr>

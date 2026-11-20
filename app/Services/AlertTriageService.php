@@ -78,11 +78,11 @@ class AlertTriageService
         }, 3);
 
         if ($changed->isNotEmpty()) {
-            $periods = $changed->map(fn (Alert $alert) => $alert->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('Y-m')
-            )->push(now('Asia/Jakarta')->format('Y-m'))->filter()->unique();
+            $periods = $changed->map(fn (Alert $alert) => $alert->first_seen_at?->copy()->setTimezone(config('app.timezone'))->format('Y-m')
+            )->push(now(config('app.timezone'))->format('Y-m'))->filter()->unique();
             foreach ($periods as $period) {
-                Cache::forget('security-insight-snapshot:v2:'.$period);
-                Cache::forget('security-insight-snapshot:v2:'.$period.':'.$actor->alertAccessFingerprint());
+                Cache::forget('security-insight-snapshot:v3:'.$period);
+                Cache::forget('security-insight-snapshot:v3:'.$period.':'.$actor->alertAccessFingerprint());
             }
         }
 

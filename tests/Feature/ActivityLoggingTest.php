@@ -32,10 +32,12 @@ class ActivityLoggingTest extends TestCase
     {
         $admin = $this->admin();
         $payload = ['name' => 'Template audit', 'category' => 'SOC', 'body' => 'private-template-evidence', 'is_active' => true];
-        $id = $this->postJson(route('templates.save'), $payload)->assertOk()->json('template.id');
+        $this->postJson('/notification-templates', $payload)->assertStatus(307)->assertRedirect(route('settings.templates.save'));
+        $id = $this->postJson(route('settings.templates.save'), $payload)->assertOk()->json('template.id');
         $this->postJson(route('settings.templates.save'), [...$payload, 'id' => $id, 'is_active' => false])->assertOk();
         $this->postJson(route('settings.templates.save'), ['id' => $id, 'body' => 'short'])->assertUnprocessable();
-        $this->deleteJson(route('templates.delete', $id))->assertOk();
+        $this->deleteJson('/notification-templates/'.$id)->assertStatus(307)->assertRedirect(route('settings.templates.delete', $id));
+        $this->deleteJson(route('settings.templates.delete', $id))->assertOk();
         $logs = ActivityLog::orderBy('id')->get();
         $this->assertSame(['notification_template_saved', 'notification_template_saved', 'notification_template_saved', 'notification_template_deleted'], $logs->pluck('action')->all());
         $this->assertSame(['success', 'success', 'failed', 'success'], $logs->pluck('result')->all());

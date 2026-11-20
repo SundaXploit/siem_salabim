@@ -34,11 +34,11 @@
                     </select>
                 </div>
                 <div>
-                    <label class="form-label" for="history-alerts-date_from">Dari (WIB)</label>
+                    <label class="form-label" for="history-alerts-date_from">Dari ({{ \App\Support\LocalTime::label() }})</label>
                     <input id="history-alerts-date_from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.submit()">
                 </div>
                 <div>
-                    <label class="form-label" for="history-alerts-date_to">Sampai (WIB)</label>
+                    <label class="form-label" for="history-alerts-date_to">Sampai ({{ \App\Support\LocalTime::label() }})</label>
                     <input id="history-alerts-date_to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.submit()">
                 </div>
                 <div class="flex gap-2 items-center">
@@ -78,7 +78,7 @@
                     <td><span class="table-level {{ $alert->level_badge_class }}" aria-label="Rule level {{ $alert->rule_level }}">{{ $alert->rule_level }}</span></td>
                     <td><span class="table-status {{ $alert->status_badge_class }}">{{ $alert->status_label }}</span></td>
                     <td style="font-size:var(--text-xs); white-space:nowrap; line-height:var(--leading-xs);">
-                        {{ $alert->first_seen_at?->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '-' }}
+                        {{ $alert->first_seen_at?->setTimezone(config('app.timezone'))->format('d/m/Y H:i:s') ?? '-' }}
                     </td>
                     <td>
                         <a href="{{ route('alerts.show', $alert) }}" class="table-action" title="Lihat detail alert" aria-label="Lihat detail alert"><i data-lucide="eye" aria-hidden="true"></i></a>

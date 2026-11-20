@@ -17,7 +17,12 @@ class HistoryController extends Controller
 {
     public function alerts(Request $request)
     {
-        $request->validate(['search' => ['nullable', 'string', 'max:200', 'regex:/\A[^\x00]*\z/u']]);
+        $request->validate([
+            'status' => ['nullable', 'string', 'in:all,new,acknowledged,ignored'],
+            'level' => ['nullable', 'integer', 'between:0,16'],
+            'per_page' => ['nullable', 'integer', 'in:25,50,100'],
+            'search' => ['nullable', 'string', 'max:200', 'regex:/\A[^\x00]*\z/u'],
+        ]);
         $query = Alert::visibleTo($request->user())->select(Alert::LIST_COLUMNS);
 
         if ($request->filled('status') && $request->status !== 'all') {
@@ -34,7 +39,7 @@ class HistoryController extends Controller
             $query->searchTerms((string) $request->search);
         }
 
-        $alerts = $query->orderBy('first_seen_at', 'desc')->paginate(25)->withQueryString();
+        $alerts = $query->orderBy('first_seen_at', 'desc')->paginate((int) $request->input('per_page', 25) ?: 25)->withQueryString();
 
         return view('history.alerts', compact('alerts'));
     }
@@ -129,11 +134,11 @@ class HistoryController extends Controller
             $query->where($actionField, $filters['action']);
         }
         if (filled($filters['date_from'] ?? null)) {
-            $from = CarbonImmutable::parse($filters['date_from'], 'Asia/Jakarta')->startOfDay()->setTimezone(config('app.timezone'));
+            $from = CarbonImmutable::parse($filters['date_from'], config('app.timezone'))->startOfDay()->setTimezone(config('app.timezone'));
             $query->where($dateField, '>=', $from->format('Y-m-d H:i:s'));
         }
         if (filled($filters['date_to'] ?? null)) {
-            $until = CarbonImmutable::parse($filters['date_to'], 'Asia/Jakarta')->addDay()->startOfDay()->setTimezone(config('app.timezone'));
+            $until = CarbonImmutable::parse($filters['date_to'], config('app.timezone'))->addDay()->startOfDay()->setTimezone(config('app.timezone'));
             $query->where($dateField, '<', $until->format('Y-m-d H:i:s'));
         }
     }

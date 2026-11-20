@@ -84,10 +84,8 @@ class FetchWazuhAlerts implements ShouldBeUnique, ShouldQueue
 
         $ingestion->markRunning($this->mode, $this->trigger);
 
-        // Close the race between the first marker check and publishing the
-        // running state. Once the updater has created its marker it will
-        // either observe this running state and abort, or this worker will
-        // stop here before opening an OpenSearch request.
+        // Check again after publishing the running state so a newly created
+        // deployment marker can stop this worker before OpenSearch I/O.
         if ($updateGuard->isActive()) {
             $ingestion->markMaintenance($this->mode, $this->trigger);
 

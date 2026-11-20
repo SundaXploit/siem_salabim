@@ -14,13 +14,13 @@
         <div class="settings-telegram-heading" style="margin-top:var(--spacing-24);"><h3 class="settings-subheading">{{ $permanentIgnores->total() }} aturan aktif</h3><span class="text-muted text-xs">Berlaku sampai aturan dihapus</span></div>
         <div class="permanent-ignore-table-wrap">
             <table class="data-table permanent-ignore-table">
-                <thead><tr><th scope="col">Rule ID</th><th scope="col">Ditambahkan oleh</th><th scope="col">Waktu (WIB)</th><th scope="col">Aksi</th></tr></thead>
+                <thead><tr><th scope="col">Rule ID</th><th scope="col">Ditambahkan oleh</th><th scope="col">Waktu ({{ \App\Support\LocalTime::label() }})</th><th scope="col">Aksi</th></tr></thead>
                 <tbody>
                     @forelse($permanentIgnores as $rule)
                     <tr data-permanent-ignore-rule="{{ $rule->id }}">
                         <td class="font-technical">{{ $rule->rule_id }}</td>
                         <td>{{ $rule->created_by_name }}</td>
-                        <td class="text-xs" style="white-space:nowrap;">{{ $rule->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '-' }}</td>
+                        <td class="text-xs" style="white-space:nowrap;">{{ $rule->created_at?->copy()->setTimezone(config('app.timezone'))->format('d/m/Y H:i:s') ?? '-' }}</td>
                         <td><form method="POST" action="{{ route('settings.permanent-ignores.destroy', $rule) }}" onsubmit="return confirm('Hapus aturan ini? Rule ID tersebut dapat diimpor kembali pada fetch berikutnya.')">
                             @csrf @method('DELETE')
                             <input type="hidden" name="_section" value="permanent-ignore">

@@ -48,8 +48,8 @@ class HistoryLogTest extends TestCase
         config(['app.timezone' => 'UTC']);
         [$user, $alert] = $this->fixtures();
         foreach ([
-            ['2026-11-11 16:59:59', 'before'], ['2026-11-11 17:00:00', 'first'],
-            ['2026-11-12 16:59:59', 'last'], ['2026-11-12 17:00:00', 'after'],
+            ['2026-11-11 23:59:59', 'before'], ['2026-11-12 00:00:00', 'first'],
+            ['2026-11-12 23:59:59', 'last'], ['2026-11-13 00:00:00', 'after'],
         ] as [$at, $reason]) {
             AlertTriage::create(['user_id' => $user->id, 'alert_id' => $alert->id, 'action' => 'ignore', 'reason' => $reason, 'created_at' => $at]);
         }

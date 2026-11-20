@@ -15,10 +15,10 @@ class AlertDateFilter
             'date_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('date_from'), 'after_or_equal:date_from')],
         ]);
         if (filled($data['date_from'] ?? null)) {
-            $query->where('first_seen_at', '>=', CarbonImmutable::parse($data['date_from'], 'Asia/Jakarta')->startOfDay()->utc()->format('Y-m-d H:i:s'));
+            $query->where('first_seen_at', '>=', CarbonImmutable::parse($data['date_from'], config('app.timezone'))->startOfDay()->utc()->format('Y-m-d H:i:s'));
         }
         if (filled($data['date_to'] ?? null)) {
-            $query->where('first_seen_at', '<', CarbonImmutable::parse($data['date_to'], 'Asia/Jakarta')->addDay()->startOfDay()->utc()->format('Y-m-d H:i:s'));
+            $query->where('first_seen_at', '<', CarbonImmutable::parse($data['date_to'], config('app.timezone'))->addDay()->startOfDay()->utc()->format('Y-m-d H:i:s'));
         }
     }
 }

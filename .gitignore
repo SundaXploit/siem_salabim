@@ -5,6 +5,9 @@
 !.env.example
 .phpactor.json
 .phpunit.result.cache
+/phpunit.xml
+/phpunit.pgsql.xml
+/phpunit.mysql.xml
 /.fleet
 /.idea
 /.nova

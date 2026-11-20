@@ -60,7 +60,7 @@ class BulkTriageTest extends TestCase
         $ack = $this->assignAckOwner($this->alert('acknowledged'), $user);
         $ignored = $this->alert('ignored');
         $ignored->forceFill(['acknowledged_by_user_id' => $user->id])->save();
-        $cacheKey = 'security-insight-snapshot:v2:'.now('Asia/Jakarta')->format('Y-m');
+        $cacheKey = 'security-insight-snapshot:v3:'.now(config('app.timezone'))->format('Y-m');
         Cache::put($cacheKey, ['stale' => true], 60);
 
         $this->actingAs($user)->postJson(route('alerts.bulk-triage'), [
@@ -207,8 +207,8 @@ class BulkTriageTest extends TestCase
             ->assertSee('ACK massal')->assertSee('Abaikan massal')
             ->assertSee('Pilih semua alert yang dapat ditangani pada halaman ini')
             ->assertViewHas('alerts', fn ($alerts) => $alerts->perPage() === 50 && $alerts->count() === 27);
-        $this->get(route('alerts.index', ['per_page' => 10000]))->assertOk()
-            ->assertViewHas('alerts', fn ($alerts) => $alerts->perPage() === 25 && $alerts->count() === 25);
+        $this->getJson(route('alerts.index', ['per_page' => 10000]))->assertUnprocessable()
+            ->assertJsonValidationErrors('per_page');
     }
 
     private function alert(string $status = 'new'): Alert

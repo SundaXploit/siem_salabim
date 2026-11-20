@@ -220,10 +220,10 @@
             updateTime() {
                 const now = new Date();
                 this.currentTime = now.toLocaleString('id-ID', {
-                    timeZone: 'Asia/Jakarta',
+                    timeZone: @js(config('app.timezone')),
                     hour: '2-digit', minute: '2-digit', second: '2-digit',
                     day: '2-digit', month: 'short', year: 'numeric'
-                }) + ' WIB';
+                }) + ' ' + @js(\App\Support\LocalTime::label());
             },
             async pollNewCount() {
                 try {

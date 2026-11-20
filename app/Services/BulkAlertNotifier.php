@@ -149,6 +149,7 @@ class BulkAlertNotifier
                     foreach ($message['alert_ids'] as $alertId) {
                         NotificationLog::create([
                             'manual_operation_id' => $operationIds[$alertId], 'alert_id' => $alertId, 'user_id' => $user->id,
+                            'delivery_group_key' => hash('sha256', $groupId),
                             'chat_id' => $message['chat_id'], 'response_status' => 0, 'sent_at' => now(), 'delivery_state' => 'pending',
                             // Per-alert history must not expose other agents after an access change.
                             'message' => "Konteks alert #{$alertId} dalam notifikasi gabungan:\n".$this->render($editedMessages === [] ? $template : self::DEFAULT_TEMPLATE, collect([$alerts->find($alertId)])),
@@ -320,7 +321,7 @@ class BulkAlertNotifier
     {
         $join = fn (callable $value) => $alerts->map($value)->unique()->implode(', ');
         $agent = fn ($alert) => $alert->agent_name.' ('.$alert->source_cluster.'/'.data_get($alert->raw_data, 'agent.id', '-').')';
-        $times = $alerts->sortBy('first_seen_at')->map(fn ($alert) => $alert->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s'))->filter()->values();
+        $times = $alerts->sortBy('first_seen_at')->map(fn ($alert) => $alert->first_seen_at?->copy()->setTimezone(config('app.timezone'))->format('d/m/Y H:i:s'))->filter()->values();
         $vars = [
             'alert_count' => $alerts->count(), 'alert_ids' => $join(fn ($alert) => $alert->id),
             'agent_count' => $alerts->pluck('agent_scope_key')->unique()->count(), 'agents' => $join($agent),
@@ -333,7 +334,7 @@ class BulkAlertNotifier
             'src_ip' => $join(fn ($alert) => $alert->src_ip ?? '-'), 'dst_ip' => $join(fn ($alert) => $alert->dst_ip ?? '-'),
             'agent_ip' => $join(fn ($alert) => data_get($alert->raw_data, 'agent.ip', '-')),
             'wazuh_id' => $join(fn ($alert) => $alert->wazuh_alert_id ?? '-'),
-            'timestamp' => $times->isEmpty() ? '-' : collect([$times->first(), $times->last()])->unique()->implode(' – ').' WIB',
+            'timestamp' => $times->isEmpty() ? '-' : collect([$times->first(), $times->last()])->unique()->implode(' – ').' '.\App\Support\LocalTime::label(),
             'alerts' => $alerts->map(fn ($alert) => '#'.$alert->id.' | '.$agent($alert).' | Rule '.$alert->rule_id.' | Level '.$alert->rule_level.' | '.($alert->rule_description ?? '-'))->implode("\n"),
         ];
         $vars['alert_id'] = $vars['alert_ids'];

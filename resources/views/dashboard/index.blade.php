@@ -76,11 +76,11 @@
                     </select>
                 </div>
                 <div>
-                    <label class="form-label" for="dashboard-index-date_from">Dari tanggal (WIB)</label>
+                    <label class="form-label" for="dashboard-index-date_from">Dari tanggal ({{ \App\Support\LocalTime::label() }})</label>
                     <input id="dashboard-index-date_from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}" onchange="this.form.requestSubmit()">
                 </div>
                 <div>
-                    <label class="form-label" for="dashboard-index-date_to">Sampai (WIB)</label>
+                    <label class="form-label" for="dashboard-index-date_to">Sampai ({{ \App\Support\LocalTime::label() }})</label>
                     <input id="dashboard-index-date_to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}" onchange="this.form.requestSubmit()">
                 </div>
                 <div class="live-alert-filter-actions">
@@ -247,7 +247,7 @@
                         </span>
                     </td>
                     <td style="font-size:var(--text-xs); white-space:nowrap; line-height:var(--leading-xs);">
-                        {{ $alert->first_seen_at ? $alert->first_seen_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') : '-' }}
+                        {{ $alert->first_seen_at ? $alert->first_seen_at->setTimezone(config('app.timezone'))->format('d/m/Y H:i:s') : '-' }}
                     </td>
                     <td>
                         <span class="table-status {{ $alert->status_badge_class }}">{{ $alert->status_label }}</span>

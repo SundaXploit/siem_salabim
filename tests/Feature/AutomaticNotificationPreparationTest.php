@@ -6,10 +6,13 @@ use App\Jobs\PrepareAutomaticAlertNotifications;
 use App\Jobs\SendAutomaticAlertNotification;
 use App\Models\Alert;
 use App\Models\Configuration;
+use App\Models\NotificationLog;
 use App\Models\User;
 use App\Services\AutomaticAlertNotifier;
 use App\Services\OpenSearchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -105,5 +108,27 @@ class AutomaticNotificationPreparationTest extends TestCase
         $this->assertDatabaseCount('notification_logs', 2);
         $this->assertSame(0, $old->notificationLogs()->count());
         $this->assertSame(2, $new->notificationLogs()->count());
+    }
+
+    public function test_recovery_reports_a_large_pending_backlog_and_keeps_the_batch_limit(): void
+    {
+        $notifier = app(AutomaticAlertNotifier::class);
+        $notifier->prepare([$this->alert('recovery-backlog')]);
+        $template = NotificationLog::firstOrFail()->getRawOriginal();
+        unset($template['id']);
+        $rows = [];
+        for ($index = 0; $index < 499; $index++) {
+            $rows[] = [...$template, 'automatic_key' => hash('sha256', 'recovery-backlog-'.$index)];
+        }
+        DB::table('notification_logs')->insert($rows);
+        Log::spy();
+
+        $notifier->dispatchPending();
+
+        Queue::assertPushed(SendAutomaticAlertNotification::class, 500);
+        $this->assertSame(501, NotificationLog::where('delivery_state', 'pending')->count());
+        Log::shouldHaveReceived('info')->once()->with('[Automatic Telegram] Pending recovery backlog.', [
+            'pending_total' => 501, 'batch_limit' => 500,
+        ]);
     }
 }

@@ -18,11 +18,9 @@ use InvalidArgumentException;
 
 class SecurityInsightSnapshotService
 {
-    private const TIMEZONE = 'Asia/Jakarta';
-
     public function currentPeriod(): array
     {
-        return $this->periodFromKey(now(self::TIMEZONE)->format('Y-m'));
+        return $this->periodFromKey(now(config('app.timezone'))->format('Y-m'));
     }
 
     public function periodFromKey(string $periodKey): array
@@ -31,11 +29,11 @@ class SecurityInsightSnapshotService
             throw new InvalidArgumentException('Format periode harus YYYY-MM.');
         }
 
-        $startLocal = Carbon::createFromFormat('!Y-m', $periodKey, self::TIMEZONE)->startOfMonth();
+        $startLocal = Carbon::createFromFormat('!Y-m', $periodKey, config('app.timezone'))->startOfMonth();
         if ($startLocal->format('Y-m') !== $periodKey) {
             throw new InvalidArgumentException('Periode tidak valid.');
         }
-        $endLocal = $startLocal->copy()->addMonth();
+        $endLocal = $startLocal->copy()->addMonth()->startOfMonth();
 
         return [
             'key' => $startLocal->format('Y-m'),
@@ -49,7 +47,7 @@ class SecurityInsightSnapshotService
 
     public function build(array $period, bool $fresh = false, ?User $viewer = null): array
     {
-        $cacheKey = 'security-insight-snapshot:v2:'.$period['key'];
+        $cacheKey = 'security-insight-snapshot:v3:'.$period['key'];
         if ($viewer && ! $viewer->isAdmin()) {
             $cacheKey .= ':'.$viewer->alertAccessFingerprint();
         }
@@ -226,21 +224,27 @@ class SecurityInsightSnapshotService
 
     private function dailyTrend(array $period, Builder $base): array
     {
-        $dayExpression = match (DB::connection()->getDriverName()) {
-            'sqlite' => "DATE(first_seen_at, '+7 hours')",
-            'pgsql' => "DATE(first_seen_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')",
-            default => 'DATE(DATE_ADD(first_seen_at, INTERVAL 7 HOUR))',
-        };
+        // At most 31 calendar buckets. UTC boundaries handle DST and fractional
+        // offsets without depending on MySQL timezone tables or the server zone.
+        $cases = [];
+        for ($day = $period['start_local']->copy(); $day->lt($period['end_local']); $day->addDay()->startOfDay()) {
+            $from = $day->copy()->utc()->format('Y-m-d H:i:s');
+            $to = $day->copy()->addDay()->startOfDay()->utc()->format('Y-m-d H:i:s');
+            $date = $day->format('Y-m-d');
+            $cases[] = "WHEN first_seen_at >= '{$from}' AND first_seen_at < '{$to}' THEN '{$date}'";
+        }
+        $dayExpression = 'CASE '.implode(' ', $cases).' END';
 
         $rows = (clone $base)
             ->selectRaw("{$dayExpression} AS day, COUNT(*) AS total,
                 SUM(CASE WHEN rule_level >= 12 THEN 1 ELSE 0 END) AS high")
-            ->groupBy(DB::raw($dayExpression))
+            // MariaDB ONLY_FULL_GROUP_BY requires the selected CASE alias here.
+            ->groupBy('day')
             ->orderBy('day')
             ->get()
             ->keyBy('day');
 
-        $today = now(self::TIMEZONE)->startOfDay();
+        $today = now(config('app.timezone'))->startOfDay();
         $lastDay = $period['end_local']->copy()->subDay();
         if ($lastDay->greaterThan($today)) {
             $lastDay = $today;
@@ -377,12 +381,7 @@ class SecurityInsightSnapshotService
             ->where('sent_at', '>=', $startUtc)
             ->where('sent_at', '<', $endUtc);
 
-        $delivery = (clone $notifQuery)
-            ->selectRaw('COUNT(*) AS attempts,
-                SUM(CASE WHEN response_status = 200 THEN 1 ELSE 0 END) AS succeeded,
-                COUNT(DISTINCT alert_id) AS distinct_alerts_attempted,
-                COUNT(DISTINCT CASE WHEN response_status = 200 THEN alert_id END) AS distinct_alerts_delivered')
-            ->first();
+        $delivery = (clone $notifQuery)->selectRaw($this->notificationAggregateSql())->first();
 
         $attempts = (int) ($delivery->attempts ?? 0);
         $succeeded = (int) ($delivery->succeeded ?? 0);
@@ -412,9 +411,7 @@ class SecurityInsightSnapshotService
             ->join('alerts', 'alerts.id', '=', 'notification_logs.alert_id')
             ->where('notification_logs.sent_at', '>=', $startUtc)
             ->where('notification_logs.sent_at', '<', $endUtc)
-            ->selectRaw("{$severityExpression} AS severity,
-                COUNT(*) AS attempts,
-                SUM(CASE WHEN notification_logs.response_status = 200 THEN 1 ELSE 0 END) AS delivered")
+            ->selectRaw("{$severityExpression} AS severity, ".$this->notificationAggregateSql())
             ->groupBy(DB::raw($severityExpression))
             ->get()
             ->keyBy('severity');
@@ -430,7 +427,10 @@ class SecurityInsightSnapshotService
                     'ignore_actions' => (int) ($triageRow->ignore_actions ?? 0),
                     'notify_actions' => (int) ($triageRow->notify_actions ?? 0),
                     'notification_attempts' => (int) ($deliveryRow->attempts ?? 0),
-                    'notification_delivered' => (int) ($deliveryRow->delivered ?? 0),
+                    'notification_delivered' => (int) ($deliveryRow->succeeded ?? 0),
+                    'notification_intents' => (int) ($deliveryRow->intents ?? 0),
+                    'notification_pending' => (int) ($deliveryRow->pending ?? 0),
+                    'notification_daily_limited' => (int) ($deliveryRow->daily_limited ?? 0),
                 ];
             })
             ->all();
@@ -476,7 +476,15 @@ class SecurityInsightSnapshotService
                 'distinct_notify_attempted' => (int) ($triage->distinct_notify_attempted ?? 0),
             ],
             'notification_delivery' => [
+                'intents' => (int) ($delivery->intents ?? 0),
                 'attempts' => $attempts,
+                'sent' => $succeeded,
+                'pending' => (int) ($delivery->pending ?? 0),
+                'sending' => (int) ($delivery->sending ?? 0),
+                'failed' => (int) ($delivery->failed ?? 0),
+                'unconfirmed' => (int) ($delivery->unconfirmed ?? 0),
+                'cancelled' => (int) ($delivery->cancelled ?? 0),
+                'daily_limited' => (int) ($delivery->daily_limited ?? 0),
                 'succeeded_http_200' => $succeeded,
                 'failed_or_unknown' => $failed,
                 'success_rate_percent' => $attempts > 0 ? round(($succeeded / $attempts) * 100, 1) : 0.0,
@@ -492,8 +500,9 @@ class SecurityInsightSnapshotService
 
     private function dailyResponseTrend(array $period, ?User $viewer): array
     {
-        $triageDay = $this->localDayExpression('alert_triages.created_at');
-        $notificationDay = $this->localDayExpression('notification_logs.sent_at');
+        // Application activity is already stored in the reporting timezone.
+        $triageDay = 'DATE(alert_triages.created_at)';
+        $notificationDay = 'DATE(notification_logs.sent_at)';
 
         $triageRows = DB::table('alert_triages')
             ->when($viewer && ! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
@@ -511,14 +520,12 @@ class SecurityInsightSnapshotService
             ->when($viewer && ! $viewer->isAdmin(), fn ($query) => $query->whereIn('alert_id', Alert::visibleTo($viewer)->select('id')))
             ->where('sent_at', '>=', $period['start_utc']->copy()->setTimezone(config('app.timezone')))
             ->where('sent_at', '<', $period['end_utc']->copy()->setTimezone(config('app.timezone')))
-            ->selectRaw("{$notificationDay} AS day,
-                COUNT(*) AS attempts,
-                SUM(CASE WHEN response_status = 200 THEN 1 ELSE 0 END) AS delivered")
+            ->selectRaw("{$notificationDay} AS day, ".$this->notificationAggregateSql())
             ->groupBy(DB::raw($notificationDay))
             ->get()
             ->keyBy('day');
 
-        $today = now(self::TIMEZONE)->startOfDay();
+        $today = now(config('app.timezone'))->startOfDay();
         $lastDay = $period['end_local']->copy()->subDay();
         if ($lastDay->greaterThan($today)) {
             $lastDay = $today;
@@ -530,7 +537,7 @@ class SecurityInsightSnapshotService
             $triage = $triageRows->get($key);
             $delivery = $notificationRows->get($key);
             $attempts = (int) ($delivery->attempts ?? 0);
-            $delivered = (int) ($delivery->delivered ?? 0);
+            $delivered = (int) ($delivery->succeeded ?? 0);
 
             $trend[] = [
                 'date' => $key,
@@ -539,22 +546,30 @@ class SecurityInsightSnapshotService
                 'notify_attempt' => (int) ($triage->notify_actions ?? 0),
                 'notification_delivered' => $delivered,
                 'notification_failed_or_unknown' => max(0, $attempts - $delivered),
+                'notification_pending' => (int) ($delivery->pending ?? 0),
+                'notification_daily_limited' => (int) ($delivery->daily_limited ?? 0),
+                'notification_cancelled' => (int) ($delivery->cancelled ?? 0),
             ];
         }
 
         return $trend;
     }
 
-    private function localDayExpression(string $column): string
+    private function notificationAggregateSql(): string
     {
-        if (config('app.timezone') === self::TIMEZONE) {
-            return "DATE({$column})";
+        $attempted = NotificationLog::ATTEMPTED_SQL;
+        $succeeded = "{$attempted} AND notification_logs.response_status = 200";
+        $columns = [
+            'COUNT(*) AS intents',
+            NotificationLog::deliveryCountSql($attempted).' AS attempts',
+            NotificationLog::deliveryCountSql($succeeded).' AS succeeded',
+            "COUNT(DISTINCT CASE WHEN {$attempted} THEN notification_logs.alert_id END) AS distinct_alerts_attempted",
+            "COUNT(DISTINCT CASE WHEN {$succeeded} THEN notification_logs.alert_id END) AS distinct_alerts_delivered",
+        ];
+        foreach (['pending', 'sending', 'failed', 'unconfirmed', 'cancelled', 'daily_limited'] as $state) {
+            $columns[] = NotificationLog::deliveryCountSql("notification_logs.delivery_state = '{$state}'").' AS '.$state;
         }
 
-        return match (DB::connection()->getDriverName()) {
-            'sqlite' => "DATE({$column}, '+7 hours')",
-            'pgsql' => "DATE({$column} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')",
-            default => "DATE(DATE_ADD({$column}, INTERVAL 7 HOUR))",
-        };
+        return implode(', ', $columns);
     }
 }

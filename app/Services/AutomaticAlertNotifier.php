@@ -6,6 +6,7 @@ use App\Jobs\SendAutomaticAlertNotification;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\NotificationLog;
+use App\Support\LocalTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -64,7 +65,17 @@ class AutomaticAlertNotifier
         if ($ids !== null) {
             $pending->whereIn('id', $ids);
         }
-        foreach ($pending->orderBy('id')->limit(500)->pluck('id') as $id) {
+        $batch = $pending->orderBy('id')->limit(500)->pluck('id');
+        if ($ids === null && $batch->count() === 500) {
+            $pendingTotal = NotificationLog::where('delivery_state', 'pending')->whereNotNull('automatic_key')->count();
+            if ($pendingTotal > 500) {
+                // Pending includes jobs already queued but not yet claimed by a worker.
+                Log::info('[Automatic Telegram] Pending recovery backlog.', [
+                    'pending_total' => $pendingTotal, 'batch_limit' => 500,
+                ]);
+            }
+        }
+        foreach ($batch as $id) {
             try {
                 SendAutomaticAlertNotification::dispatch((int) $id);
             } catch (\Throwable $exception) {
@@ -93,7 +104,7 @@ class AutomaticAlertNotifier
             $groupKey = hash('sha256', json_encode([
                 $alert->source_cluster, $alert->rule_id, $alert->agent_scope_key,
             ], JSON_THROW_ON_ERROR));
-            $day = CarbonImmutable::now('Asia/Jakarta')->toDateString();
+            $day = CarbonImmutable::now(config('app.timezone'))->toDateString();
             $quotas = DB::table('automatic_notification_quotas');
             $quotas->insertOrIgnore([
                 'group_key' => $groupKey, 'quota_day' => $day, 'event_keys' => '[]',
@@ -122,15 +133,7 @@ class AutomaticAlertNotifier
 
     public function message(Alert $alert, string $baseUrl): string
     {
-        $timestamp = $alert->first_seen_at ? $alert->first_seen_at->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s').' WIB' : '-';
-        try {
-            $sourceTime = $alert->raw_data['@timestamp'] ?? $alert->raw_data['timestamp'] ?? null;
-            if (is_string($sourceTime) && $sourceTime !== '') {
-                $timestamp = CarbonImmutable::parse($sourceTime)->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s').' WIB';
-            }
-        } catch (\Throwable) {
-            // A malformed source timestamp does not change the stored event.
-        }
+        $timestamp = LocalTime::format($alert->first_seen_at);
         $url = $baseUrl.route('alerts.show', $alert->id, false);
         $fields = [
             'Rule ID' => $alert->rule_id ?: '-',

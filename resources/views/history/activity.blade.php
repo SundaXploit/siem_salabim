@@ -21,18 +21,18 @@
                         @foreach($actions as $value => $label)<option value="{{ $value }}" @selected(request('action') === $value)>{{ $label }}</option>@endforeach
                     </select>
                 </div>
-                <div><label class="form-label" for="activity-from">Dari (WIB)</label><input id="activity-from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}"></div>
-                <div><label class="form-label" for="activity-to">Sampai (WIB)</label><input id="activity-to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}"></div>
+                <div><label class="form-label" for="activity-from">Dari ({{ \App\Support\LocalTime::label() }})</label><input id="activity-from" type="date" name="date_from" class="form-input" value="{{ request('date_from') }}"></div>
+                <div><label class="form-label" for="activity-to">Sampai ({{ \App\Support\LocalTime::label() }})</label><input id="activity-to" type="date" name="date_to" class="form-input" value="{{ request('date_to') }}"></div>
                 <div class="activity-filter-actions"><button type="submit" class="btn btn-primary">Filter</button><a href="{{ route('history.activity') }}" class="btn btn-ghost">Reset</a></div>
             </div>
         </form>
     </div>
 </div>
 <div class="card">
-    <div class="card-header"><span class="card-title">{{ $logs->total() }} aktivitas tercatat</span><span class="text-muted text-xs">Terbaru lebih dulu · WIB</span></div>
+    <div class="card-header"><span class="card-title">{{ $logs->total() }} aktivitas tercatat</span><span class="text-muted text-xs">Terbaru lebih dulu · {{ \App\Support\LocalTime::label() }}</span></div>
     <div style="overflow-x:auto;">
         <table class="data-table" data-activity-log>
-            <thead><tr><th scope="col">Pelaku</th><th scope="col">Aktivitas</th><th scope="col">Objek / keterangan</th><th scope="col">Hasil</th><th scope="col">IP</th><th scope="col">Waktu (WIB)</th></tr></thead>
+            <thead><tr><th scope="col">Pelaku</th><th scope="col">Aktivitas</th><th scope="col">Objek / keterangan</th><th scope="col">Hasil</th><th scope="col">IP</th><th scope="col">Waktu ({{ \App\Support\LocalTime::label() }})</th></tr></thead>
             <tbody>
                 @forelse($logs as $log)
                 <tr data-activity-action="{{ $log->action }}">
@@ -45,7 +45,7 @@
                     </td>
                     <td><span class="badge {{ $log->result === 'success' ? 'badge-sent' : 'badge-failed' }}">{{ $log->result === 'success' ? 'BERHASIL' : 'GAGAL' }}</span></td>
                     <td class="font-technical text-xs">{{ $log->ip_address ?? '-' }}</td>
-                    <td class="text-xs" style="white-space:nowrap;">{{ $log->created_at?->copy()->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') ?? '-' }}</td>
+                    <td class="text-xs" style="white-space:nowrap;">{{ $log->created_at?->copy()->setTimezone(config('app.timezone'))->format('d/m/Y H:i:s') ?? '-' }}</td>
                 </tr>
                 @empty
                 <tr><td colspan="6" class="text-muted" style="text-align:center; padding:var(--spacing-48);">Belum ada aktivitas yang sesuai filter. Pencatatan dimulai setelah pembaruan fitur ini.</td></tr>

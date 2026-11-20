@@ -24,8 +24,6 @@ class RecordSettingsActivity
         'settings.telegram' => 'telegram_updated',
         'settings.templates.save' => 'notification_template_saved',
         'settings.templates.delete' => 'notification_template_deleted',
-        'templates.save' => 'notification_template_saved',
-        'templates.delete' => 'notification_template_deleted',
         'settings.telegram.automatic' => 'automatic_notifications_updated',
         'settings.ai' => 'ai_updated',
         'settings.alerts' => 'alerts_updated',
@@ -53,7 +51,7 @@ class RecordSettingsActivity
     {
         $actor = $request->user();
         // Export status is polled in the background; it is not a user action.
-        if (! $actor || ! $request->routeIs('settings.*', 'profile.update', 'password.update', 'templates.save', 'templates.delete') || $request->routeIs('settings.data.exports.status')) {
+        if (! $actor || ! $request->routeIs('settings.*', 'profile.update', 'password.update') || $request->routeIs('settings.data.exports.status')) {
             return $next($request);
         }
         $route = $request->route()->getName();
@@ -73,7 +71,7 @@ class RecordSettingsActivity
         if ($request->routeIs('settings.users.status', 'settings.users.delete')) {
             $context['is_active'] = $request->routeIs('settings.users.delete') ? false : $request->boolean('is_active');
         }
-        if ($request->routeIs('settings.templates.save', 'templates.save') && $request->has('is_active')) {
+        if ($request->routeIs('settings.templates.save') && $request->has('is_active')) {
             $context['is_active'] = $request->boolean('is_active');
         }
         try {
@@ -88,7 +86,7 @@ class RecordSettingsActivity
             $failed = $failed || (($response->getData(true)['success'] ?? null) === false);
         }
         $subject = $this->subject($request, $actor);
-        if (! $failed && $request->routeIs('settings.templates.save', 'templates.save') && $response instanceof JsonResponse) {
+        if (! $failed && $request->routeIs('settings.templates.save') && $response instanceof JsonResponse) {
             $subject = 'Template notifikasi #'.(int) $response->getData(true)['template']['id'];
         }
         if (! $failed && $route === 'settings.users.create') {
@@ -111,7 +109,7 @@ class RecordSettingsActivity
         $subject = $target instanceof User ? 'User #'.$target->id.' · '.$target->name : null;
         if (($template = $request->route('template')) instanceof NotificationTemplate) {
             $subject = 'Template notifikasi #'.$template->id;
-        } elseif ($request->routeIs('settings.templates.save', 'templates.save') && filter_var($request->input('id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false) {
+        } elseif ($request->routeIs('settings.templates.save') && filter_var($request->input('id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false) {
             $subject = 'Template notifikasi #'.(int) $request->input('id');
         }
         if ($request->routeIs('profile.update', 'password.update')) {

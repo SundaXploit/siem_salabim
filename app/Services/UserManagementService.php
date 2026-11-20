@@ -16,6 +16,9 @@ class UserManagementService
             abort_if($locked->isAdmin() && $actor->id !== $locked->id, 403, 'Profil admin lain tidak dapat diubah.');
             $this->assertAdminRemains($locked, $admins, $data['role'], $locked->is_active);
             $locked->fill($data)->save();
+            if ($locked->wasChanged(['role', 'allowed_agents', 'is_active'])) {
+                $this->releaseInaccessibleClaims($actor, $locked, 'agent_access_changed');
+            }
         });
     }
 
@@ -31,18 +34,26 @@ class UserManagementService
             }
             $locked->forceFill(['is_active' => $active])->save();
             if (! $active) {
-                $alerts = Alert::where('acknowledged_by_user_id', $locked->id)->where('status', 'acknowledged')
-                    ->orderBy('id')->lockForUpdate()->get();
-                foreach ($alerts as $alert) {
-                    Alert::whereKey($alert->id)->update([
-                        'status' => 'new', 'acknowledged_by_user_id' => null, 'acknowledged_at' => null,
-                    ]);
-                    ActivityLog::record('ack_released', $actor, 'Alert #'.$alert->id, 'success', [
-                        'previous_owner_id' => $locked->id, 'reason' => 'account_deactivated',
-                    ]);
-                }
+                $this->releaseInaccessibleClaims($actor, $locked, 'account_deactivated');
             }
         });
+    }
+
+    private function releaseInaccessibleClaims(User $actor, User $owner, string $reason): void
+    {
+        $alerts = Alert::where('acknowledged_by_user_id', $owner->id)->where('status', 'acknowledged')
+            ->orderBy('id')->lockForUpdate()->get(['id', 'agent_scope_key']);
+        foreach ($alerts as $alert) {
+            if ($owner->canAccessAlert($alert)) {
+                continue;
+            }
+            Alert::whereKey($alert->id)->update([
+                'status' => 'new', 'acknowledged_by_user_id' => null, 'acknowledged_at' => null,
+            ]);
+            ActivityLog::record('ack_released', $actor, 'Alert #'.$alert->id, 'success', [
+                'previous_owner_id' => $owner->id, 'reason' => $reason,
+            ]);
+        }
     }
 
     private function change(User $actor, User $target, callable $change): User

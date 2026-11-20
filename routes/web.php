@@ -58,8 +58,9 @@ Route::middleware(['auth', 'can:alerts.view'])->group(function () {
 
     // Notification templates management - admin only (enforced in controller)
     Route::get('/notification-templates', [NotificationController::class, 'templatesList'])->middleware('admin')->name('templates.list');
-    Route::post('/notification-templates', [NotificationController::class, 'saveTemplate'])->middleware('admin')->name('templates.save');
-    Route::delete('/notification-templates/{template}', [NotificationController::class, 'deleteTemplate'])->middleware('admin')->name('templates.delete');
+    // Legacy URLs preserve their HTTP method while the Settings routes own all mutations.
+    Route::post('/notification-templates', fn () => redirect()->route('settings.templates.save', [], 307))->middleware('admin');
+    Route::delete('/notification-templates/{template}', fn (string $template) => redirect()->route('settings.templates.delete', $template, 307))->middleware('admin');
 
     // Leaderboard
     Route::get('/leaderboard', [LeaderboardController::class, 'index'])->name('leaderboard.index');

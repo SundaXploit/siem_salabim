@@ -12,7 +12,6 @@
     "devDependencies": {
         "@tailwindcss/vite": "^4.3.3",
         "alpinejs": "^3.4.2",
-        "axios": "^1.11.0",
         "concurrently": "^9.2.5",
         "laravel-vite-plugin": "^3.0.0",
         "tailwindcss": "^4.3.3",

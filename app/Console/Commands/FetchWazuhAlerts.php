@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\InvalidOpenSearchHit;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\IngestionCheckpoint;
@@ -27,7 +28,7 @@ class FetchWazuhAlerts extends Command
 
     protected $signature = 'siem:fetch-alerts
         {--all : Scan all matching alerts, including older pages}
-        {--today : Fetch all matching alerts from today in Asia/Jakarta}
+        {--today : Fetch all matching alerts for the configured local calendar day}
         {--lookback-days= : Reconcile 2-30 local calendar days ending today}
         {--dry-run : Show what would be imported, without saving}';
 
@@ -50,11 +51,8 @@ class FetchWazuhAlerts extends Command
         }
 
         try {
-            // The command is also a public CLI entry point. Checking only in
-            // the queued wrapper would allow an operator-started import to
-            // race a self-update. This check is intentionally made while the
-            // shared ingestion lock is held; the updater checks the same lock
-            // after publishing its runtime marker.
+            // CLI imports must also respect a deployment/recovery marker.
+            // Check it while holding the shared ingestion lock.
             if ($updateGuard->isActive()) {
                 $this->warn('[SIEM] Fetch ditunda karena update aplikasi sedang berjalan atau menunggu pemulihan.');
 
@@ -121,7 +119,7 @@ class FetchWazuhAlerts extends Command
                 (int) config('services.opensearch.fetch_overlap_seconds', 900),
             ));
             $cursor = $checkpoint?->cursor_at === null
-                ? CarbonImmutable::now('Asia/Jakarta')->startOfDay()->utc()
+                ? CarbonImmutable::now(config('app.timezone'))->startOfDay()->utc()
                 : CarbonImmutable::instance($checkpoint->cursor_at)->utc();
             if ($cursor->greaterThan($checkpointTarget)) {
                 $cursor = $checkpointTarget;
@@ -135,7 +133,7 @@ class FetchWazuhAlerts extends Command
                 'lt' => $checkpointTarget->toIso8601String(),
             ];
         } elseif ($fetchToday || $fetchReconciliation) {
-            $day = CarbonImmutable::now('Asia/Jakarta')->startOfDay();
+            $day = CarbonImmutable::now(config('app.timezone'))->startOfDay();
             $timeRange = [
                 'gte' => ($fetchReconciliation
                     ? $day->subDays($lookbackDays - 1)
@@ -148,6 +146,7 @@ class FetchWazuhAlerts extends Command
 
         $newCount = 0;
         $skippedCount = 0;
+        $invalidCount = 0;
         $permanentlyIgnoredCount = 0;
         $retrievedCount = 0;
         $pageCount = 0;
@@ -157,9 +156,9 @@ class FetchWazuhAlerts extends Command
             $this->info('[SIEM] Periode incremental: '.$timeRange['gte'].' sampai sebelum '.$timeRange['lt']
                 ."; overlap {$overlapSeconds} detik.");
         } elseif ($fetchToday) {
-            $this->info('[SIEM] Periode: hari ini '.$day->format('Y-m-d').' (00:00 sampai sebelum 00:00 hari berikutnya, Asia/Jakarta).');
+            $this->info('[SIEM] Periode: hari ini '.$day->format('Y-m-d').' (00:00 sampai sebelum 00:00 hari berikutnya, '.config('app.timezone').').');
         } elseif ($fetchReconciliation) {
-            $this->info("[SIEM] Rekonsiliasi {$lookbackDays} hari kalender Asia/Jakarta: {$timeRange['gte']} sampai sebelum {$timeRange['lt']}.");
+            $this->info("[SIEM] Rekonsiliasi {$lookbackDays} hari kalender ".config('app.timezone').": {$timeRange['gte']} sampai sebelum {$timeRange['lt']}.");
         }
         $this->info("[SIEM] Filter: rule.level >= {$minLevel}. Memeriksa seluruh halaman "
             .($isIncremental ? 'pada snapshot incremental' : 'per indeks')
@@ -185,11 +184,24 @@ class FetchWazuhAlerts extends Command
                 // A rule can be added while a source scroll/PIT is already
                 // open. Recheck each page under the same short lock used by
                 // Settings so no batch commits after an exclusion was saved.
-                [$inserted, $skipped, $ignored, $notificationIds] = Cache::lock(PermanentAlertIgnore::WRITE_LOCK, 60)->block(10, function () use ($hits, $isDryRun, &$dryRunIdentities): array {
+                [$inserted, $skipped, $ignored, $notificationIds] = Cache::lock(PermanentAlertIgnore::WRITE_LOCK, 60)->block(10, function () use ($hits, $isDryRun, &$dryRunIdentities, &$invalidCount): array {
                     $rules = PermanentAlertIgnore::ruleIds();
                     // Resolve once per batch, including in long-running workers after Settings changes.
                     $sourceTimezone = (string) Configuration::get('opensearch_timezone', config('services.opensearch.timezone', 'UTC'));
-                    $parsedRows = array_map(static fn (array $hit): array => OpenSearchService::parseHit($hit, $sourceTimezone), $hits);
+                    $parsedRows = [];
+                    foreach ($hits as $hit) {
+                        try {
+                            $parsedRows[] = OpenSearchService::parseHit($hit, $sourceTimezone);
+                        } catch (InvalidOpenSearchHit $exception) {
+                            $invalidCount++;
+                            Log::warning('[SIEM] Dokumen OpenSearch tidak valid; dilewati.', [
+                                'source_cluster' => config('services.opensearch.source_cluster', 'wazuh-primary'),
+                                'source_index' => $hit['_index'] ?? null,
+                                'source_id' => $hit['_id'] ?? null,
+                                'reason' => $exception->getMessage(),
+                            ]);
+                        }
+                    }
                     $allowed = array_values(array_filter($parsedRows, static fn (array $row): bool => ! in_array($row['rule_id'], $rules, true)));
                     $ignored = count($parsedRows) - count($allowed);
                     if ($isDryRun) {
@@ -236,6 +248,7 @@ class FetchWazuhAlerts extends Command
                 'retrieved' => $retrievedCount,
                 'new' => $newCount,
                 'skipped' => $skippedCount,
+                'invalid' => $invalidCount,
             ]);
 
             return self::FAILURE;
@@ -250,19 +263,22 @@ class FetchWazuhAlerts extends Command
 
         if ($retrievedCount === 0) {
             $period = match (true) {
-                $fetchToday => ' hari ini (Asia/Jakarta)',
+                $fetchToday => ' hari ini ('.config('app.timezone').')',
                 $fetchReconciliation => " pada rekonsiliasi {$lookbackDays} hari",
                 $isIncremental => ' pada periode incremental',
                 default => '',
             };
             $this->warn("[SIEM] Tidak ada alert{$period} yang cocok dengan filter level >= {$minLevel} pada indeks yang dikonfigurasi.");
-        } elseif ($newCount === 0 && $permanentlyIgnoredCount === 0) {
+        } elseif ($newCount === 0 && $permanentlyIgnoredCount === 0 && $invalidCount === 0) {
             $this->info("[SIEM] Semua {$retrievedCount} alert yang diperiksa sudah tersimpan. Tidak ada alert baru untuk diimpor.");
         }
 
         $summary = $isDryRun ? 'Dry run. Would import' : 'Done. New';
         if ($permanentlyIgnoredCount > 0) {
             $this->info("[SIEM] Ignore permanen: {$permanentlyIgnoredCount} alert tidak disimpan.");
+        }
+        if ($invalidCount > 0) {
+            $this->warn("[SIEM] Dokumen tidak valid: {$invalidCount}. Periksa log untuk identitas sumber; perbaiki dokumen lalu jalankan rekonsiliasi atau --all.");
         }
         $this->info("[SIEM] {$summary}: {$newCount}, Skipped (already exists): {$skippedCount}");
         Log::info('[SIEM] FetchWazuhAlerts completed', [
@@ -278,6 +294,7 @@ class FetchWazuhAlerts extends Command
             'retrieved' => $retrievedCount,
             'new' => $newCount,
             'skipped' => $skippedCount,
+            'invalid' => $invalidCount,
             'permanently_ignored' => $permanentlyIgnoredCount,
         ]);
 

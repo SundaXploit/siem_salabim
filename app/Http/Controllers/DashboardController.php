@@ -128,8 +128,8 @@ class DashboardController extends Controller
 
             $generatedAt = $insight->generated_at
                 ->copy()
-                ->setTimezone('Asia/Jakarta')
-                ->format('d M Y, H:i').' WIB';
+                ->setTimezone(config('app.timezone'))
+                ->format('d M Y, H:i').' '.\App\Support\LocalTime::label();
 
             return response()->json([
                 'success' => true,

@@ -26,7 +26,7 @@ Schedule::call(function (AlertIngestionCoordinator $ingestion): void {
     $ingestion->requestReconciliationFetch('scheduler-reconcile');
 })
     ->cron('17 */6 * * *')
-    ->timezone('Asia/Jakarta')
+    ->timezone(config('app.timezone'))
     ->name('siem:dispatch-alert-reconciliation')
     ->withoutOverlapping(30);
 
@@ -39,7 +39,7 @@ Schedule::call(fn () => PrepareAutomaticAlertNotifications::dispatch())
 // Settings (with AI_REFRESH_DAYS only as a server-side fallback).
 Schedule::command('siem:refresh-dashboard-insight')
     ->dailyAt('02:10')
-    ->timezone('Asia/Jakarta')
+    ->timezone(config('app.timezone'))
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/scheduler.log'));

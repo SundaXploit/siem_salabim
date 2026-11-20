@@ -35,7 +35,7 @@ class DataExportArchiveService
         ],
         'notification_logs' => [
             'id', 'alert_id', 'user_id', 'chat_id', 'message',
-            'response_status', 'sent_at', 'automatic_key', 'delivery_state', 'manual_operation_id', 'delivery_details',
+            'response_status', 'sent_at', 'automatic_key', 'delivery_state', 'manual_operation_id', 'delivery_details', 'delivery_group_key',
         ],
         'encrypted_search_tokens' => ['id', 'alert_id', 'entity', 'record_id', 'token_hash'],
     ];

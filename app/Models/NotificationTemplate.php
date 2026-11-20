@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
@@ -41,9 +42,7 @@ class NotificationTemplate extends Model
             '{agent_name}' => $alert->agent_name ?? '-',
             '{src_ip}' => $alert->src_ip ?? '-',
             '{dst_ip}' => $alert->dst_ip ?? '-',
-            '{timestamp}' => $alert->first_seen_at
-                                        ? $alert->first_seen_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s').' WIB'
-                                        : '-',
+            '{timestamp}' => LocalTime::format($alert->first_seen_at),
             '{agent_ip}' => $raw['agent']['ip'] ?? '-',
             '{wazuh_id}' => $alert->wazuh_alert_id ?? '-',
         ];

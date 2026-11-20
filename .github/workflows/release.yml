@@ -88,6 +88,12 @@ jobs:
       - name: Audit PHP dependencies
         run: composer audit --locked --no-interaction
 
+      - name: Verify database test configurations
+        run: |
+          test -f phpunit.xml.dist
+          test -f phpunit.pgsql.xml.dist
+          test -f phpunit.mysql.xml.dist
+
       - name: Install and build frontend
         run: |
           npm ci
@@ -112,7 +118,7 @@ jobs:
           DB_USERNAME: siem_test
           DB_PASSWORD: ci-siem-test-only
           DB_SSLMODE: disable
-        run: php vendor/bin/phpunit --configuration phpunit.pgsql.xml
+        run: php vendor/bin/phpunit --configuration phpunit.pgsql.xml.dist
 
       - name: Create restricted MySQL and MariaDB test users
         env:
@@ -137,7 +143,7 @@ jobs:
           DB_DATABASE: siem_mysql_test
           DB_USERNAME: siem_test
           DB_PASSWORD: ci-siem-test-only
-        run: php vendor/bin/phpunit --configuration phpunit.mysql.xml
+        run: php vendor/bin/phpunit --configuration phpunit.mysql.xml.dist
 
       - name: Run MariaDB test suite
         env:
@@ -149,7 +155,7 @@ jobs:
           SIEM_SQL_TEST_DRIVER: mariadb
           SIEM_ACK_TEST_DRIVER: mariadb
           SIEM_NOTIFY_TEST_DRIVER: mariadb
-        run: php vendor/bin/phpunit --configuration phpunit.mysql.xml
+        run: php vendor/bin/phpunit --configuration phpunit.mysql.xml.dist
 
       - name: Install production dependencies
         run: composer install --no-dev --classmap-authoritative --no-interaction --prefer-dist --no-progress
@@ -169,8 +175,11 @@ jobs:
             ':(exclude).github' \
             ':(exclude)bootstrap/cache' \
             ':(exclude)phpunit.xml' \
+            ':(exclude)phpunit.xml.dist' \
             ':(exclude)phpunit.pgsql.xml' \
+            ':(exclude)phpunit.pgsql.xml.dist' \
             ':(exclude)phpunit.mysql.xml' \
+            ':(exclude)phpunit.mysql.xml.dist' \
             ':(exclude)storage' \
             ':(exclude)tests' \
             | tar -xf - -C "${release_root}"

@@ -30,12 +30,12 @@
                 <div class="form-group">
                     <label class="form-label" for="telegram-auto-daily-limit">Maksimal notifikasi yang sama per hari</label>
                     <input id="telegram-auto-daily-limit" type="number" name="telegram_auto_daily_limit" class="form-input" min="1" max="100" step="1" value="{{ (int) old('telegram_auto_daily_limit', $automaticNotifications['daily_limit']) }}" required>
-                    <p class="settings-field-help">Rule ID + nama agent yang sama. Reset pukul 00.00 WIB. Satu alert dihitung sekali meskipun dikirim ke beberapa tujuan.</p>
+                    <p class="settings-field-help">Rule ID + nama agent yang sama. Reset pukul 00.00 {{ \App\Support\LocalTime::label() }}. Satu alert dihitung sekali meskipun dikirim ke beberapa tujuan.</p>
                 </div>
             </div>
             <div class="settings-auto-preview">
                 <strong>Isi notifikasi</strong>
-                <p>Deskripsi · Rule ID · Rule level · Nama agent · Waktu (WIB) · Link detail alert</p>
+                <p>Deskripsi · Rule ID · Rule level · Nama agent · Waktu ({{ \App\Support\LocalTime::label() }}) · Link detail alert</p>
                 <code>{{ request()->root().route('alerts.show', 1564, false) }}</code>
                 <p class="settings-field-help">Alamat aplikasi terisi otomatis saat pengaturan disimpan.</p>
             </div>

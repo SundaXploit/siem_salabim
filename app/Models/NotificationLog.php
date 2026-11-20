@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class NotificationLog extends Model
 {
+    public const ATTEMPTED_SQL = "(notification_logs.delivery_state IS NULL OR notification_logs.delivery_state IN ('sending', 'sent', 'partial', 'failed', 'unconfirmed'))";
+
     use Concerns\IndexesEncryptedSearch;
 
     protected string $encryptedSearchEntity = 'notification';
@@ -18,7 +20,7 @@ class NotificationLog extends Model
     public $timestamps = false;
 
     // Bulk delivery metadata can contain alerts outside a later viewer's agent scope.
-    protected $hidden = ['delivery_details'];
+    protected $hidden = ['delivery_details', 'delivery_group_key'];
 
     protected $fillable = [
         'alert_id',
@@ -31,6 +33,7 @@ class NotificationLog extends Model
         'delivery_state',
         'manual_operation_id',
         'delivery_details',
+        'delivery_group_key',
     ];
 
     protected $casts = [
@@ -52,6 +55,13 @@ class NotificationLog extends Model
     public function isSuccess(): bool
     {
         return $this->response_status === 200;
+    }
+
+    /** Count one transport notification per bulk destination, retaining per-alert history. */
+    public static function deliveryCountSql(string $condition): string
+    {
+        return "(COUNT(DISTINCT CASE WHEN {$condition} THEN notification_logs.delivery_group_key END)"
+            ." + COALESCE(SUM(CASE WHEN ({$condition}) AND notification_logs.delivery_group_key IS NULL THEN 1 ELSE 0 END), 0))";
     }
 
     public function visibleMessage(User $viewer): string

@@ -28,7 +28,7 @@
                     <div><span>Rule berbeda</span><strong>{{ $alerts->pluck('rule_id')->unique()->count() }}</strong></div>
                     <div><span>Level tertinggi</span><strong>{{ $alerts->max('rule_level') }}</strong></div>
                 </div>
-                <p class="bulk-alert-period">{{ $alerts->first()->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} - {{ $alerts->last()->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} WIB</p>
+                <p class="bulk-alert-period">{{ $alerts->first()->first_seen_at?->copy()->setTimezone(config('app.timezone'))->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} - {{ $alerts->last()->first_seen_at?->copy()->setTimezone(config('app.timezone'))->format('d M Y H:i:s') ?? 'Waktu tidak diketahui' }} {{ \App\Support\LocalTime::label() }}</p>
                 <p class="text-muted text-sm">Buka tab <strong>AI</strong> untuk menganalisis seluruh pilihan dalam satu konteks. Periksa juga kronologi dan log lengkap di bawah.</p>
             </div>
         </div>
@@ -48,7 +48,7 @@
                 <li id="bulk-event-{{ $alert->id }}" data-bulk-event="{{ $alert->id }}">
                     <div class="bulk-alert-event-heading">
                         <a href="{{ route('alerts.show', $alert) }}" class="bulk-alert-event-id">#{{ $alert->id }} <i data-lucide="eye" aria-hidden="true"></i></a>
-                        <time>{{ $alert->first_seen_at?->copy()->setTimezone('Asia/Jakarta')->format('d M Y H:i:s') ?? '-' }} WIB</time>
+                        <time>{{ $alert->first_seen_at?->copy()->setTimezone(config('app.timezone'))->format('d M Y H:i:s') ?? '-' }} {{ \App\Support\LocalTime::label() }}</time>
                         <span class="badge {{ $alert->status_badge_class }}">{{ $alert->status_label }}</span>
                         <span class="badge {{ $alert->level_badge_class }}">Level {{ $alert->rule_level }}</span>
                     </div>

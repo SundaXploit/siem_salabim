@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Exceptions\InvalidOpenSearchHit;
 use App\Models\Alert;
 use App\Models\Configuration;
 use App\Models\PermanentAlertIgnore;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Carbon\Exceptions\InvalidFormatException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Log;
@@ -814,20 +816,70 @@ class OpenSearchService
     public static function parseHit(array $hit, ?string $sourceTimezone = null): array
     {
         $src = $hit['_source'] ?? [];
+        if (! is_array($src)) {
+            throw new InvalidOpenSearchHit('_source dokumen OpenSearch harus berupa object.');
+        }
+        foreach (['rule', 'agent', 'data'] as $field) {
+            if (isset($src[$field]) && ! is_array($src[$field])) {
+                throw new InvalidOpenSearchHit("Field {$field} dokumen OpenSearch harus berupa object.");
+            }
+        }
+        $rule = $src['rule'] ?? [];
+        $agent = $src['agent'] ?? [];
         $data = $src['data'] ?? [];
-        $sourceId = (string) ($hit['_id'] ?? '');
-        $sourceIndex = (string) ($hit['_index'] ?? '');
+        $sourceId = $hit['_id'] ?? '';
+        $sourceIndex = $hit['_index'] ?? '';
         $sourceCluster = trim((string) config('services.opensearch.source_cluster', 'wazuh-primary'));
         $eventTime = $src['@timestamp'] ?? $src['timestamp'] ?? null;
 
-        if ($sourceId === '' || strlen($sourceId) > 512 || str_contains($sourceId, "\0")) {
-            throw new \UnexpectedValueException('Hit OpenSearch harus memiliki _id sepanjang 1-512 byte tanpa null byte.');
+        if (! is_string($sourceId) || $sourceId === '' || strlen($sourceId) > 512 || str_contains($sourceId, "\0")) {
+            throw new InvalidOpenSearchHit('Hit OpenSearch harus memiliki _id sepanjang 1-512 byte tanpa null byte.');
         }
-        if ($sourceIndex === '' || strlen($sourceIndex) > 255 || str_contains($sourceIndex, "\0")) {
-            throw new \UnexpectedValueException('Hit OpenSearch harus memiliki _index sepanjang 1-255 byte tanpa null byte.');
+        if (! is_string($sourceIndex) || $sourceIndex === '' || strlen($sourceIndex) > 255 || str_contains($sourceIndex, "\0")) {
+            throw new InvalidOpenSearchHit('Hit OpenSearch harus memiliki _index sepanjang 1-255 byte tanpa null byte.');
         }
         if ($sourceCluster === '' || strlen($sourceCluster) > 64 || str_contains($sourceCluster, "\0")) {
             throw new \UnexpectedValueException('Identitas source cluster OpenSearch harus sepanjang 1-64 byte tanpa null byte.');
+        }
+
+        $fields = [
+            'rule_description' => $rule['description'] ?? null,
+            'src_ip' => $data['srcip'] ?? $data['src_ip'] ?? null,
+            'dst_ip' => $data['dstip'] ?? $data['dst_ip'] ?? null,
+            'agent_name' => $agent['name'] ?? null,
+        ];
+        foreach ($fields as $field => $value) {
+            if ($value !== null && (! is_string($value) || ! mb_check_encoding($value, 'UTF-8'))) {
+                throw new InvalidOpenSearchHit("Field {$field} dokumen OpenSearch harus berupa string UTF-8 atau null.");
+            }
+        }
+        $ruleId = $rule['id'] ?? '';
+        if ((! is_string($ruleId) && ! is_int($ruleId))
+            || mb_strlen((string) $ruleId, 'UTF-8') > 64 || str_contains((string) $ruleId, "\0")) {
+            throw new InvalidOpenSearchHit('Rule ID dokumen OpenSearch harus berupa string/angka maksimal 64 karakter tanpa null byte.');
+        }
+        $level = $rule['level'] ?? 0;
+        if ((! is_int($level) && (! is_string($level) || ! ctype_digit($level))) || (int) $level < 0 || (int) $level > 16) {
+            throw new InvalidOpenSearchHit('Rule level dokumen OpenSearch harus berupa bilangan bulat 0-16.');
+        }
+        $agentId = $agent['id'] ?? null;
+        if ($agentId !== null && ! is_string($agentId) && ! is_int($agentId)) {
+            throw new InvalidOpenSearchHit('Agent ID dokumen OpenSearch harus berupa string/angka atau null.');
+        }
+
+        // A bad source document can be skipped; configuration/programming errors must still fail the fetch.
+        $timezone = new \DateTimeZone($sourceTimezone ?? config('services.opensearch.timezone', 'UTC'));
+        if ($eventTime !== null && ! is_string($eventTime) && ! is_int($eventTime) && ! is_float($eventTime)) {
+            throw new InvalidOpenSearchHit('Timestamp dokumen OpenSearch harus berupa string tanggal atau angka.');
+        }
+        try {
+            $firstSeenAt = filled($eventTime)
+                // An explicit Z/+07:00 takes precedence over the fallback zone.
+                ? Carbon::parse($eventTime, $timezone)->utc()->toDateTimeString()
+                : now('UTC')->toDateTimeString();
+        } catch (InvalidFormatException) {
+            // Never log the timestamp payload or fabricate an event time for malformed evidence.
+            throw new InvalidOpenSearchHit('Timestamp dokumen OpenSearch tidak dapat diparsing.');
         }
 
         return [
@@ -836,18 +888,12 @@ class OpenSearchService
             'source_index' => $sourceIndex,
             'source_id' => $sourceId,
             'source_identity_hash' => Alert::sourceIdentityHash($sourceCluster, $sourceIndex, $sourceId),
-            'rule_description' => $src['rule']['description'] ?? null,
-            'src_ip' => $data['srcip'] ?? $src['data']['src_ip'] ?? null,
-            'dst_ip' => $data['dstip'] ?? $src['data']['dst_ip'] ?? null,
-            'agent_name' => $src['agent']['name'] ?? null,
-            'agent_scope_key' => Alert::agentScopeKey($sourceCluster, $src['agent']['id'] ?? null),
-            'rule_id' => (string) ($src['rule']['id'] ?? null),
-            'rule_level' => (int) ($src['rule']['level'] ?? 0),
+            ...$fields,
+            'agent_scope_key' => Alert::agentScopeKey($sourceCluster, $agentId),
+            'rule_id' => (string) $ruleId,
+            'rule_level' => (int) $level,
             'raw_data' => $src,
-            'first_seen_at' => filled($eventTime)
-                // An explicit Z/+07:00 in the event takes precedence over the fallback zone.
-                ? Carbon::parse($eventTime, $sourceTimezone ?? config('services.opensearch.timezone', 'UTC'))->utc()->toDateTimeString()
-                : now('UTC')->toDateTimeString(),
+            'first_seen_at' => $firstSeenAt,
         ];
     }
 }

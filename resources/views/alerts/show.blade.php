@@ -18,7 +18,7 @@
                     <span class="badge {{ $alert->status_badge_class }}" style="font-size:var(--text-sm);line-height:var(--leading-sm);">{{ $alert->status_label }}</span>
                     <span class="badge {{ $alert->level_badge_class }}" style="font-size:var(--text-sm);line-height:var(--leading-sm);">Level {{ $alert->rule_level }}</span>
                     <span class="text-muted text-sm" style="margin-left:var(--spacing-8);">
-                        #{{ $alert->id }} · {{ $alert->first_seen_at?->setTimezone('Asia/Jakarta')->format('d M Y, H:i:s') ?? '-' }} WIB
+                        #{{ $alert->id }} · {{ $alert->first_seen_at?->setTimezone(config('app.timezone'))->format('d M Y, H:i:s') ?? '-' }} {{ \App\Support\LocalTime::label() }}
                     </span>
                 </div>
                 <a href="{{ route('alerts.index') }}" class="btn btn-ghost btn-sm ml-auto"><i data-lucide="arrow-left" aria-hidden="true"></i> Kembali</a>
@@ -114,7 +114,7 @@
                     <div class="flex items-center gap-2 mb-1" style="flex-wrap: wrap;">
                         <span class="badge {{ $triage->action === 'ignore' ? 'badge-ignored' : ($triage->action === 'acknowledge' ? 'badge-acknowledged' : 'badge-new') }}" style="font-size:var(--text-xs);line-height:var(--leading-xs);">{{ strtoupper($triage->action) }}</span>
                         <span style="font-size:var(--text-xs); font-weight:var(--font-weight-bold); line-height:var(--leading-xs);">{{ $triage->user->name ?? 'Unknown' }}</span>
-                        <span class="text-muted text-sm ml-auto">{{ $triage->created_at?->setTimezone('Asia/Jakarta')->diffForHumans() }}</span>
+                        <span class="text-muted text-sm ml-auto">{{ $triage->created_at?->setTimezone(config('app.timezone'))->diffForHumans() }}</span>
                     </div>
                     @if($triage->reason)<div style="font-size:var(--text-xs); color:var(--text-muted); line-height:var(--leading-xs);">{{ $triage->reason }}</div>@endif
                 </div>
@@ -133,7 +133,7 @@
                     <div class="flex items-center gap-2 mb-1" style="flex-wrap: wrap;">
                         <span style="font-size:var(--text-xs); color:var(--info); line-height:var(--leading-xs); overflow-wrap:anywhere;">{{ $telegramLabels[$log->chat_id] ?? 'Tujuan Telegram tidak lagi terdaftar' }}</span>
                         @include('partials.notification-result', ['state' => $log->delivery_state, 'status' => $log->response_status])
-                        <span class="text-muted text-sm ml-auto">{{ $log->sent_at?->setTimezone('Asia/Jakarta')->diffForHumans() }}</span>
+                        <span class="text-muted text-sm ml-auto">{{ $log->sent_at?->setTimezone(config('app.timezone'))->diffForHumans() }}</span>
                     </div>
                     <div style="font-size:var(--text-xs); color:var(--text-muted); line-height:var(--leading-xs);">oleh {{ $log->automatic_key ? 'Sistem (otomatis)' : ($log->user->name ?? 'Unknown') }}</div>
                     <details class="notification-sent-message"><summary class="text-sm">Lihat pesan yang dikirim</summary><pre class="text-sm">{{ $log->visibleMessage(auth()->user()) }}</pre></details>

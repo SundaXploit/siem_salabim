@@ -111,7 +111,7 @@
                             <option value="{{ $timezone }}" @selected(old('opensearch_timezone', $configs['opensearch_timezone']) === $timezone)>{{ match ($timezone) { 'UTC' => 'UTC', 'Asia/Jakarta' => 'Asia/Jakarta - WIB (UTC+07:00)', 'Asia/Makassar' => 'Asia/Makassar - WITA (UTC+08:00)', 'Asia/Jayapura' => 'Asia/Jayapura - WIT (UTC+09:00)', default => $timezone } }}</option>
                         @endforeach
                     </select>
-                    <p class="settings-field-help">Jika waktu Wazuh sudah WIB tanpa offset, pilih Asia/Jakarta. Timestamp dengan Z atau +07:00 selalu mengikuti offset aslinya; waktu WIB tetap tampil pada jam yang sama. Berlaku untuk impor baru.</p>
+                    <p class="settings-field-help">Jika waktu Wazuh sudah WIB tanpa offset, pilih Asia/Jakarta. Timestamp dengan Z atau +07:00 selalu mengikuti offset aslinya. Tampilan mengikuti zona aplikasi {{ config('app.timezone') }} ({{ \App\Support\LocalTime::label() }}). Berlaku untuk impor baru.</p>
                 </div>
 
                 <div class="form-group">
@@ -131,7 +131,7 @@
                     <p class="alert-msg error" role="alert">{{ $tlsError }}</p>
                 @endif
                 <h3 class="settings-subheading">Fetch alert manual</h3>
-                <p class="text-muted text-sm" style="margin-bottom:var(--spacing-12);">Ambil alert hari ini mulai pukul 00:00 WIB (Asia/Jakarta), dengan level ≥ {{ $configs['min_alert_level'] ?? 12 }} sesuai konfigurasi yang sudah disimpan. Seluruh halaman hasil hari ini diperiksa dan alert yang sudah tersimpan dilewati.</p>
+                <p class="text-muted text-sm" style="margin-bottom:var(--spacing-12);">Ambil alert hari ini mulai pukul 00:00 {{ \App\Support\LocalTime::label() }} ({{ config('app.timezone') }}), dengan level ≥ {{ $configs['min_alert_level'] ?? 12 }} sesuai konfigurasi yang sudah disimpan. Seluruh halaman hasil hari ini diperiksa dan alert yang sudah tersimpan dilewati.</p>
                 <form method="POST" action="{{ route('settings.fetch-now') }}" x-data="{ fetching: false }" @submit="fetching = true">
                     @csrf
                     <input type="hidden" name="_section" value="{{ $key }}">

@@ -33,6 +33,9 @@ class AlertController extends Controller
     public function index(Request $request)
     {
         $request->validate([
+            'status' => ['nullable', 'string', 'in:all,new,acknowledged,ignored'],
+            'level' => ['nullable', 'integer', 'between:0,16'],
+            'per_page' => ['nullable', 'integer', 'in:25,50,100'],
             'search' => ['nullable', 'string', 'max:200', 'regex:/\A[^\x00]*\z/u'],
             'agent' => ['nullable', 'string', 'max:255', 'regex:/\A[^\x00]*\z/u'],
         ]);

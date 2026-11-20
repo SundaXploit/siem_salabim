@@ -67,9 +67,8 @@ class GenerateDataExport implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        // Close the small race between the initial marker check and the
-        // database claim. The updater will see a running export, or this job
-        // will put itself back into the queued state before doing any I/O.
+        // Check again after claiming the export so a newly created deployment
+        // marker can defer this job before any archive I/O.
         if ($updateGuard->isActive()) {
             DataExport::query()
                 ->whereKey($this->dataExportId)

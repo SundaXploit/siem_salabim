@@ -1,10 +1,10 @@
 # Catatan perubahan SIEM Salabim 1.1 → 1.2
 
-Audit PostgreSQL native dan panduan konfigurasi terbaru: [PostgreSQL: audit, konfigurasi, dan pemeriksaan](POSTGRESQL.md), 16 November 2026.
+Verifikasi database terbaru: [PostgreSQL, MySQL, MariaDB, dan SQLite](DATABASE_VERIFICATION.md), 19 November 2026.
 
 [README utama](../README.md) · [Galeri aplikasi](../README.md#galeri) · [Kontribusi](../README.md#kontribusi)
 
-Diperbarui **15 November 2026**. Acuan versi 1.1 adalah commit `c4da117` dengan pesan `update V.1.1`; catatan 1.2 ini merangkum perubahan kode dan antarmuka setelah acuan tersebut.
+Diperbarui **19 November 2026**. Acuan versi 1.1 adalah commit `c4da117` dengan pesan `update V.1.1`; catatan 1.2 ini merangkum perubahan kode dan antarmuka setelah acuan tersebut.
 
 Versi 1.2 berfokus pada keamanan akun dan data, kepemilikan penanganan alert, keandalan notifikasi Telegram, serta kemudahan administrasi SOC. Dashboard, Live Alerts, analisis AI, RBAC per agent, ignore permanen, leaderboard, installer, dan ekspor data sudah tersedia pada 1.1; bagian berikut menjelaskan penambahan dan perbaikannya.
 
@@ -74,8 +74,9 @@ Catatan ini mencakup patch keamanan yang telah diterapkan sampai tanggal pembaru
 
 - Settings OpenSearch menyediakan zona waktu sumber untuk timestamp yang **tidak mempunyai offset**. Pilih `UTC` atau zona yang sesuai, misalnya `Asia/Jakarta` untuk WIB.
 - Timestamp yang sudah memuat `Z` atau offset seperti `+07:00` mengikuti offset tersebut; pilihan zona sumber tidak menimpanya.
-- Penyimpanan waktu alert dinormalisasi ke UTC. Tampilan dan filter tanggal menggunakan hari WIB, sehingga sumber yang sudah WIB tetap ditampilkan pada jam WIB yang sama.
+- Penyimpanan waktu alert dinormalisasi ke UTC. Tampilan, filter tanggal, scheduler, kuota harian, dan laporan mengikuti `APP_TIMEZONE` yang dipilih saat instalasi; label WIB/WITA/WIT mengikuti zona tersebut.
 - Pengaturan ini digunakan pada parsing impor; mengubah zona sumber tidak otomatis menulis ulang timestamp alert lama.
+- Timestamp aktivitas aplikasi disimpan sebagai waktu lokal aplikasi. Patch ini tidak menggeser data lama. Mengganti `APP_TIMEZONE` pada instalasi yang sudah berisi aktivitas memerlukan pemeriksaan zona data lama.
 
 ### Verifikasi sertifikat
 
@@ -333,7 +334,9 @@ php artisan queue:restart
 
 Gunakan `composer install` dan `npm ci` agar versi mengikuti lockfile patch. Dependency build diperlukan saat menjalankan Vite, sehingga jangan menghilangkannya sebelum `npm run build`. `queue:restart` menghentikan worker setelah job aktif selesai; jalankan kembali worker terminal, atau pastikan Supervisor memulainya lagi. Muat ulang proses aplikasi yang menyimpan kode/config dalam memori sesuai deployment.
 
-Patch pembatasan tujuan dan validasi tanggal tidak menambah migrasi tersendiri. Instalasi 1.2 dengan schema lengkap tidak perlu mengulang migrasi enkripsi, mengganti `APP_KEY`, atau menjalankan reset. Alamat integrasi yang sudah tersimpan otomatis menjadi sumber izin; untuk menggantinya, simpan konfigurasi baru sebelum tes koneksi atau pemuatan model. Periksa versi paket dan advisory setelah deployment dengan `composer audit --locked` dan `npm audit`.
+Patch audit 19 November menambah migrasi `2026_11_19_000026_add_notification_delivery_group_key.php`. Migrasi menambahkan indeks grup pengiriman dan mengisi identitas grup dari metadata historis tanpa mengubah payload terenkripsi; jalankan sebelum worker memakai kode baru. Status pending, cancelled, dan daily_limited tidak dihitung sebagai percobaan kirim. Notifikasi gabungan dihitung sekali per grup tujuan, sementara riwayat per alert tetap tersedia.
+
+Dependency Telegram SDK, Breeze, Spatie Permission, dan Axios yang tidak dipakai telah dihapus. Subsistem self-update yang belum terhubung ke aplikasi juga dihapus; pemasangan patch mengikuti prosedur deployment di atas. Guard deployment/recovery dan tabel historis tetap dipertahankan. Instalasi 1.2 tidak perlu mengulang migrasi enkripsi, mengganti `APP_KEY`, atau menjalankan reset. Alamat integrasi yang sudah tersimpan otomatis menjadi sumber izin; untuk menggantinya, simpan konfigurasi baru sebelum tes koneksi atau pemuatan model. Periksa versi paket dan advisory setelah deployment dengan `composer audit --locked` dan `npm audit`.
 
 ### Migrasi yang ditambahkan
 
@@ -346,6 +349,7 @@ Patch pembatasan tujuan dan validasi tanggal tidak menambah migrasi tersendiri. 
 | `000022` | Proyeksi metadata MITRE untuk agregasi tanpa membaca seluruh payload. |
 | `000023` | Persiapan Custom / Pesan Bebas dengan isian manual, mempertahankan edit admin. |
 | `000024` | Penghapusan kolom ikon template. |
+| `000026` | Indeks grup delivery dan backfill grup historis untuk menghitung notifikasi gabungan sekali. |
 
 ### Urutan upgrade dari 1.1
 
@@ -379,7 +383,7 @@ Kunci aplikasi dan kunci indeks tidak boleh dipublikasikan atau dibuang ketika m
 
 Regresi mencakup ACK bersamaan dari dua proses, retry notifikasi, pembatalan grup, scope agent, keamanan sesi, enkripsi dan rotasi, restore SQL, template yang dihapus, audit aktivitas, serta tampilan responsif. Pengujian Telegram menggunakan tiruan layanan.
 
-Audit terakhir pada **16 November 2026** menggabungkan suite penuh dan tes ulang menjadi **756 kasus unik per engine**: PostgreSQL 755 lulus/satu dilewati; SQLite, MySQL, dan MariaDB masing-masing 751 lulus/lima dilewati. Tidak ada kegagalan yang belum terselesaikan. Empat masalah fixture/setup MySQL pada run awal telah diverifikasi melalui tes ulang. Tes benturan nama file dilewati pada Windows, empat tes khusus PostgreSQL dilewati pada engine lain, dan `InstallerDevelopmentServerTest` dikecualikan karena pengelolaan proses pada lingkungan ini. **30 tes JavaScript dan build produksi lulus**. Seluruh database pengujian terpisah dari database operasional; rincian versi, perbaikan, laporan awal/ulang, dan batas cakupan ada pada [audit enkripsi dan hybrid query](ENCRYPTION_AUDIT.md).
+Verifikasi **19 November 2026** menggabungkan suite penuh dan tes ulang menjadi **782 kasus unik per engine**: PostgreSQL 781 lulus/satu dilewati; SQLite, MySQL, dan MariaDB masing-masing 779 lulus/tiga dilewati. Tidak ada kegagalan tersisa. Pengujian MariaDB menemukan query tren harian yang ditolak `ONLY_FULL_GROUP_BY`; pengelompokan diperbaiki memakai alias `day`, dengan mode SQL ketat tetap aktif, lalu kasus terdampak diuji ulang pada keempat engine. Tes rollback migrasi serta cache/lock/queue/sesi database kini juga berjalan di seluruh engine. Tes benturan nama file dilewati pada Windows, dua tes khusus PostgreSQL dilewati pada engine lain, dan `InstallerDevelopmentServerTest` dikecualikan karena pengelolaan subprocess pada lingkungan ini. Database pengujian terpisah dari database operasional; versi, perbaikan, laporan awal/ulang, dan batas cakupan tercatat dalam [laporan verifikasi database](DATABASE_VERIFICATION.md).
 
 Sebanyak **17 tes khusus tujuan integrasi** memeriksa penolakan host/port/protokol/base path yang belum disimpan, pencabutan tujuan lama, penyimpanan endpoint AI sebelum model dipilih, audit perubahan, dan penolakan mode installer setelah aplikasi terpasang. Pemeriksaan transport cURL dengan listener lokal terkontrol memverifikasi DNS pinning dan tidak adanya request lanjutan ke tujuan redirect. Hasil audit dependency pada tanggal yang sama adalah nol advisory Composer dan nol kerentanan npm; hasil ini bukan jaminan terhadap advisory yang terbit kemudian.
 

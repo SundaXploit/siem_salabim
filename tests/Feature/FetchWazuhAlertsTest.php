@@ -11,6 +11,7 @@ use App\Services\OpenSearchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -18,6 +19,80 @@ use Tests\TestCase;
 class FetchWazuhAlertsTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[DataProvider('invalidEventTimestamps')]
+    public function test_a_bad_document_does_not_discard_healthy_alerts_or_stop_later_pages(mixed $timestamp): void
+    {
+        Log::spy();
+        $bad = $this->hit('invalid-time');
+        $bad['_source']['@timestamp'] = $timestamp;
+        $this->mockBatches([
+            [$this->hit('healthy-before'), $bad, $this->hit('healthy-after')],
+            [$this->hit('healthy-next-page')],
+        ]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])
+            ->expectsOutput('[SIEM] Dokumen tidak valid: 1. Periksa log untuk identitas sumber; perbaiki dokumen lalu jalankan rekonsiliasi atau --all.')
+            ->expectsOutput('[SIEM] Done. New: 3, Skipped (already exists): 0')
+            ->assertSuccessful();
+
+        $this->assertSame(['healthy-after', 'healthy-before', 'healthy-next-page'], Alert::orderBy('source_id')->pluck('source_id')->all());
+        Log::shouldHaveReceived('warning')->once()->with('[SIEM] Dokumen OpenSearch tidak valid; dilewati.', \Mockery::on(
+            fn (array $context): bool => $context['source_id'] === 'invalid-time'
+                && $context['source_index'] === $bad['_index']
+                && ! array_key_exists('raw_data', $context),
+        ));
+        Log::shouldHaveReceived('info')->with('[SIEM] FetchWazuhAlerts completed', \Mockery::on(
+            fn (array $context): bool => $context['invalid'] === 1 && $context['new'] === 3,
+        ));
+    }
+
+    public static function invalidEventTimestamps(): iterable
+    {
+        yield 'unparseable string' => ['bukan-tanggal-sama-sekali'];
+        yield 'array' => [['2026-09-17T10:00:00Z']];
+        yield 'empty array must not become now' => [[]];
+    }
+
+    public function test_incremental_fetch_can_advance_after_rejecting_a_bad_document(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-17T03:00:00Z'));
+        $bad = $this->hit('invalid-incremental-time');
+        $bad['_source']['@timestamp'] = 'invalid';
+        $this->mockIncrementalBatches([[$bad, $this->hit('healthy-incremental')]], [
+            'gte' => '2026-09-16T17:00:00+00:00',
+            'lt' => '2026-09-17T03:00:00+00:00',
+        ]);
+
+        $this->artisan('siem:fetch-alerts')->assertSuccessful();
+
+        $this->assertDatabaseCount('alerts', 1);
+        $this->assertSame('2026-09-17 03:00:00', IngestionCheckpoint::sole()->cursor_at->utc()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_dry_run_counts_bad_documents_without_importing_or_advancing_a_checkpoint(): void
+    {
+        $bad = $this->hit('invalid-dry-run-time');
+        $bad['_source']['@timestamp'] = ['invalid'];
+        $this->mockBatches([[$bad, $this->hit('healthy-dry-run')]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true, '--dry-run' => true])
+            ->expectsOutput('[SIEM] Dry run. Would import: 1, Skipped (already exists): 0')
+            ->assertSuccessful();
+
+        $this->assertDatabaseCount('alerts', 0);
+        $this->assertDatabaseCount('ingestion_checkpoints', 0);
+    }
+
+    public function test_invalid_source_configuration_still_fails_the_fetch(): void
+    {
+        config(['services.opensearch.timezone' => 'Not/A-Timezone']);
+        $this->mockBatches([[$this->hit('valid-document-invalid-config')]]);
+
+        $this->artisan('siem:fetch-alerts', ['--all' => true])->assertExitCode(1);
+
+        $this->assertDatabaseCount('alerts', 0);
+    }
 
     public function test_long_agent_names_and_64_character_rule_ids_are_preserved(): void
     {
@@ -110,13 +185,14 @@ class FetchWazuhAlertsTest extends TestCase
         $this->assertDatabaseCount('alerts', 101);
     }
 
-    #[DataProvider('jakartaDayBoundaries')]
-    public function test_today_uses_the_jakarta_calendar_day_even_when_the_app_timezone_is_utc(
+    #[DataProvider('localDayBoundaries')]
+    public function test_today_uses_the_configured_local_calendar_day(
+        string $timezone,
         string $instant,
         string $start,
         string $end,
     ): void {
-        config(['app.timezone' => 'UTC']);
+        config(['app.timezone' => $timezone]);
         Configuration::set('min_alert_level', 12);
         $this->travelTo(Carbon::parse($instant));
         $this->mockTodayBatches([], ['gte' => $start, 'lt' => $end]);
@@ -126,34 +202,55 @@ class FetchWazuhAlertsTest extends TestCase
             ->assertSuccessful();
     }
 
-    public static function jakartaDayBoundaries(): iterable
+    public static function localDayBoundaries(): iterable
     {
         yield 'one second before local midnight' => [
+            'Asia/Jakarta',
             '2026-09-16T16:59:59Z',
             '2026-09-15T17:00:00+00:00',
             '2026-09-16T17:00:00+00:00',
         ];
         yield 'local midnight starts the new day' => [
+            'Asia/Jakarta',
             '2026-09-16T17:00:00Z',
             '2026-09-16T17:00:00+00:00',
             '2026-09-17T17:00:00+00:00',
         ];
         yield 'last second of the local day' => [
+            'Asia/Jakarta',
             '2026-09-17T16:59:59Z',
             '2026-09-16T17:00:00+00:00',
             '2026-09-17T17:00:00+00:00',
         ];
         yield 'next local midnight is exclusive' => [
+            'Asia/Jakarta',
             '2026-09-17T17:00:00Z',
             '2026-09-17T17:00:00+00:00',
             '2026-09-18T17:00:00+00:00',
         ];
     }
 
+    #[DataProvider('otherLocalDays')]
+    public function test_today_handles_utc_wita_and_dst_days(string $zone, string $instant, string $start, string $end): void
+    {
+        config(['app.timezone' => $zone]);
+        $this->travelTo(Carbon::parse($instant));
+        $this->mockTodayBatches([], ['gte' => $start, 'lt' => $end]);
+
+        $this->artisan('siem:fetch-alerts', ['--today' => true])->assertSuccessful();
+    }
+
+    public static function otherLocalDays(): iterable
+    {
+        yield ['UTC', '2026-09-16T23:59:59Z', '2026-09-16T00:00:00+00:00', '2026-09-17T00:00:00+00:00'];
+        yield ['Asia/Makassar', '2026-09-16T16:00:00Z', '2026-09-16T16:00:00+00:00', '2026-09-17T16:00:00+00:00'];
+        yield ['America/New_York', '2026-03-08T17:00:00Z', '2026-03-08T05:00:00+00:00', '2026-03-09T04:00:00+00:00'];
+    }
+
     public function test_reconciliation_uses_jakarta_calendar_days_and_imports_late_alert_without_advancing_checkpoint(): void
     {
         config([
-            'app.timezone' => 'UTC',
+            'app.timezone' => 'Asia/Jakarta',
             'services.opensearch.fetch_overlap_seconds' => 900,
         ]);
         Configuration::set('min_alert_level', 12);
@@ -262,7 +359,7 @@ class FetchWazuhAlertsTest extends TestCase
 
         $this->mock(OpenSearchService::class, function (MockInterface $service) use ($hit): void {
             $service->shouldReceive('fetchIncrementalAlertBatches')->once()->with(7, 100, [
-                'gte' => '2026-09-16T17:00:00+00:00',
+                'gte' => '2026-09-16T00:00:00+00:00',
                 'lt' => '2026-09-16T17:30:00+00:00',
             ])->andReturnUsing(function () use ($hit): \Generator {
                 $competingLock = Cache::lock('siem_fetch_running', 600);

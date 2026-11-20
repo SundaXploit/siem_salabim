@@ -59,6 +59,28 @@ class AutomaticNotificationQuotaTest extends TestCase
         return $telegram;
     }
 
+    public function test_only_one_claim_can_send_a_delivery_and_destinations_share_one_quota_slot(): void
+    {
+        $notifier = app(AutomaticAlertNotifier::class);
+        $alert = $this->alert('direct-claim');
+        $ids = $notifier->prepare([$alert]);
+        $first = NotificationLog::findOrFail($ids[0]);
+        $otherDestination = NotificationLog::findOrFail($ids[1]);
+
+        $this->assertTrue($notifier->claimDelivery($first, $alert, 'First message', 1));
+        $this->assertFalse($notifier->claimDelivery($first, $alert, 'Duplicate message', 1));
+        $this->assertTrue($notifier->claimDelivery($otherDestination, $alert, 'Other destination', 1));
+        $this->assertSame('First message', $first->fresh()->message);
+        $this->assertSame(2, NotificationLog::where('delivery_state', 'sending')->count());
+        $this->assertSame([$alert->source_identity_hash], json_decode(DB::table('automatic_notification_quotas')->sole()->event_keys, true));
+
+        $limitedAlert = $this->alert('direct-claim-limited');
+        $limited = NotificationLog::findOrFail($notifier->prepare([$limitedAlert])[0]);
+        $this->assertFalse($notifier->claimDelivery($limited, $limitedAlert, 'Limited message', 1));
+        $this->assertSame('daily_limited', $limited->fresh()->delivery_state);
+        $this->assertSame([$alert->source_identity_hash], json_decode(DB::table('automatic_notification_quotas')->sole()->event_keys, true));
+    }
+
     public function test_two_distinct_alerts_per_rule_and_agent_reach_every_destination_while_later_alerts_stay_intact(): void
     {
         $notifier = app(AutomaticAlertNotifier::class);

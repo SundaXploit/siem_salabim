@@ -33,7 +33,7 @@ class InstallController extends Controller
             'defaults' => [
                 'app_name' => 'SIEM Salabim',
                 'app_url' => $request->getSchemeAndHttpHost(),
-                'app_timezone' => 'Asia/Jakarta',
+                'app_timezone' => config('app.timezone'),
                 'db_connection' => 'pgsql',
                 'db_host' => '127.0.0.1',
                 'db_port' => '5432',

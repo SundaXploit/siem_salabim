@@ -52,11 +52,11 @@ class NotificationTemplateManagementTest extends TestCase
         $analyst = User::factory()->forAgent('001', array_keys(User::PRIVILEGES))->create();
         $this->actingAs($analyst)->getJson(route('templates.list'))->assertForbidden();
         $this->getJson(route('settings.index', ['section' => 'templates']))->assertForbidden();
-        foreach (['templates.save', 'settings.templates.save'] as $route) {
-            $this->postJson(route($route), ['name' => 'Forged', 'body' => 'Forged body'])->assertForbidden();
+        foreach (['/notification-templates', route('settings.templates.save')] as $url) {
+            $this->postJson($url, ['name' => 'Forged', 'body' => 'Forged body'])->assertForbidden();
         }
-        foreach (['templates.delete', 'settings.templates.delete'] as $route) {
-            $this->deleteJson(route($route, $template))->assertForbidden();
+        foreach (['/notification-templates/'.$template->id, route('settings.templates.delete', $template)] as $url) {
+            $this->deleteJson($url)->assertForbidden();
         }
         $admin = User::factory()->create(['role' => 'admin']);
         $this->actingAs($admin)->postJson(route('settings.templates.save'), ['name' => 'Invalid', 'body' => str_repeat('x', 4097), 'is_active' => 'invalid'])

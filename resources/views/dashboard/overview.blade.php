@@ -35,7 +35,7 @@
     $topTechniqueCount = max(1, (int) collect($dashboard['techniques'])->max('count'));
     $topRuleCount = max(1, (int) collect($dashboard['top_rules'])->max('count'));
     $generatedAt = $insight?->generated_at
-        ? $insight->generated_at->copy()->setTimezone('Asia/Jakarta')->format('d M Y, H:i') . ' WIB'
+        ? $insight->generated_at->copy()->setTimezone(config('app.timezone'))->format('d M Y, H:i') . ' '.\App\Support\LocalTime::label()
         : null;
 @endphp
 

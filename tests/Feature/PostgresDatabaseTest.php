@@ -22,11 +22,10 @@ class PostgresDatabaseTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
+    private function requirePostgres(): void
     {
-        parent::setUp();
         if (DB::getDriverName() !== 'pgsql') {
-            $this->markTestSkipped('Run with phpunit.pgsql.xml against a disposable PostgreSQL database.');
+            $this->markTestSkipped('Run with phpunit.pgsql.xml.dist against a disposable PostgreSQL database.');
         }
     }
 
@@ -44,6 +43,7 @@ class PostgresDatabaseTest extends TestCase
 
     public function test_installer_connects_using_the_application_role_and_preserves_the_tls_ca(): void
     {
+        $this->requirePostgres();
         $configuration = config('database.connections.pgsql');
         $input = [
             'db_connection' => 'pgsql', 'db_host' => $configuration['host'], 'db_port' => $configuration['port'],
@@ -95,6 +95,7 @@ class PostgresDatabaseTest extends TestCase
 
     public function test_nested_export_is_rejected_without_aborting_the_callers_transaction(): void
     {
+        $this->requirePostgres();
         Storage::fake('local');
         $user = User::factory()->create(['role' => 'admin']);
         Alert::create(['wazuh_alert_id' => 'nested-snapshot', 'rule_level' => 12, 'status' => 'new', 'first_seen_at' => now()]);
